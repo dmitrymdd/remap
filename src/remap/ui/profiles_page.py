@@ -58,7 +58,6 @@ from .theme import repolish
 SOURCE, TARGET = "source", "target"
 
 ID_ROLE = Qt.ItemDataRole.UserRole           # ID профиля в хранилище (None — профиль не читается)
-NAME_ROLE = Qt.ItemDataRole.UserRole + 3     # имя профиля без пометки «•»
 
 UNDO_LIMIT = 200
 UNDO_KEYS, REDO_KEYS, SAVE_KEYS = ("Ctrl+Z",), ("Ctrl+Y", "Ctrl+Shift+Z"), ("Ctrl+S",)
@@ -292,8 +291,9 @@ class ProfilesPage(QWidget):
         band = QWidget()
         band.setFixedHeight(theme.BAND_H)
         band_box = QHBoxLayout(band)
-        band_box.setContentsMargins(8, 0, 8, 0)
+        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
         band_box.setSpacing(16)
+        self.suggest_bar.setFixedHeight(theme.BAND_ITEM_H)
         band_box.addWidget(self.suggest_bar)
         band_box.addWidget(self.status, stretch=1)
         root.addWidget(band)
@@ -400,13 +400,11 @@ class ProfilesPage(QWidget):
                             + ", ".join(i.path.name for i in issues), "error")
         self.combo.setCurrentIndex(self._index_of(select))
         self.combo.blockSignals(False)
-        self._mark_dirty_item()
 
     def _item(self, title: str, subtitle: str, profile_id: str | None) -> None:
         self.combo.addItem(title)
         i = self.combo.count() - 1
         self.combo.setItemData(i, profile_id, ID_ROLE)
-        self.combo.setItemData(i, title, NAME_ROLE)
         self.combo.setItemData(i, wrapped_tooltip(subtitle), Qt.ItemDataRole.ToolTipRole)
         if profile_id is None:  # профиль не читается — пункт виден, но не выбирается
             self.combo.model().item(i).setEnabled(False)
@@ -423,16 +421,6 @@ class ProfilesPage(QWidget):
             self.combo.blockSignals(True)
             self.combo.setCurrentIndex(index)
             self.combo.blockSignals(False)
-
-    def _mark_dirty_item(self) -> None:
-        """«•» перед именем профиля с несохранёнными правками; подсказка — сохранённое состояние."""
-        for i in range(self.combo.count()):
-            name = self.combo.itemData(i, NAME_ROLE)
-            if name is None:
-                continue
-            text = f"• {name}" if self._dirty and self.combo.itemData(i, ID_ROLE) == self.current else name
-            if self.combo.itemText(i) != text:
-                self.combo.setItemText(i, text)
 
     def _on_combo_changed(self, index: int) -> None:
         profile_id = self.combo.itemData(index, ID_ROLE) if index >= 0 else None
@@ -646,7 +634,6 @@ class ProfilesPage(QWidget):
         if dirty != self._dirty:
             self._dirty = dirty
             self.dirty_changed.emit(dirty)
-        self._mark_dirty_item()
         self.save_btn.setEnabled(dirty)
         for action in (self.duplicate_action, self.rename_action, self.delete_action):
             action.setEnabled(has)

@@ -90,7 +90,8 @@ SCREEN_BTN_BORDER, SCREEN_BTN_TEXT = "#2A4C38", "#CBE3D3"  # вторичная 
 ACCENT = "#62D69A"
 ACCENT_HOVER = "#86E3B3"  # наведение; в макете не задано
 SELECTED = "#FFFFFF"
-CABLE, CABLE_WIDTH = "#82BC98", 1.5
+CABLE, CABLE_WIDTH, CABLE_SELECTED_WIDTH = "#82BC98", 1.5, 1.6
+CABLE_PORT_RADIUS, CABLE_TANGENT = 2.6, 60  # точка кабеля; плечо Безье: горизонтальные касательные концов
 
 # --- Статусы: светодиод, текст, рамка, фон ---
 OK_LED, OK_TEXT, OK_BORDER = "#62D69A", "#8FC7A3", "#477A5C"
@@ -199,11 +200,15 @@ STRIP_GAP = 9  # от нижнего края виджета полосы до �
 POOL_W, SCENE_W, SCREEN_GAP = 260, 564, 12  # блоки экранов и зазор между ними
 COL_FROM, COL_GAP, COL_TO = 200, 122, 200  # колонки сцены
 BAND_H = 30  # нижняя полоса под экранами (между винтами)
+BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # панель подсказок и статус: на линии центров нижних винтов
 STRIP_PAD_X = 15  # поля панели в полосе
 STRIP_LEFT_W, STRIP_SEP_W, STRIP_RIGHT_W = 218, 54, 522
 STRIP_GAP_KEYS = 8
 STRIP_SEP: RGBA = (255, 255, 255, 0.06)
 STRIP_SEP_DARK = "#0A0B0C"
+# колонки: плашка, шаг строк, заголовок группы, зазоры под и над заголовком (cable_layout.RowMetrics)
+POOL_ROWS = (28, 32, 29, 4, 4)
+SCENE_ROWS = (30, 36, 30, 12, 10)
 POOL_HEAD_H = 30  # заголовок пула: высота до линии (с отступом 6 под текстом)
 POOL_HEAD_FONT, POOL_HEAD_SPACING = 11, 0.08
 MATCH_FONT, MATCH_SPACING, MATCH_H, MATCH_PAD = 9, 0.04, 24, 8

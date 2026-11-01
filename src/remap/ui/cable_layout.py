@@ -11,7 +11,8 @@
   первой строки напротив, чей кабель идёт на него, и кабель приходит на свой номер (53 — 53 читается сразу).
   Неиспользуемые ноты артикуляции — за «+N» (TargetRow.hidden).
 
-Координаты — в строках (y, height) каждой раскладки отдельно; пиксели считает виджет (cable_view.py).
+Координаты — в строках (y, height) каждой раскладки отдельно; в пиксели их переводит Ruler (шаг зависит от соседей:
+строка или заголовок), рисует виджет (cable_view.py).
 
 Раскладка строится заново после КАЖДОЙ правки (placement(), порядок не замораживается): подключили — строка
 сразу напротив цели; убрали кабель или зачеркнули — сразу в своей группе пула. Пул — по группам и номерам
@@ -188,6 +189,53 @@ class CableLayout:
 
     def header(self, key: str) -> Header | None:
         return next((h for h in self.pool.headers + self.scene.target_headers if h.key == key), None)
+
+
+# --- строки -> пиксели ---
+
+@dataclass(frozen=True)
+class RowMetrics:
+    """Вертикальная геометрия колонки, px."""
+    plate: int       # высота плашки
+    pitch: int       # от верха плашки до верха следующей плашки той же группы
+    head: int        # высота заголовка группы
+    below_head: int  # от низа заголовка до следующей строки или заголовка
+    above_head: int  # от низа плашки до заголовка под ней
+
+    @property
+    def inset(self) -> int:
+        """Поле вокруг плашки внутри слота строки: слоты идут вплотную, зазоров для мыши между ними нет."""
+        return (self.pitch - self.plate) // 2
+
+
+class Ruler:
+    """Строки одной раскладки -> y в пикселях от начала колонки."""
+
+    def __init__(self, height: int, heads: Iterable[int], metrics: RowMetrics) -> None:
+        self.metrics = m = metrics
+        self._heads = set(heads)
+        self._tops: list[int] = []
+        y = 0
+        for i in range(height):
+            self._tops.append(y)
+            if i in self._heads:
+                y += m.head + m.below_head
+            else:
+                y += m.plate + (m.above_head if i + 1 in self._heads else m.pitch - m.plate)
+
+    def top(self, y: int) -> int:
+        """Верх плашки или заголовка строки y."""
+        return self._tops[y]
+
+    def bottom(self, y: int, rows: int = 1) -> int:
+        """Низ плашки или заголовка последней из rows строк, начиная с y."""
+        last = y + rows - 1
+        return self._tops[last] + (self.metrics.head if last in self._heads else self.metrics.plate)
+
+    @property
+    def total(self) -> int:
+        """Высота колонки: до низа слота последней строки."""
+        return self.bottom(len(self._tops) - 1) + self.metrics.inset if self._tops else 0
 
 
 # --- ключи и состояния ---

@@ -330,9 +330,10 @@ def test_visible_part_of_a_long_scene_repaints_quickly(app):
 
     from remap.ui import cable_view
     scene = QGraphicsScene()
+    pitch = cable_view.POOL_ROWS.pitch
     for i in range(300):
         model = SimpleNamespace(notes=(i,), shown=i, expanded=False)
-        scene.addItem(cable_view._Row(QRectF(8, 8 + i * cable_view.ROW, 200, cable_view.ROW), "pool", model, str(i),
+        scene.addItem(cable_view._Row(QRectF(8, 8 + i * pitch, 200, pitch), "pool", model, str(i),
                                       f"Name {i % 17}", pill="+1" if i % 3 == 0 else "", strike=i % 7 == 0))
     img = QImage(240, 620, QImage.Format.Format_ARGB32_Premultiplied)
     vis = QRectF(0, 0, 240, 620)

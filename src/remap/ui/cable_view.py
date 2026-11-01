@@ -59,7 +59,7 @@ from ..core.notemap import primary_note
 from ..core.pitch import note_tip
 from ..core.profile import FORWARD, NO_RULE, REVERSE, RemapProfile, names_differ, validate_profile
 from .cable_layout import (
-    DELETE, KEEP, MIXED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Cable, CableLayout, Header,
+    DELETE, KEEP, MIXED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Cable, CableLayout, Header, RowMetrics, Ruler,
     SourceRow, TargetRow, build_layout, initial_show_all, target_group_keys,
 )
 from . import plates, text, theme
@@ -67,16 +67,16 @@ from .field import ScreenButton
 from .glass import Screen
 from .metal import RecessedBlock
 
-ROW = 28            # шаг строк, px (сама строка — ROW - 2 * ROW_INSET)
-ROW_INSET = 2
+POOL_ROWS = RowMetrics(*theme.POOL_ROWS)
+SCENE_ROWS = RowMetrics(*theme.SCENE_ROWS)
 RADIUS = 5
 PAD = 8             # поля сцены
 MARK_W = 24
 BADGE_W = 32        # бейдж «+N» строки цели (кликабельный)
 CHEVRON_W = 18      # шеврон раскрытия алиасов справа в строке
 INDENT = 14         # отступ строк нот под заголовком раскрытых алиасов
-PORT = 3.0          # радиус точки подключения кабеля
-CABLE_W = 2.0       # кабели, подсказки (пунктир), превью
+PORT = theme.CABLE_PORT_RADIUS     # радиус точки подключения кабеля
+CABLE_W = theme.CABLE_WIDTH        # кабели, подсказки (пунктир), превью
 CABLE_HOVER_EXTRA = 1.0            # кабель под курсором — толще на столько
 CABLE_HIT = 16      # ширина зоны попадания по кабелю (по 8 px в стороны)
 DIMMED = 0.3        # прозрачность прочих кабелей, пока один под курсором
@@ -131,7 +131,7 @@ SUGGESTED_WRITE_TO_HINT = ("The target is on several notes: drag the row onto it
 def cable_path(a: QPointF, b: QPointF) -> QPainterPath:
     """Плавный кубический Безье: горизонтальные касательные на концах."""
     path = QPainterPath(a)
-    dx = max(30.0, abs(b.x() - a.x()) / 2)
+    dx = theme.CABLE_TANGENT
     path.cubicTo(QPointF(a.x() + dx, a.y()), QPointF(b.x() - dx, b.y()), b)
     return path
 
@@ -149,7 +149,8 @@ def preview_path(a: QPointF, b: QPointF) -> QPainterPath:
 
 class _Row(QGraphicsItem):
     """Строка: фон со скруглением, номер, высота ноты, имя, бейдж «+N» и маркер справа; точка кабеля слева
-    или справа. Высокая строка цели (связка многие-в-одну) — один блок, текст на уровне первой строки напротив.
+    или справа. Строка цели с несколькими номерами — одна плашка от первого номера до последнего; слот строки
+    (rect, зона попадания) выше плашки, если напротив строк больше, чем номеров.
 
     role — POOL / SOURCE / TARGET; model — SourceRow или TargetRow из раскладки. pill — текст бейджа («+N» —
     ещё N нот: алиасы источника или скрытые ноты артикуляции цели); badge — бейдж кликабелен (меню Write to).
@@ -159,9 +160,9 @@ class _Row(QGraphicsItem):
     def __init__(self, rect: QRectF, role: str, model: SourceRow | TargetRow, number: str, name: str,
                  *, dim=False, strike=False, italic=False, marker="", pill="", chevron: str | None = None,
                  badge=False, port: str | None = None, dashed=False, warn=False, tooltip="",
-                 lines: list[tuple[int, str]] | None = None) -> None:
+                 lines: list[tuple[int, str]] | None = None, metrics: RowMetrics = POOL_ROWS) -> None:
         super().__init__()
-        self.rect, self.role, self.model = rect, role, model
+        self.rect, self.role, self.model, self.metrics = rect, role, model, metrics  # rect — слот, плашка внутри
         self.number, self.name = number, name
         # номера по строкам блока: (смещение, номер); по умолчанию — один, на первой строке. Высота ноты (C#1) для
         # барабанов смысла не несёт — только в подсказке (note_tip)
@@ -184,7 +185,13 @@ class _Row(QGraphicsItem):
 
     def number_rect(self, off: int) -> QRectF:
         """Зона номера на строке off блока — цель drop «ровно на эту ноту»."""
-        return QRectF(self.rect.left(), self.rect.top() + off * ROW, plates.NAME_OFFSET, ROW)
+        return QRectF(self.rect.left(), self.rect.top() + off * self.metrics.pitch, plates.NAME_OFFSET,
+                      self.metrics.pitch)
+
+    def line_center(self, off: int = 0) -> float:
+        """y центра плашки на строке off блока: сюда приходит кабель."""
+        m = self.metrics
+        return self.rect.top() + m.inset + off * m.pitch + m.plate / 2
 
     def zone_at(self, pt: QPointF) -> tuple:
         """Зона drop строки цели под точкой сцены: ("badge",) — бейдж «+N» / «…» (меню нот артикуляции);
@@ -232,13 +239,13 @@ class _Row(QGraphicsItem):
         """Зона шеврона алиасов (в координатах сцены); None — шеврона нет или он не переключается."""
         if self.chevron not in ("collapsed", "expanded"):
             return None
-        return QRectF(self.rect.right() - CHEVRON_W - 4, self.rect.top(), CHEVRON_W + 4, ROW)
+        return QRectF(self.rect.right() - CHEVRON_W - 4, self.rect.top(), CHEVRON_W + 4, self.metrics.pitch)
 
     def badge_rect(self) -> QRectF | None:
         """Зона кликабельного бейджа (меню Write to строки цели)."""
         if not self.badge or not self.pill:
             return None
-        return QRectF(self._pill_right() - BADGE_W - 4, self.rect.top(), BADGE_W + 4, ROW)
+        return QRectF(self._pill_right() - BADGE_W - 4, self.rect.top(), BADGE_W + 4, self.metrics.pitch)
 
     def hoverEnterEvent(self, event) -> None:
         self._hover = True
@@ -269,21 +276,29 @@ class _Row(QGraphicsItem):
             return "deleted"
         return "suggested" if self.dashed else "normal"
 
+    def plate_rect(self) -> QRectF:
+        """Плашка в слоте: от первого номера до последнего (остальной слот — только зона drop)."""
+        m = self.metrics
+        last = max(off for off, _ in self.lines)
+        return QRectF(self.rect.left(), self.rect.top() + m.inset, self.rect.width(), last * m.pitch + m.plate)
+
     def paint(self, p: QPainter, option, widget=None) -> None:
-        r = self.rect.adjusted(0, ROW_INSET, 0, -ROW_INSET)
+        m = self.metrics
+        r = self.plate_rect()
         zone = self.drop_zone[0] if self.drop_zone else None
-        line_h = ROW - 2 * ROW_INSET  # первая строка блока
-        plates.paint_plate(p, r, self.state(), numbers=[(off * ROW, number) for off, number in self.lines], name=self.name,
-                           name_room=self.name_room(), italic=self.italic, text_deleted=self.strike,
+        line_h = m.plate  # первая строка блока
+        plates.paint_plate(p, r, self.state(), numbers=[(off * m.pitch, number) for off, number in self.lines],
+                           name=self.name, name_room=self.name_room(), italic=self.italic, text_deleted=self.strike,
                            dim_name=self.dim, line_h=line_h)
         if zone == "line":  # drop ровно на ноту: обведён только номер этой строки (уже обводки строки)
             p.setPen(QPen(theme.qcolor(theme.ACCENT), 1.2))
             p.setBrush(Qt.BrushStyle.NoBrush)
-            p.drawRoundedRect(self.number_rect(self.drop_zone[1]).adjusted(1.5, ROW_INSET + 1, -1.5, -ROW_INSET - 1),
+            p.drawRoundedRect(self.number_rect(self.drop_zone[1]).adjusted(1.5, m.inset + 1, -1.5, -m.inset - 1),
                               RADIUS - 1, RADIUS - 1)
         line = QRectF(r.left(), r.top(), r.width(), line_h)
         if self.pill:
-            pill = QRectF(self._pill_right() - BADGE_W, line.top() + 4, BADGE_W - 6, line.height() - 8)
+            pill = QRectF(self._pill_right() - BADGE_W, line.center().y() - theme.BADGE_HEIGHT / 2, BADGE_W - 6,
+                          theme.BADGE_HEIGHT)
             plates.paint_badge(p, pill, self.pill, hot=zone == "badge")  # drop на бейдж — меню нот артикуляции
         if self.marker:
             text.draw_text(p, QRectF(self._right() - MARK_W, line.top(), MARK_W - 6, line.height()), self.marker,
@@ -295,7 +310,7 @@ class _Row(QGraphicsItem):
             color = plates.cable_color(self.selected, self.highlighted)
             x = r.left() if self.port == "left" else r.right()
             for off, *_ in self.lines:
-                plates.paint_port(p, QPointF(x, self.rect.top() + (off + 0.5) * ROW), PORT, color, self.dashed)
+                plates.paint_port(p, QPointF(x, self.line_center(off)), PORT, color, self.dashed)
 
 
 class _HeaderItem(QGraphicsItem):
@@ -321,12 +336,16 @@ class _HeaderItem(QGraphicsItem):
     def boundingRect(self) -> QRectF:
         return QRectF(self.rect)
 
+    def line_center(self) -> float:
+        return self.rect.center().y()
+
     def label_x(self) -> float:
         return self.rect.left() + plates.header_label_x(self.variant)
 
     def label_room(self) -> float:
-        """Ширина под подпись, px (справа — место под число)."""
-        return max(0.0, self.rect.right() - self.label_x() - 48)
+        """Ширина под подпись, px (справа — место под число): заголовок сцены идёт через обе колонки, подпись — в левой."""
+        right = self.rect.left() + theme.COL_FROM if self.variant == "scene" else self.rect.right()
+        return max(0.0, right - self.label_x() - 48)
 
     def label_width(self) -> float:
         return plates.header_label_width(self.header.label)
@@ -349,15 +368,15 @@ class _HeaderItem(QGraphicsItem):
 
     def paint(self, p: QPainter, option, widget=None) -> None:
         h = self.header
-        r = self.rect.adjusted(0, ROW_INSET, 0, -ROW_INSET)
         count = f"{h.shown} / {h.count}" if h.shown else str(h.count)  # цель: подключённые / все артикуляции
         state = "lit" if self.highlighted else "hover" if self._hover else "normal"
-        plates.paint_group_header(p, r, h.label, count, h.collapsed, variant=self.variant, state=state,
-                                  label_room=self.label_room())
+        plates.paint_group_header(p, self.rect, h.label, count, h.collapsed, variant=self.variant, state=state,
+                                  label_room=self.label_room(),
+                                  twin_x=theme.COL_FROM + theme.COL_GAP if self.variant == "scene" else None)
 
 
 class _Bundle(QGraphicsItem):
-    """Тонкая рамка вокруг строк колонки «from» напротив одной высокой строки цели: связка читается как один блок."""
+    """Тонкая рамка вокруг раскрытых алиасов в колонке «from»: заголовок и строки его нот читаются как один блок."""
 
     def __init__(self, rect: QRectF) -> None:
         super().__init__()
@@ -404,7 +423,8 @@ class _CableItem(QGraphicsPathItem):
             self.setZValue(0.7)
             return
         color = plates.cable_color(self.src.selected, hovered)  # кабель выбранной строки — белый
-        pen = QPen(theme.qcolor(color), CABLE_W + CABLE_HOVER_EXTRA if hovered else CABLE_W)
+        width = theme.CABLE_SELECTED_WIDTH if self.src.selected else CABLE_W
+        pen = QPen(theme.qcolor(color), width + CABLE_HOVER_EXTRA if hovered else width)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         self.setPen(pen)
         self.setZValue(0.6 if hovered else 0.5)
@@ -506,12 +526,12 @@ class _ColumnView(QGraphicsView):
                 return
         super().keyPressEvent(event)
 
-    def begin(self, height_rows: int) -> float:
+    def begin(self, height: int) -> float:
         """Очистить сцену (позиция прокрутки сохраняется в end()); вернуть ширину сцены."""
         self._scroll = self.verticalScrollBar().value()
         self.scene().clear()
         width = self.width_px()
-        self.scene().setSceneRect(0, 0, width, height_rows * ROW + 2 * PAD)
+        self.scene().setSceneRect(0, 0, width, height + 2 * PAD)
         return width
 
     def end(self) -> None:
@@ -662,6 +682,8 @@ class CableEditor(QWidget):
             box.addWidget(block)
         self.overlay = CableOverlay(self)
 
+        self.pool_ruler = Ruler(0, (), POOL_ROWS)    # строки раскладки -> px, по текущей раскладке
+        self.scene_ruler = Ruler(0, (), SCENE_ROWS)
         self.profile: RemapProfile | None = None  # рабочая копия страницы (настоящий профиль)
         self.direction = FORWARD
         self.shown: RemapProfile | None = None    # profile.oriented(direction) — по нему строится вид
@@ -746,14 +768,15 @@ class CableEditor(QWidget):
         """Ключ группы цели, которой принадлежит верх видимой части сцены (None — групп нет)."""
         if self.current is None or not self.current.scene.target_headers:
             return None
-        top = (self.view.mapToScene(QPoint(0, 0)).y() - PAD) / ROW
+        ruler = self.scene_ruler
+        top = self.view.mapToScene(QPoint(0, 0)).y() - PAD + SCENE_ROWS.pitch / 2
         heads = sorted(self.current.scene.target_headers, key=lambda h: h.y)
-        above = [h for h in heads if h.y <= top + 0.5]
+        above = [h for h in heads if ruler.top(h.y) <= top]
         return (above[-1] if above else heads[0]).key
 
     def _scroll_to_group(self, key: str | None) -> None:
         h = self.current.header(key) if self.current is not None and key is not None else None
-        self.view.verticalScrollBar().setValue(0 if h is None else h.y * ROW)  # над заголовком — поле PAD
+        self.view.verticalScrollBar().setValue(0 if h is None else self.scene_ruler.top(h.y))  # над заголовком — поле PAD
 
     # --- управление ---
 
@@ -779,9 +802,10 @@ class CableEditor(QWidget):
         rect = QRectF(item.rect)
         cable = next((c for c in self.cable_items if c.src is item), None)
         if cable is not None:
-            dst = cable.dst.rect
-            rect = rect.united(QRectF(dst.left(), PAD + cable.cable.dst_y * ROW, dst.width(), ROW))
-        self.view.ensureVisible(rect, 0, ROW // 2)
+            dst, m = cable.dst.rect, SCENE_ROWS
+            rect = rect.united(QRectF(dst.left(), PAD + self.scene_ruler.top(cable.cable.dst_y) - m.inset, dst.width(),
+                                      m.pitch))
+        self.view.ensureVisible(rect, 0, SCENE_ROWS.pitch // 2)
 
     def set_suggestions(self, suggested: dict[int, str]) -> None:
         """Подсказки для показа пунктиром (перестройка — refresh())."""
@@ -828,7 +852,7 @@ class CableEditor(QWidget):
     def _anchor_of(self, view: _ColumnView, item: _Row | _HeaderItem) -> QPointF:
         """Правый край первой строки элемента (сторона кабеля); за краем видимой области — прижать к краю."""
         r = item.rect
-        pt = view.mapFromScene(QPointF(r.right(), r.top() + ROW / 2))
+        pt = view.mapFromScene(QPointF(r.right(), item.line_center()))
         vp = view.viewport()
         y = min(max(pt.y(), 0), vp.height())
         return QPointF(vp.mapTo(self, QPoint(pt.x(), y)))
@@ -1336,18 +1360,20 @@ class CableEditor(QWidget):
             self.pool.scene().clear()
             return
         view = self.pool
-        width = view.begin(lay.pool.height)
+        ruler = self.pool_ruler = Ruler(lay.pool.height, (h.y for h in lay.pool.headers), POOL_ROWS)
+        width = view.begin(ruler.total)
         col = width - 2 * PAD
         scene = view.scene()
         for h in lay.pool.headers:
             tip = ("Click to expand" if h.collapsed else "Click to collapse") + f"\n{GROUP_HINT}"
-            item = _HeaderItem(QRectF(PAD, PAD + h.y * ROW, col, ROW), h, self.toggle_pool, tip, "pool")
+            item = _HeaderItem(QRectF(PAD, PAD + ruler.top(h.y), col, POOL_ROWS.head), h, self.toggle_pool, tip, "pool")
             self._full_label(item, view)
             self.pool_headers[h.key] = item
             scene.addItem(item)
         for r in lay.pool.rows:
             indent = INDENT if r.child else 0
-            item = self._source_item(QRectF(PAD + indent, PAD + r.y * ROW, col - indent, ROW), r, POOL)
+            slot = QRectF(PAD + indent, PAD + ruler.top(r.y) - POOL_ROWS.inset, col - indent, POOL_ROWS.pitch)
+            item = self._source_item(slot, r, POOL)
             self._full_name(item, view)
             self._register(item, self.pool_items, self.pool_rows)
             scene.addItem(item)
@@ -1394,7 +1420,9 @@ class CableEditor(QWidget):
             self.view.set_hint(None)
             return
         sc = lay.scene
-        self.view.begin(sc.height)
+        m = SCENE_ROWS
+        ruler = self.scene_ruler = Ruler(sc.height, (h.y for h in sc.target_headers), m)
+        self.view.begin(ruler.total)
         lx, rx, col2, col3 = self._scene_columns()
         scene = self.view.scene()
         # колонка «from» пуста (новый профиль) — что делать; пул пуст — подсказывать нечего
@@ -1402,7 +1430,9 @@ class CableEditor(QWidget):
         self.view.set_hint((lx, col2, EMPTY_HINT.format(side=self.sides[1])) if empty else None)
 
         def rect(x: float, y: int, h: int = 1) -> QRectF:
-            return QRectF(x, PAD + y * ROW, col2 if x == lx else col3, h * ROW)
+            """Слот строк y..y+h-1 в колонке x."""
+            top = ruler.top(y) - m.inset
+            return QRectF(x, PAD + top, col2 if x == lx else col3, ruler.bottom(y, h) + m.inset - top)
 
         for h in sc.target_headers:
             if h.key in self.show_all:
@@ -1413,7 +1443,8 @@ class CableEditor(QWidget):
                 tip = f"{h.shown} of {h.count} connected\n{tip}"
             if h.notes:
                 tip += f"\n{TARGET_GROUP_HINT}"
-            item = _HeaderItem(rect(rx, h.y), h, self.toggle_target, tip, "scene")
+            head_rect = QRectF(lx, PAD + ruler.top(h.y), rx + col3 - lx, m.head)
+            item = _HeaderItem(head_rect, h, self.toggle_target, tip, "scene")
             self._full_label(item, self.view)
             self.scene_headers[h.key] = item
             scene.addItem(item)
@@ -1424,19 +1455,21 @@ class CableEditor(QWidget):
             self._full_name(item, self.view)
             self.target_items[t.slot] = item
             scene.addItem(item)
-            if t.height > 1:
-                scene.addItem(_Bundle(rect(lx, t.y, t.height).adjusted(-3, 0, 3, 0)))
-        for r in sc.source_rows:
+        for i, r in enumerate(sc.source_rows):
             indent = INDENT if r.child else 0
             item = self._source_item(rect(lx, r.y).adjusted(indent, 0, 0, 0), r, SOURCE)
             self._full_name(item, self.view)
             self._register(item, self.source_items, self.scene_rows)
             scene.addItem(item)
+            if r.expanded:
+                children = next((k for k, c in enumerate(sc.source_rows[i + 1:]) if not c.child),
+                                len(sc.source_rows) - i - 1)
+                scene.addItem(_Bundle(rect(lx, r.y, 1 + children).adjusted(-3, 0, 3, 0)))
         rows_by_y = {item.model.y: item for item in self.scene_rows}
         for c in sc.cables:
             src = rows_by_y[c.src_y]
-            a = QPointF(src.rect.right(), PAD + c.src_y * ROW + ROW / 2)
-            b = QPointF(rx, PAD + (c.dst_y + 0.5) * ROW)  # на свой номер в строке цели
+            a = QPointF(src.rect.right(), src.line_center())
+            b = QPointF(rx, PAD + ruler.top(c.dst_y) + m.plate / 2)  # на свой номер в строке цели
             tip = self._cable_tip(c.notes, c.dst) if c.dst is not None else ""
             if tip and names_differ(self.shown, c.notes[0], c.dst):
                 tip = f"{self._names_differ_tip(c.notes[0], c.dst)}\n{tip}"
@@ -1482,7 +1515,8 @@ class CableEditor(QWidget):
                     strike=row.state == DELETE, marker="=" if row.state == KEEP else "",
                     pill=f"+{len(row.notes) - 1}" if len(row.notes) > 1 and not row.expanded else "",
                     chevron=chevron, port="right" if cabled else None,
-                    dashed=row.suggested, warn=bool(issues), tooltip=tip)
+                    dashed=row.suggested, warn=bool(issues), tooltip=tip,
+                    metrics=POOL_ROWS if role == POOL else SCENE_ROWS)
 
     def _target_item(self, r: QRectF, t: TargetRow, connected: bool, dashed: bool = False) -> _Row:
         tgt = self.shown.target_map
@@ -1491,7 +1525,7 @@ class CableEditor(QWidget):
             side = f"{self.sides[1]} map"
             tip = note_tip(t.notes) + "\n" + (f"Not in the {side}" if tgt is not None else f"No {side}")
             return _Row(r, TARGET, t, str(t.notes[0]), "—", dim=True,
-                        italic=True, port=port, dashed=dashed, tooltip=tip)
+                        italic=True, port=port, dashed=dashed, tooltip=tip, metrics=SCENE_ROWS)
         many = len(t.notes) > 1
         lines = [(off, str(n)) for off, n in t.numbers]
         tip = note_tip(t.notes)
@@ -1500,7 +1534,7 @@ class CableEditor(QWidget):
             tip = f"{tip}\n{wt}\n{BADGE_HINT}"
         tip = f"{tip}\n{NUMBER_DROP_HINT}"
         return _Row(r, TARGET, t, lines[0][1], t.label, pill=(f"+{t.hidden}" if t.hidden else "…") if many else "",
-                    badge=many, port=port, dashed=dashed, tooltip=tip, lines=lines)
+                    badge=many, port=port, dashed=dashed, tooltip=tip, lines=lines, metrics=SCENE_ROWS)
 
     def _with_hand_tip(self, tip: str, notes: tuple[int, ...], connected: bool) -> str:
         """← : пометка «ручная правка» — по `reverse_overrides` прямого профиля (в → ничего не меняется)."""

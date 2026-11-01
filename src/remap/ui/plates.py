@@ -187,12 +187,14 @@ def header_label_x(variant: str = "scene", inset: float | None = None) -> float:
 
 def paint_group_header(p: QPainter, rect: QRectF, label: str, count: str = "", collapsed: bool = False, *,
                        variant: str = "scene", state: str = "normal", caret: bool = True, icon: str | None = None,
-                       align: str = "bottom", inset: float | None = None, label_room: float | None = None) -> float:
+                       align: str = "bottom", inset: float | None = None, label_room: float | None = None,
+                       twin_x: float | None = None) -> float:
     """Заголовок группы: значок (треугольник, свёрнут — повёрнут вправо; или `icon`, например замок Maps), метка акцентом,
     число приглушённо на одной базовой линии. `variant`: `scene` — с линией SCREEN_DIVIDER на нижней строке `rect` и полем
     под ней 6 px; `pool` — без линии, поле снизу 3 px. `align`: `bottom` — строка прижата к низу содержимого (Profiles),
     `center` — по центру (список карт Maps). `state`: normal / hover / lit (кабель или цель drop: плашка наведения
-    с рамкой акцентом). Возвращает x конца метки."""
+    с рамкой акцентом). `twin_x` — та же метка ещё раз, без значка и числа, в `twin_x` px от левого края (колонка «to»
+    сцены). Возвращает x конца метки."""
     if variant not in ("scene", "pool") or align not in ("bottom", "center"):
         raise ValueError((variant, align))
     p.save()
@@ -232,6 +234,9 @@ def paint_group_header(p: QPainter, rect: QRectF, label: str, count: str = "", c
         baseline = top + text.ascent_descent(spec)[0]
         text.draw_text(p, QRectF(end + 7, baseline - ascent, 56, text.line_height(small)), count, small,
                        theme.SCREEN_TEXT_3, LEFT_TOP)
+    if twin_x is not None:
+        twin = QRectF(rect.left() + twin_x, top, rect.width() - twin_x, line)
+        text.draw_text(p, twin, text.elide(label.upper(), spec, twin.width()), spec, theme.ACCENT, LEFT_TOP)
     p.restore()
     return end
 

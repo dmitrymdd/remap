@@ -470,7 +470,8 @@ def test_unassigned_dialog_checkboxes(window):
     dlg.deleteLater()
 
 
-def test_dirty_profile_marked_in_list(window):
+def test_unsaved_edits_show_only_on_save_key(window):
+    """Несохранённые правки показывает только доступность Save: имя в списке не меняется, подсказка — сохранённое."""
     page = window.profiles_page
     pid = new_profile(page, "Mark")
     page.answers["unassigned"] = set()
@@ -480,14 +481,16 @@ def test_dirty_profile_marked_in_list(window):
     def index(profile_id):
         return next(i for i in range(combo.count()) if combo.itemData(i, ID_ROLE) == profile_id)
     assert combo.itemText(index(pid)) == "Mark" and combo.currentIndex() == index(pid)
+    assert not page.save_btn.isEnabled()
     saved_tip = combo.itemData(index(pid), Qt.ItemDataRole.ToolTipRole)  # подсказка пункта — карты, без числа правил
     assert "EZdrummer 3 → Superior Drummer 3" in saved_tip and "rule" not in saved_tip
     page.clear_rules([min(page.work.source_map.names)])
-    assert combo.itemText(index(pid)) == "• Mark" and combo.itemText(index(LEGACY_ID)) == legacy_profile().name
-    assert combo.currentText() == "• Mark"
-    assert combo.itemData(index(pid), Qt.ItemDataRole.ToolTipRole) == saved_tip  # подсказка — сохранённое состояние
+    assert page.dirty and page.save_btn.isEnabled()
+    assert combo.itemText(index(pid)) == "Mark" and combo.itemText(index(LEGACY_ID)) == legacy_profile().name
+    assert combo.currentText() == "Mark"
+    assert combo.itemData(index(pid), Qt.ItemDataRole.ToolTipRole) == saved_tip
     page.revert()
-    assert combo.itemText(index(pid)) == "Mark"
+    assert combo.itemText(index(pid)) == "Mark" and not page.save_btn.isEnabled()
 
 
 def test_rows_show_number_without_pitch_pitch_in_tooltip(window):
@@ -600,7 +603,7 @@ def test_cleared_rule_returns_to_pool_at_once(window):
 
 def test_cables_header_click_collapses(window, app):
     from PySide6.QtCore import QPointF
-    from remap.ui.cable_view import PAD, ROW
+    from remap.ui.cable_view import PAD, POOL_ROWS
     page = window.profiles_page
     window.resize(1200, 800)
     window.show()
@@ -609,7 +612,7 @@ def test_cables_header_click_collapses(window, app):
     head = page.cables.current.pool.headers[0]  # первая группа пула (блоков состояний нет)
     assert head.y == 0 and not head.collapsed
     pool = page.cables.pool
-    pos = pool.mapFromScene(QPointF(PAD + 30, PAD + ROW / 2))
+    pos = pool.mapFromScene(QPointF(PAD + 30, PAD + POOL_ROWS.head / 2))
     QTest.mouseClick(pool.viewport(), Qt.MouseButton.LeftButton, pos=pos)
     app.processEvents()
     lay = page.cables.current
@@ -715,7 +718,9 @@ def editor_point(ed, view, scene_pt):
 
 
 def target_point(ed, slot):
-    return editor_point(ed, ed.view, ed.target_items[slot].rect.center())
+    rect = ed.target_items[slot].rect
+    ed.view.ensureVisible(rect, 0, 0)
+    return editor_point(ed, ed.view, rect.center())
 
 
 def show_target_group(ed, slot):
@@ -947,7 +952,7 @@ def test_pool_items_never_move_during_drag_and_keep_place_after_drop(window, app
     ed._tick()
     assert pool_state() == before
     neighbours = {i.notes[0]: i.rect.top() - bar.value() for i in ed.pool_rows if i.notes[0] != note
-                  and top <= i.rect.top() < top + vp.height() - cable_view.ROW}
+                  and top <= i.rect.top() < top + vp.height() - cable_view.POOL_ROWS.pitch}
     send(QEvent.Type.MouseButtonRelease, at, Qt.MouseButton.NoButton)
     app.processEvents()
     assert page.work.rules[note] == Rule.map_to(dst)
@@ -1368,7 +1373,7 @@ def test_profile_strip_and_screens_follow_the_mockup(window, app, storage):
     assert not page.rename_action.isEnabled() and not page.delete_action.isEnabled()
     assert not page.duplicate_action.isEnabled() and not page.save_btn.isEnabled()
     pid = new_profile(page, "Kit")
-    assert page.combo.currentData(ID_ROLE) == pid and page.combo.currentText() == "• Kit"  # карты выбраны — правка
+    assert page.combo.currentData(ID_ROLE) == pid and page.combo.currentText() == "Kit"
     assert page.rename_action.isEnabled() and page.duplicate_action.isEnabled() and page.delete_action.isEnabled()
     assert page.save_btn.isEnabled()  # есть несохранённые правки
     assert [a.text() for a in page.actions_menu.actions()] == ["New", "Duplicate", "Rename", "Delete"]
@@ -1420,7 +1425,7 @@ def test_switching_profile_in_combo_asks_about_unsaved(window, app):
     assert page.dirty
     page.answers["save_changes"] = "cancel"
     page.combo.setCurrentIndex(page.combo.findData(LEGACY_ID, ID_ROLE))
-    assert page.current == a and page.combo.currentData(ID_ROLE) == a and page.combo.currentText() == "• A"
+    assert page.current == a and page.combo.currentData(ID_ROLE) == a and page.combo.currentText() == "A"
     page.answers["save_changes"] = "save"
     page.combo.setCurrentIndex(page.combo.findData(LEGACY_ID, ID_ROLE))
     assert page.current == LEGACY_ID and page.combo.currentData(ID_ROLE) == LEGACY_ID and not page.dirty
@@ -1597,7 +1602,9 @@ def test_reverse_uses_forward_layout(window, app):
         assert {i.port for i in ed.scene_rows if i.port} == {"right"}
         assert {i.port for i in ed.target_items.values() if i.port} == {"left"}
         bundles = [i for i in ed.view.scene().items() if isinstance(i, _Bundle)]
-        assert bundles and all(b.rect.right() <= lx + col2 + 4 for b in bundles)  # рамка связки — у «from»
+        assert bundles and all(b.rect.right() <= lx + col2 + 4 for b in bundles)  # рамка раскрытых алиасов — у «from»
+        heads = [i for i in ed.scene_rows if i.model.expanded]
+        assert sorted(b.rect.top() for b in bundles) == sorted(i.rect.top() for i in heads)
         c = ed.cable_items[0]
         assert c.path().pointAtPercent(0).x() == c.src.rect.right() and c.path().pointAtPercent(1).x() == rx
         a = ed.source_anchor(ed.pool_rows[0].notes[0])
@@ -1648,6 +1655,82 @@ def test_suggestion_bar_and_status_sit_in_the_bottom_band(window, app):
         assert top >= screens_bottom - 1 and top + w.height() <= window.height()
     assert page.suggest_bar.mapTo(window, QPoint(0, 0)).x() >= 40
     assert page.status.mapTo(window, QPoint(page.status.width(), 0)).x() <= 860  # между винтами
+    screw_line = window.height() - theme.SCREW_INSET - theme.SCREW_SIZE / 2  # 782: центры нижних винтов
+    bar = page.suggest_bar
+    assert bar.mapTo(window, QPoint(0, 0)).y() + bar.height() / 2 == screw_line
+    assert bar.height() == theme.BAND_ITEM_H
+    assert page.status.mapTo(window, QPoint(0, 0)).y() + page.status.height() / 2 == screw_line
+
+
+def test_profiles_geometry_matches_mockup(window, app):
+    """Числа — из Profiles.dc.html, сверены по Profiles@2x.png; координаты окна 900×800."""
+    from remap.ui.cable_view import _Bundle
+    src = NoteMap("From", {35: "Kick: Hit", 34: "Kick: Open", 36: "Kick: Side", 38: "Snare: Center",
+                           9: "Hi-Hat: Bell", 20: "Hi-Hat: Shaft", 65: "Hi-Hat: Seq", 116: "Ride: Bow", 117: "Ride: Bell"})
+    tgt = NoteMap("To", {35: "Kick: Hit", 38: "Snare: Center", 37: "Snare: Stick", 40: "Snare: Stick"})
+    rules = {35: Rule.map_to(35), 34: Rule.map_to(35), 36: Rule.map_to(35), 38: Rule.map_to(38)}
+    page = window.profiles_page
+    window.resize(900, 800)
+    window.show()
+    ed = page.cables
+    ed.set_profile(RemapProfile("Mockup", src, tgt, rules), direction="forward")
+    app.processEvents()
+
+    def win(view, x, y):
+        pt = view.viewport().mapTo(window, view.mapFromScene(QPointF(x, y)))
+        return pt.x(), pt.y()
+
+    def top(view, item, rect=None):
+        return win(view, item.rect.left(), (rect or item.rect).top())[1]
+
+    # пул: заголовок, плашки 28 с шагом 32, следующая группа
+    heads = sorted(ed.pool_headers.values(), key=lambda i: i.rect.top())
+    rows = sorted(ed.pool_rows, key=lambda i: i.rect.top())
+    assert [top(ed.pool, h) for h in heads] == [206, 335]
+    assert heads[0].rect.height() == 29
+    assert [top(ed.pool, r, r.plate_rect()) for r in rows[:2]] == [239, 271]
+    assert top(ed.pool, rows[3], rows[3].plate_rect()) == 368
+    assert rows[0].plate_rect().height() == 28
+
+    # сцена: заголовок на обе колонки с линией 1 px, плашки 30 с шагом 36, следующая группа
+    kick, snare = (ed.scene_headers[k] for k in ("target/kick", "target/snare"))
+    assert top(ed.view, kick) == 161 and top(ed.view, snare) == 315
+    for head, line in ((kick, 190), (snare, 344)):
+        assert win(ed.view, head.rect.left(), head.rect.bottom() - 1) == (325, line)
+        assert win(ed.view, head.rect.right(), head.rect.bottom() - 1)[0] == 847
+    from_rows = sorted(ed.scene_rows, key=lambda i: i.rect.top())
+    assert [top(ed.view, r, r.plate_rect()) for r in from_rows] == [203, 239, 275, 357]
+    assert all(r.plate_rect().size().toTuple() == (200, 30) for r in from_rows)
+
+    # три строки на один номер: плашка цели одна, 30 px; рамки вокруг них нет
+    hit = ed.target_items["a:kick: hit"]
+    assert top(ed.view, hit, hit.plate_rect()) == 203 and hit.plate_rect().height() == 30
+    assert hit.rect.height() == 3 * 36  # зона drop — на все строки напротив
+    assert not [i for i in ed.view.scene().items() if isinstance(i, _Bundle)]
+
+    # кабель n → n и точки на краях плашек
+    cable = next(c for c in ed.cable_items if c.cable.notes == (35,))
+    path = cable.path()
+    assert win(ed.view, *path.pointAtPercent(0).toTuple()) == (525, 218)
+    assert win(ed.view, *path.pointAtPercent(1).toTuple()) == (647, 218)
+    assert path.elementAt(1).x - path.elementAt(0).x == 60
+    assert cable.pen().widthF() == 1.5 and cable_view.PORT == 2.6
+    ed.set_selection({35})
+    assert cable.pen().widthF() == 1.6
+
+
+def test_target_plate_spans_first_to_last_number(window, app):
+    """Разные номера одной артикуляции: одна плашка от первого номера до последнего."""
+    src = NoteMap("From", {1: "Tom: A", 2: "Tom: B", 3: "Tom: C"})
+    tgt = NoteMap("To", {50: "Tom: Hit", 51: "Tom: Hit"})
+    window.resize(900, 800)
+    window.show()
+    ed = window.profiles_page.cables
+    ed.set_profile(RemapProfile("Span", src, tgt, {1: Rule.map_to(50), 2: Rule.map_to(50), 3: Rule.map_to(51)}),
+                   direction="forward")
+    app.processEvents()
+    item = ed.target_items["a:tom: hit"]
+    assert item.plate_rect().height() == 2 * 36 + 30 and item.rect.height() == 3 * 36
 
 
 def test_empty_from_column_shows_hint(window, app):
@@ -1833,11 +1916,12 @@ def test_direction_switch_keeps_group_and_own_collapse_state(window, app):
     from remap.ui.cable_layout import TARGET_PREFIX
     page, ed = cables_page(window, size=(1300, 600))
     hat = ed.current.header(TARGET_PREFIX + "hi-hat")
-    ed.view.verticalScrollBar().setValue(hat.y * cable_view.ROW)
+    ed.view.verticalScrollBar().setValue(ed.scene_ruler.top(hat.y))
     assert ed._top_group() == TARGET_PREFIX + "hi-hat"
     page.set_direction(REVERSE)
     assert ed._top_group() == TARGET_PREFIX + "hi-hat"
-    assert ed.view.verticalScrollBar().value() == ed.current.header(TARGET_PREFIX + "hi-hat").y * cable_view.ROW
+    head = ed.current.header(TARGET_PREFIX + "hi-hat")
+    assert ed.view.verticalScrollBar().value() == ed.scene_ruler.top(head.y)
     # свёрнутость — своя у направления (ключи групп двух карт могут совпасть)
     key = ed.current.pool.headers[0].key
     ed.toggle_pool(key)

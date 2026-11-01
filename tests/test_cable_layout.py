@@ -8,7 +8,7 @@ from remap.core.notemap import NoteMap, articulations, normalize_name
 from remap.core.profile import RemapProfile, Rule
 from remap.templates import load_map_template
 from remap.ui.cable_layout import (
-    DELETE, KEEP, MAPPED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Placement, TargetRow, build_layout,
+    DELETE, KEEP, MAPPED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Placement, RowMetrics, Ruler, TargetRow, build_layout,
     initial_show_all, placement, slot_key, target_group_keys,
 )
 
@@ -551,3 +551,24 @@ def test_group_order_maps_table_matches():
     heads = [r.label for r in group_rows(sd3.names, list(range(128))) if r.is_header]
     lay = build_layout(RemapProfile("p", None, sd3), no_collapse(), show_all=initial_show_all(RemapProfile("p", None, sd3)))
     assert heads[:-1] == [h.label for h in lay.scene.target_headers]  # Maps — тот же порядок (+ «Not in the map»)
+
+
+# --- Ruler ---
+
+def test_ruler_uniform_metrics_are_a_plain_grid():
+    ruler = Ruler(6, {0, 3}, RowMetrics(24, 28, 24, 4, 4))
+    assert [ruler.top(y) for y in range(6)] == [28 * y for y in range(6)]
+    assert ruler.bottom(1) == 28 + 24 and ruler.bottom(1, 2) == 56 + 24
+    assert ruler.total == 5 * 28 + 24 + 2
+
+
+def test_ruler_step_depends_on_neighbours():
+    m = RowMetrics(plate=30, pitch=36, head=30, below_head=12, above_head=10)
+    ruler = Ruler(7, {0, 3, 4}, m)  # заголовок, 2 строки, заголовок, заголовок (пустая группа), 2 строки
+    assert [ruler.top(y) for y in range(7)] == [0, 42, 78, 118, 160, 202, 238]
+    assert ruler.bottom(0) == 30 and ruler.bottom(3) == 148 and ruler.bottom(5, 2) == 268
+    assert m.inset == 3 and ruler.total == 271
+
+
+def test_ruler_empty():
+    assert Ruler(0, (), RowMetrics(28, 32, 29, 4, 4)).total == 0
