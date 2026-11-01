@@ -72,9 +72,9 @@ def test_duplicate_edit_save_reload(window, storage, app):
 
     # правка имени — unverified
     assert page.model.setData(page.model.note_index(38, COL_NAME), "  Snare: Center X  ")
-    assert page.dirty and window.nav_maps.text().startswith("Maps") and "●" in window.nav_maps.text()
+    assert page.dirty and window.nav_maps.text() == "Maps"  # у вкладки нет отметки «не сохранено»
     assert page.save()
-    assert not page.dirty and "●" not in window.nav_maps.text()
+    assert not page.dirty
     saved, _ = storage.load_map("My EZD3")
     assert saved.names[38] == "Snare: Center X" and saved.meta.status == "unverified"
     assert saved.meta.source == load_map_template("EZdrummer 3").meta.source

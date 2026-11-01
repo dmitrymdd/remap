@@ -14,7 +14,7 @@ from pathlib import Path
 from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QDrag, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
+    QApplication, QButtonGroup, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 
@@ -24,8 +24,12 @@ from ..storage import Storage
 from .maps_page import MapsPage
 from .profiles_page import SWAP_TEXT, SWAP_TIP, ProfilesPage, profile_summary
 from .settings import ui_settings
+from . import theme
 from .combo import ComboBox
+from .field import FaceSlot
+from .keys import TAB, Key, key_margins, key_row_spacing
 from .metal import MetalBody
+from .shell import BrandBlock
 from .theme import install_app_font, load_fonts, stylesheet
 from .theme import repolish as _repolish
 
@@ -449,8 +453,8 @@ class MainWindow(QMainWindow):
         return self.outputs[0] if self.outputs else None
 
     def _default_size(self) -> None:
-        """~1280×800, но не больше 90 % доступной области экрана (и не меньше минимального размера)."""
-        width, height = 1280, 800
+        """900×800, но не больше 90 % доступной области экрана (и не меньше минимального размера)."""
+        width, height = theme.WINDOW_SIZE
         screen = self.screen() or QApplication.primaryScreen()
         if screen is not None:
             area = screen.availableGeometry()
@@ -462,51 +466,43 @@ class MainWindow(QMainWindow):
     def _build_ui(self) -> None:
         central = MetalBody()
         root = QVBoxLayout(central)
-        root.setContentsMargins(24, 20, 24, 16)
-        root.setSpacing(8)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        logo = _label("R", "logo")
-        logo.setFixedSize(44, 44)
-        logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        titles = QVBoxLayout()
-        titles.setSpacing(0)
-        titles.addWidget(_label("REMAP", "title"))
-        titles.addWidget(_label("Drum MIDI note remapper", "subtitle"))
-        self.nav_convert = QPushButton("Convert")
-        self.nav_profiles = QPushButton("Profiles")
-        self.nav_maps = QPushButton("Maps")
+        self.nav_convert = Key("Convert", "tab-convert", spec=TAB, checkable=True)
+        self.nav_profiles = Key("Profiles", "tab-profiles", spec=TAB, checkable=True)
+        self.nav_maps = Key("Maps", "tab-maps", spec=TAB, checkable=True)
         head = QHBoxLayout()
-        head.addWidget(logo)
-        head.addSpacing(10)
-        head.addLayout(titles, stretch=1)
+        head.setContentsMargins(theme.HEADER_PAD_X, 0, theme.HEADER_PAD_X - key_margins(TAB).right(), 0)  # лицо — в 40 px от края
+        head.setSpacing(key_row_spacing(theme.KEY_TAB_GAP))
+        head.addWidget(BrandBlock())
+        head.addStretch(1)
+        self.nav_group = QButtonGroup(self)  # клавиши лежат в разных контейнерах: взаимное исключение — через группу
         for i, b in enumerate((self.nav_convert, self.nav_profiles, self.nav_maps)):
-            b.setObjectName("navTab")
-            b.setCheckable(True)
-            b.setAutoExclusive(True)
+            self.nav_group.addButton(b, i)
             b.clicked.connect(lambda _=False, page=i: self.show_page(page))
-            head.addWidget(b, alignment=Qt.AlignmentFlag.AlignBottom)
+            head.addWidget(FaceSlot(b, theme.HEADER_H - theme.RECESS_EDGE_TOP))
         self.nav_convert.setChecked(True)
-        root.addLayout(head)
+        header = QWidget()
+        header.setFixedHeight(theme.HEADER_H - theme.RECESS_EDGE_TOP)  # страница начинается на линию выше: лицо блока — ровно на 64-м px
+        header.setLayout(head)
+        root.addWidget(header)
 
         self.pages = QStackedWidget()
         root.addWidget(self.pages, stretch=1)
         convert_page = QWidget()
         self.pages.addWidget(convert_page)
         self.profiles_page = ProfilesPage(self.storage)
-        self.profiles_page.dirty_changed.connect(
-            lambda d: self._mark_dirty(self.nav_profiles, "Profiles", d, "The profile editor has unsaved changes"))
         self.profiles_page.profiles_changed.connect(self.reload_profiles)
         self.pages.addWidget(self.profiles_page)
         self.maps_page = MapsPage(self.storage)
-        self.maps_page.dirty_changed.connect(
-            lambda d: self._mark_dirty(self.nav_maps, "Maps", d, "The map editor has unsaved changes"))
         self.pages.addWidget(self.maps_page)
         self._build_convert_page(convert_page)
         self.setCentralWidget(central)
 
     def _build_convert_page(self, page: QWidget) -> None:
         root = QVBoxLayout(page)
-        root.setContentsMargins(0, 10, 0, 0)
+        root.setContentsMargins(theme.PAGE_MARGIN, 10, theme.PAGE_MARGIN, 16)
         root.setSpacing(8)
 
         self.drop = SourceZone(self.choose_file, self.remove_source, self.clear, self.show_details)
@@ -615,11 +611,6 @@ class MainWindow(QMainWindow):
         (self.nav_convert, self.nav_profiles, self.nav_maps)[page].setChecked(True)
         for sc in self._convert_shortcuts:
             sc.setEnabled(page == PAGE_CONVERT)
-
-    @staticmethod
-    def _mark_dirty(button: QPushButton, text: str, dirty: bool, tip: str) -> None:
-        button.setText(f"{text}  ●" if dirty else text)
-        button.setToolTip(tip if dirty else "")
 
     def closeEvent(self, event) -> None:
         for page_index, page in ((PAGE_PROFILES, self.profiles_page), (PAGE_MAPS, self.maps_page)):

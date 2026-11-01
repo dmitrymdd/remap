@@ -12,7 +12,7 @@ from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import (
     QBrush, QColor, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QPixmap, QRadialGradient, QTransform,
 )
-from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
 from . import theme
 from .theme import qcolor
@@ -326,6 +326,31 @@ class RecessedBlock(QFrame):
         inner_shadow(p, shape, r, p.device().devicePixelRatioF(), theme.RECESS_SHADOW_DY, theme.RECESS_SHADOW_BLUR,
                      theme.RECESS_SHADOW_ALPHA)
         paint_metal(p, shape, r, origin)  # текстура поверх тени, как в макете
+
+    def paintEvent(self, _event) -> None:
+        QPainter(self).drawPixmap(0, 0, self._backdrop.get(self, self._compose))
+
+
+class Panel(QFrame):
+    """Панель внутри утопленного блока (полоса профиля): вертикальный градиент, радиус и светлая линия сверху
+    `inset 0 1px 0`. Контейнер: `body` — горизонтальный layout без полей."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self._backdrop = _Backdrop(textured=False)
+        self.body = QHBoxLayout(self)
+        self.body.setContentsMargins(0, 0, 0, 0)
+        self.body.setSpacing(0)
+
+    def _compose(self, p: QPainter, rect: QRect, _origin: QPoint) -> None:
+        r = theme.PANEL_RADIUS
+        shape = QRectF(rect)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(_vertical(theme.PANEL_TOP, theme.PANEL_BOTTOM, shape.height()))
+        p.drawRoundedRect(shape, r, r)
+        inner_shadow(p, shape, r, p.device().devicePixelRatioF(), 1, 0, theme.PANEL_EDGE_LIGHT[3], (255, 255, 255))
 
     def paintEvent(self, _event) -> None:
         QPainter(self).drawPixmap(0, 0, self._backdrop.get(self, self._compose))

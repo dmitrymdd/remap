@@ -187,6 +187,29 @@ RECESS_PAD = 6  # поля содержимого блока по умолчан
 PANEL_TOP, PANEL_BOTTOM, PANEL_RADIUS = "#1C1E21", "#17191B", 7
 PANEL_EDGE_LIGHT: RGBA = (255, 255, 255, 0.06)
 
+# --- Раскладка окна (макет 900×800): шапка, полоса профиля, экраны, нижняя полоса ---
+WINDOW_SIZE = (900, 800)
+HEADER_H, HEADER_PAD_X, HEADER_GAP = 64, 40, 14  # шапка: высота, поля, зазор между логотипом, разделителем и надписью
+LOGO_SIZE = (144, 22)  # место под логотип (сам логотип позже)
+BRAND_DIVIDER_H, BRAND_DIVIDER, BRAND_DIVIDER_SHADOW = 28, "#34383C", (0, 0, 0, 0.5)
+BRAND_FONT, BRAND_SPACING, BRAND_LINE = 11.5, 0.14, 1.2  # шелкография «DRUM MIDI / NOTE REMAPPER»
+PAGE_MARGIN = 32  # поля страницы слева и справа
+STRIP_W, STRIP_H = 836, 64  # полоса профиля: размер лица утопленного блока
+STRIP_GAP = 9  # от нижнего края виджета полосы до верхнего края виджета экранов (лица: 12 px)
+POOL_W, SCENE_W, SCREEN_GAP = 260, 564, 12  # блоки экранов и зазор между ними
+COL_FROM, COL_GAP, COL_TO = 200, 122, 200  # колонки сцены
+BAND_H = 30  # нижняя полоса под экранами (между винтами)
+STRIP_PAD_X = 15  # поля панели в полосе
+STRIP_LEFT_W, STRIP_SEP_W, STRIP_RIGHT_W = 218, 54, 522
+STRIP_GAP_KEYS = 8
+STRIP_SEP: RGBA = (255, 255, 255, 0.06)
+STRIP_SEP_DARK = "#0A0B0C"
+POOL_HEAD_H = 30  # заголовок пула: высота до линии (с отступом 6 под текстом)
+POOL_HEAD_FONT, POOL_HEAD_SPACING = 11, 0.08
+MATCH_FONT, MATCH_SPACING, MATCH_H, MATCH_PAD = 9, 0.04, 24, 8
+MATCH_BG: RGBA = (110, 190, 140, 0.06)
+MATCH_RADIUS = 4
+
 # --- Винты корпуса: квадрат 14 px, левый верхний угол в 11 px от углов окна ---
 SCREW_SIZE, SCREW_INSET = 14, 11
 
@@ -299,13 +322,9 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QDialog {{ background: {body}; }}
     QToolTip {{ background: {TOOLTIP_BG}; color: {TOOLTIP_TEXT}; border: 1px solid {TOOLTIP_BORDER};
                 padding: {TOOLTIP_PAD_Y}px {TOOLTIP_PAD_X}px; font-family: {mono}; font-size: {TOOLTIP_PX}px; }}
-    QLabel#title {{ font-size: 20pt; font-weight: 600; }}
-    QLabel#subtitle, QLabel#muted {{ color: {t['text_muted']}; }}
+    QLabel#muted {{ color: {t['text_muted']}; }}
     QLabel#section {{ color: {t['text_muted']}; font-family: {label}; font-size: 10pt; font-weight: 600; }}
-    QLabel#columnTitle {{ color: {t['text_muted']}; font-family: {label}; font-weight: 600; padding-left: 4px; }}
     QLabel#hint {{ color: {t['text_faint']}; font-size: 8pt; }}
-    QLabel#logo {{ background: {t['accent']}; color: {t['on_accent']}; font-size: 14pt; font-weight: 700;
-                   border-radius: 6px; }}
     QFrame#card, QFrame#drop {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; }}
     QFrame#drop {{ border: 2px dashed {t['border']}; }}
     QFrame#drop[loaded="true"] {{ border-style: solid; }}
@@ -347,11 +366,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QLabel#status[state="ok"] {{ color: {OK_TEXT}; }}
     QLabel#status[state="error"] {{ color: {ERR_TEXT}; }}
 
-    QPushButton#navTab {{ background: transparent; border: none; border-bottom: 2px solid transparent;
-                          border-radius: 0; padding: 6px 12px; color: {t['text_muted']}; font-family: {label};
-                          font-size: 11pt; font-weight: 600; }}
-    QPushButton#navTab:hover {{ color: {t['text']}; }}
-    QPushButton#navTab:checked {{ color: {t['accent']}; border-bottom-color: {t['accent']}; }}
     QListWidget, QTableView, QTreeWidget {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
                                outline: none; font-family: {mono}; font-size: 12px; }}
     QTableView {{ gridline-color: {t['border']}; selection-background-color: {t['selection']};
@@ -389,7 +403,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QPushButton#link:disabled {{ color: {t['text_faint']}; }}
     QPushButton#remove {{ background: transparent; border: none; padding: 0; color: {t['text_faint']}; }}
     QPushButton#remove:hover {{ color: {t['accent']}; }}
-    QGraphicsView#cables {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px; }}
     QLabel#mapTitle {{ font-size: 14pt; font-weight: 600; }}
     QLabel#chip {{ border: 1px solid {CHIP_BORDER}; border-radius: 9px; padding: 1px 8px; font-size: 8pt;
                    font-weight: 700; color: {t['text_muted']}; }}

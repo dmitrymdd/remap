@@ -165,7 +165,7 @@ def test_create_profile_with_two_templates(window, storage):
     shown = {n for r in lay.pool.rows + lay.scene.source_rows for n in r.notes}
     assert shown == set(w.source_map.names) and lay.pool.headers
     assert not hasattr(page, "table") and not hasattr(page, "accept_btn") and not hasattr(page, "assign_btn")
-    assert page.dirty and "●" in window.nav_profiles.text()
+    assert page.dirty and window.nav_profiles.text() == "Profiles"  # у вкладки нет отметки «не сохранено»
 
 
 def test_suggestion_bar_and_apply(window, app):
@@ -418,6 +418,11 @@ def test_profiles_tab_disables_convert_shortcuts(window):
     assert not any(sc.isEnabled() for sc in window._convert_shortcuts)
     nav = [window.nav_convert.text(), window.nav_profiles.text(), window.nav_maps.text()]
     assert nav == ["Convert", "Profiles", "Maps"]
+    keys = (window.nav_convert, window.nav_profiles, window.nav_maps)
+    for page, key in enumerate(keys):  # включена ровно одна вкладка
+        window.show_page(page)
+        assert [k.isChecked() for k in keys] == [k is key for k in keys]
+        assert all(k.icon_name and k.spec.w == 118 and k.spec.h == 36 for k in keys)
 
 
 def test_suggestion_needing_write_to_tooltip(window):
@@ -636,7 +641,7 @@ def test_cables_pool_is_separate_column(window):
     ed = page.cables
     lay = ed.current
     # пул — своя view со своей прокруткой; сцена начинается сверху
-    assert ed.pool is not ed.view and ed.splitter.count() == 2  # пул | сцена
+    assert ed.pool is not ed.view and ed.pool_screen.isAncestorOf(ed.pool) and ed.scene_screen.isAncestorOf(ed.view)  # пул | сцена
     assert not hasattr(ed, "pool_right") and not hasattr(ed, "inactive_pool") and not hasattr(ed, "mirrored")
     assert set(ed.pool_items) == {n for r in lay.pool.rows for n in r.notes}
     assert min(t.y for t in lay.scene.target_rows + lay.scene.target_headers) == 0
@@ -1320,7 +1325,7 @@ def test_undo_redo_stack(window, app, storage):
     page.clear_rules(notes[:1])
     assert not page.redo()
     # горячие клавиши (в подсказках) — на странице
-    assert "Ctrl+Z" in page.revert_btn.toolTip() and "Ctrl+Y" in page.revert_btn.toolTip()
+    assert not hasattr(page, "revert_btn") and "Ctrl+S" in page.save_btn.toolTip()
     ed.view.setFocus()
     QTest.keyClick(ed.view, Qt.Key.Key_Z, Qt.KeyboardModifier.ControlModifier)
     assert page.work.rules == {notes[0]: Rule.map_to(notes[0])}
@@ -1351,50 +1356,60 @@ def test_alias_row_badge_and_shown_number(window, app):
     assert pool.number == str(min(pool.notes))
 
 
-def test_two_row_header_with_visible_profile_buttons(window, app, storage):
-    """Верхняя строка: профиль (слева) и New / Duplicate / Rename / Delete … статус, Revert, Save; меню «⋯» и ↻
-    нет. Строка над колонками: Unassigned + Match by number | карта «from», направление, карта «to»."""
+def test_profile_strip_and_screens_follow_the_mockup(window, app, storage):
+    """Полоса профиля 836×64 (профиль, «…», сохранение | SOURCE, ⇄, TARGET), под ней два экрана 260 и 564 px; Revert
+    и кнопок New / Duplicate / Rename / Delete в полосе нет — они в меню «…»."""
     page = window.profiles_page
     assert not hasattr(page, "list") and not hasattr(page, "sidebar_btn") and not hasattr(page, "title")
-    assert not hasattr(page, "more_btn") and not hasattr(page, "refresh_btn")
+    assert not hasattr(page, "more_btn") and not hasattr(page, "refresh_btn") and not hasattr(page, "revert_btn")
+    assert not hasattr(page, "new_btn") and not hasattr(page, "header_controls")
     assert page.combo.currentIndex() == -1 and page.combo.placeholderText() == "Select a profile"
-    assert page.new_btn.isEnabled()
-    assert not page.rename_btn.isEnabled() and not page.delete_btn.isEnabled() and not page.duplicate_btn.isEnabled()
+    assert page.new_action.isEnabled()
+    assert not page.rename_action.isEnabled() and not page.delete_action.isEnabled()
+    assert not page.duplicate_action.isEnabled() and not page.save_btn.isEnabled()
     pid = new_profile(page, "Kit")
     assert page.combo.currentData(ID_ROLE) == pid and page.combo.currentText() == "• Kit"  # карты выбраны — правка
-    assert page.rename_btn.isEnabled() and page.duplicate_btn.isEnabled() and page.delete_btn.isEnabled()
-    assert [b.text() for b in (page.new_btn, page.duplicate_btn, page.rename_btn, page.delete_btn)] == [
-        "New", "Duplicate", "Rename", "Delete"]
-    top = (page.combo, page.new_btn, page.duplicate_btn, page.rename_btn, page.delete_btn, page.status,
-           page.revert_btn, page.save_btn)
-    window.resize(1300, 900)
+    assert page.rename_action.isEnabled() and page.duplicate_action.isEnabled() and page.delete_action.isEnabled()
+    assert page.save_btn.isEnabled()  # есть несохранённые правки
+    assert [a.text() for a in page.actions_menu.actions()] == ["New", "Duplicate", "Rename", "Delete"]
+    window.resize(900, 800)
     window.show()
     QApplication.processEvents()
-    centers = {w.mapTo(page, w.rect().center()).y() for w in top}
-    assert max(centers) - min(centers) <= 2  # одна строка
-    assert len({w.height() for w in page.header_controls}) == 1
-    xs = [w.mapTo(page, w.rect().topLeft()).x() for w in top]
-    assert xs == sorted(xs) and xs[0] <= 2  # профиль — слева, Save — справа
-    # строка над колонками
-    ed = page.cables
-    assert ed.pool_head.indexOf(ed.pool_title) >= 0 and ed.pool_head.indexOf(page.match_btn) >= 0
-    assert page.match_btn.text() == "Match by number"
-    assert ed.from_head.indexOf(page.source_btn) >= 0 and ed.to_head.indexOf(page.target_btn) >= 0
-    assert ed.gap_head.indexOf(page.direction_btn) >= 0
-    assert not hasattr(page, "summary") and ed.to_head.indexOf(page.suggest_bar) >= 0
+    ed, strip = page.cables, page.strip
+
+    def face(widget, root):  # лицо виджета в координатах root
+        return widget.face_rect().translated(widget.mapTo(root, QPoint(0, 0)))
+
+    # полоса: лицо блока 836×64 в (32, 64); панель — в 6 px от краёв; лица — в 15 px от краёв панели
+    assert strip.mapTo(window, QPoint(0, 0)) == QPoint(32, 63) and strip.size().toTuple() == (836, 67)
+    assert face(page.combo, strip).left() == 21 and face(page.to_btn, strip).right() == 815
+    assert face(page.save_btn, strip).right() == 21 + 218
+    assert face(page.from_btn, strip).left() == 21 + 218 + 54 and face(page.from_btn, strip).width() == 200
+    assert face(page.to_btn, strip).width() == 200
+    centre = face(page.direction_btn, strip).center().x()
+    assert abs(centre - (21 + 218 + 54 + 522 / 2)) <= 1  # ⇄ — по центру промежутка
+    ys = {round(face(w, strip).center().y()) for w in (page.combo, page.strip.dots_btn, page.save_btn, page.from_btn,
+                                                        page.direction_btn, page.to_btn)}
+    assert len(ys) == 1  # лица на одной линии
+    # экраны: лица блоков 260 и 564 на 140–768, зазор 12
+    pool_block, scene_block = ed.pool_screen.parentWidget(), ed.scene_screen.parentWidget()
+    assert pool_block.mapTo(window, QPoint(0, 0)) == QPoint(32, 139) and pool_block.width() == 260
+    assert scene_block.mapTo(window, QPoint(0, 0)) == QPoint(304, 139) and scene_block.width() == 564
+    assert pool_block.height() == 628 + 3 and scene_block.height() == 628 + 3
+    # заголовок пула — внутри экрана, колонки сцены фиксированы
+    assert ed.pool_screen.isAncestorOf(ed.pool_title) and ed.pool_screen.isAncestorOf(page.match_btn)
+    assert page.match_btn.text() == "Match by number" and not hasattr(ed, "gap_head")
     assert page.source_btn.text() == "EZdrummer 3" and page.target_btn.text() == "Superior Drummer 3"
-    second = (ed.pool_title, page.match_btn, page.from_btn, page.direction_btn, page.to_btn)
-    assert len({w.mapTo(page, w.rect().center()).y() for w in second}) <= 2
-    assert min(w.mapTo(page, w.rect().topLeft()).y() for w in second) > max(
-        w.mapTo(page, w.rect().bottomLeft()).y() for w in top)  # ниже верхней строки
+    assert page.from_btn.caption == "SOURCE" and page.to_btn.caption == "TARGET"
     # Delete — то же подтверждение
     page.answers["confirm"] = False
-    page.delete_btn.click()
+    page.delete_action.trigger()
     assert storage.load_profile(pid) is not None
     page.answers["confirm"] = True
-    page.delete_btn.click()
+    page.delete_action.trigger()
     assert page.current is None and page.combo.currentIndex() == -1
     assert page.combo.findData(pid, ID_ROLE) == -1
+
 
 def test_switching_profile_in_combo_asks_about_unsaved(window, app):
     page = window.profiles_page
@@ -1412,63 +1427,36 @@ def test_switching_profile_in_combo_asks_about_unsaved(window, app):
     assert page.answers["asked"].count("save_changes") == 2
 
 
-def test_scene_columns_resize_and_persist(window, app, storage):
+def test_scene_columns_are_fixed(window, app):
+    """Колонки сцены 200 / 122 / 200 и ширины экранов не зависят от окна; границы мышью не тянутся."""
     from PySide6.QtCore import QEvent, QPointF
     from PySide6.QtGui import QMouseEvent
-    from remap.ui.cable_view import COLUMNS_KEY, POOL_KEY, PORT, SCENE_MIN
-    page, ed = cables_page(window)
+    from remap.ui.cable_view import PORT
+    page, ed = cables_page(window, size=(900, 800))
+    lx, rx, col2, col3 = ed._scene_columns()
+    assert (lx, rx, col2, col3) == (8, 8 + 200 + 122, 200, 200)
+    assert ed.view.viewport().width() == 522 + 16 and ed.pool.viewport().width() == 218 + 16
+    assert not hasattr(ed, "splitter") and not hasattr(ed, "columns") and not hasattr(ed, "settings")
+    t = next(iter(ed.target_items.values()))
+    assert t.rect.left() == rx and t.rect.width() == 200
+    rules = dict(page.work.rules)
     vp = ed.view.viewport()
-    width = ed.view.width_px(SCENE_MIN)
-
-    def send(kind, x, buttons):
-        pos = QPointF(x, 40)
+    x = lx + col2 + PORT + 3  # у границы колонки «from»: раньше тут тянулась граница
+    for kind, buttons in ((QEvent.Type.MouseMove, Qt.MouseButton.NoButton),
+                          (QEvent.Type.MouseButtonPress, Qt.MouseButton.LeftButton),
+                          (QEvent.Type.MouseMove, Qt.MouseButton.LeftButton),
+                          (QEvent.Type.MouseButtonRelease, Qt.MouseButton.NoButton)):
+        pos = QPointF(x - (30 if buttons == Qt.MouseButton.LeftButton and kind == QEvent.Type.MouseMove else 0), 40)
         QApplication.sendEvent(vp, QMouseEvent(kind, pos, QPointF(vp.mapToGlobal(pos.toPoint())),
                                                Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier))
-
-    def drag_edge(edge, dx):
-        x = ed._boundaries(width)[edge] + (PORT + 3 if edge != 1 else -PORT - 3)
-        send(QEvent.Type.MouseMove, x, Qt.MouseButton.NoButton)
-        assert ed.view.guide_x is not None and vp.cursor().shape() == Qt.CursorShape.SplitHCursor
-        send(QEvent.Type.MouseButtonPress, x, Qt.MouseButton.LeftButton)
-        send(QEvent.Type.MouseMove, x + dx, Qt.MouseButton.LeftButton)
-        send(QEvent.Type.MouseButtonRelease, x + dx, Qt.MouseButton.NoButton)
-
-    b2, b3, end = ed._boundaries(width)
-    rules = dict(page.work.rules)
-    drag_edge(0, -60)  # колонка 2 уже, промежуток шире, цель на месте
-    nb2, nb3, nend = ed._boundaries(width)
-    assert abs(nb2 - (b2 - 60)) < 1 and abs(nb3 - b3) < 1 and abs(nend - end) < 1
-    drag_edge(1, 40)  # промежуток шире, колонка 3 уже (правый край на месте)
-    drag_edge(2, -30)  # колонка 3 ещё уже, справа — свободное место
-    nb2, nb3, nend = ed._boundaries(width)
-    assert abs(nb3 - (b3 + 40)) < 1 and abs(nend - (end - 30)) < 1
-    t = next(iter(ed.target_items.values()))
-    assert abs(t.rect.left() - nb3) < 1 and abs(t.rect.right() - nend) < 1
-    # кнопки карт над колонками — следуют за границами
-    lx, rx, col2, col3 = ed._scene_columns(width)
-    off = ed.scene_head.mapFromGlobal(vp.mapToGlobal(QPoint(0, 0))).x()
-    assert abs(ed.from_slot.x() - (off + lx)) <= 1 and abs(ed.from_slot.width() - col2) <= 1
-    assert abs(ed.to_slot.x() - (off + rx)) <= 1 and abs(ed.to_slot.width() - col3) <= 1
-    assert page.work.rules == rules and not ed.dragging  # граница — не перетаскивание кабеля
-    assert page.settings.value(COLUMNS_KEY)
-    ed.splitter.setSizes([300, 900])
-    ed.splitter.splitterMoved.emit(300, 1)
-    sizes = ed.splitter.sizes()
-    assert int(page.settings.value(POOL_KEY)) == sizes[0]
-    w2 = MainWindow(storage)  # ширины — между запусками
-    assert w2.profiles_page.cables.columns == pytest.approx(ed.columns, abs=1e-3)
-    w2.resize(window.size())
-    w2.show_page(PAGE_PROFILES)
-    w2.show()
-    QApplication.processEvents()
-    assert w2.profiles_page.cables.splitter.sizes()[0] == sizes[0]
-    w2.close()
+    assert ed._scene_columns() == (lx, rx, col2, col3) and page.work.rules == rules and not ed.dragging
+    window.resize(1200, 900)  # окно шире — колонки те же
+    app.processEvents()
+    assert ed._scene_columns() == (lx, rx, col2, col3)
 
 
 def test_truncated_names_in_tooltips(window, app):
     _page, ed = cables_page(window, size=(900, 700))
-    ed.columns = (0.2, 0.6, 0.2)  # узкие колонки — длинные имена обрезаются
-    ed.refresh()
     cut = [i for i in ed.target_items.values() if plates.name_width(i.name, i.italic) > i.name_room()]
     fits = [i for i in ed.target_items.values() if plates.name_width(i.name, i.italic) <= i.name_room()]
     assert cut and all(i.toolTip().startswith(i.name) for i in cut)
@@ -1520,15 +1508,18 @@ def test_map_change_resets_reverse_rules_in_one_undo_step(window, app):
     manual = {36: Rule.delete(), 38: Rule.map_to(40), 40: None}
     page.work.reverse_overrides = dict(manual)
     asked = []
-    page.confirm = lambda title, text, detail="": asked.append(detail) or True
+    page.confirm = lambda title, text, detail="": asked.append((text, detail)) or True
     assert page.choose_map("target", EZD3)
-    assert "3 hand-set reverse cable(s) will be lost" in asked[0]  # подтверждение говорит о потере
+    assert asked[0][0].endswith("; they are kept. Change the target map?")
+    assert asked[0][1] == ("Problems with the rules are highlighted in the editor.\n"
+                           "Hand-made changes in the reverse (←) direction will be reset: 3 note(s). "
+                           "Ctrl+Z brings them back.")  # подтверждение говорит о потере
     assert page.work.reverse_overrides == {}  # снова вычисляются из прямых
     assert page.undo()
     assert page.work.reverse_overrides == manual and page.work.target_map.name == "Superior Drummer 3"
     assert page.redo() and page.work.reverse_overrides == {}
     assert page.choose_map("target", None)
-    assert "hand-set" not in asked[1]  # ручных нет — и не говорим
+    assert asked[1][1] == "Problems with the rules are highlighted in the editor."  # ручных нет — и не говорим
 
 
 def test_convert_direction_toggle(app, storage, tmp_path):
@@ -1600,7 +1591,7 @@ def test_reverse_uses_forward_layout(window, app):
     from remap.ui.cable_view import _Bundle
 
     def geometry(ed):
-        lx, rx, col2, col3 = ed._scene_columns(ed.view.width_px(cable_view.SCENE_MIN))
+        lx, rx, col2, col3 = ed._scene_columns()
         assert all(i.rect.right() <= lx + col2 + 0.5 for i in ed.scene_rows)  # «from» — слева
         assert all(i.rect.left() == rx and i.rect.width() == col3 for i in ed.target_items.values())
         assert {i.port for i in ed.scene_rows if i.port} == {"right"}
@@ -1617,7 +1608,7 @@ def test_reverse_uses_forward_layout(window, app):
     w = page.work
     c = geometry(ed)
     assert c.pen().color().name().upper() == theme.CABLE.upper()  # обычный кабель — CABLE (#82BC98)
-    assert ed.from_head.indexOf(page.from_btn) >= 0 and page.from_btn.text() == w.source_map.name
+    assert page.from_btn is page.strip.from_btn and page.from_btn.text() == w.source_map.name
     assert page.to_btn.text() == w.target_map.name and page.source_btn is page.from_btn
 
     page.set_direction(REVERSE)
@@ -1637,33 +1628,32 @@ def test_reverse_uses_forward_layout(window, app):
     assert page.from_btn.text() == w.target_map.name and page.to_btn.text() == w.source_map.name
     assert page.target_btn is page.from_btn and page.source_btn is page.to_btn
     assert "Target map" in page.from_btn.toolTip() and "Source map" in page.to_btn.toolTip()
+    assert page.from_btn.caption == "TARGET" and page.to_btn.caption == "SOURCE"  # подписи полей меняются вместе с картами
     assert page._side_of(page.from_btn) == "target"
 
 
-def test_suggestion_bar_over_to_column_yields_to_map_button(window, app):
-    from remap.ui.profiles_page import MAP_BTN_MIN
+def test_suggestion_bar_and_status_sit_in_the_bottom_band(window, app):
+    """TEMP: панель подсказок и статус — в нижней полосе под экранами (y 770–800), экраны не сдвигаются."""
     page = window.profiles_page
-    wide = (2400, 900)  # offscreen без системных шрифтов текст шире обычного — с запасом
-    window.resize(*wide)
+    window.resize(900, 800)
     window.show()
     new_profile(page)  # обе карты — подсказки и панель
     app.processEvents()
     ed = page.cables
-    assert page.suggest_bar.isVisibleTo(page) and ed.to_head.indexOf(page.suggest_bar) >= 0
-    assert page.suggest_label.isVisibleTo(page) and page.suggest_label.text().endswith("matches")
-    window.resize(900, 700)  # узкая колонка «to»: остаются Apply и ✕, кнопка карты не сжимается в ноль
-    app.processEvents()
-    assert not page.suggest_label.isVisibleTo(page) and page.apply_btn.isVisibleTo(page)
-    assert page.to_btn.width() >= MAP_BTN_MIN and "matches" in page.suggest_bar.toolTip()
-    window.resize(*wide)
-    app.processEvents()
-    assert page.suggest_label.isVisibleTo(page)
+    assert page.suggest_bar.isVisibleTo(page) and page.suggest_label.isVisibleTo(page)
+    assert page.suggest_label.text().endswith("matches") and "matches" in page.suggest_bar.toolTip()
+    screens_bottom = ed.pool_screen.parentWidget().mapTo(window, QPoint(0, 0)).y() + ed.pool_screen.parentWidget().height()
+    for w in (page.suggest_bar, page.status):
+        top = w.mapTo(window, QPoint(0, 0)).y()
+        assert top >= screens_bottom - 1 and top + w.height() <= window.height()
+    assert page.suggest_bar.mapTo(window, QPoint(0, 0)).x() >= 40
+    assert page.status.mapTo(window, QPoint(page.status.width(), 0)).x() <= 860  # между винтами
 
 
 def test_empty_from_column_shows_hint(window, app):
     from remap.core.profile import FORWARD, REVERSE
     page, ed = cables_page(window, accept=False)
-    lx, _rx, col2, _col3 = ed._scene_columns(ed.view.width_px(cable_view.SCENE_MIN))
+    lx, _rx, col2, _col3 = ed._scene_columns()
     assert ed.current.scene.source_rows == []
     assert ed.view.hint == (lx, col2, "Drag notes from Unassigned onto the target map")
     page.set_direction(REVERSE)
@@ -1687,14 +1677,14 @@ def test_direction_button_flips_and_is_not_an_undo_step(window, app):
     btn = page.direction_btn
     assert not btn.isEnabled() and btn.toolTip() == ""  # профиля нет
     new_profile(page, "Bare", None, None)
-    assert btn.toolTip() == "Swap source and target"
+    assert "Swap source and target" in btn.toolTip()
     page, ed = cables_page(window)
-    assert btn.isEnabled() and btn.text() == "⇄" and btn.property("dir") == FORWARD
+    assert btn.isEnabled() and btn.icon_name == "swap" and btn.property("dir") == FORWARD
     steps = len(page._undo)
     btn.click()
     assert page.direction == REVERSE and ed.direction == REVERSE and len(page._undo) == steps and not page.redo()
-    assert btn.text() == "⇄" and btn.property("dir") == REVERSE  # направление видно цветом ←
-    assert btn.toolTip() == "Swap source and target"
+    assert btn.icon_name == "swap" and btn.property("dir") == REVERSE  # цветом направления не различаем
+    assert "Swap source and target" in btn.toolTip()
     page.toggle_strike([ed.pool_rows[0].notes[0]])  # правка в ←
     btn.click()
     assert page.direction == FORWARD and btn.property("dir") == FORWARD
@@ -2300,8 +2290,7 @@ def test_status_fades_after_last_message(window, app):
 def test_undo_redo_hotkeys_work_with_focus_anywhere_on_profiles(window, app):
     from PySide6.QtGui import QKeySequence
     page, _ed = cables_page(window, accept=False)
-    assert "Ctrl+Z" in page.revert_btn.toolTip() and "Ctrl+Y" in page.revert_btn.toolTip()
-    assert "Ctrl+Shift+Z" in page.revert_btn.toolTip()
+    assert not hasattr(page, "revert_btn")  # Revert убран: Ctrl+Z и вопрос при уходе заменяют его
     n = min(page.work.source_map.names)
     page.toggle_strike([n])
     window.activateWindow()
@@ -2386,3 +2375,72 @@ def test_suggested_cable_is_dashed_cable_colour(window, app):
         pen = dashed[0].pen()
         assert pen.style() == Qt.PenStyle.CustomDashLine and pen.color().name().upper() == theme.CABLE.upper()
         assert pen.color().alphaF() == pytest.approx(cable_view.SUGGESTED, abs=0.01)
+
+
+def hand_tip_setup(window):
+    """Страница в ←; ручные правки: одна нота нарисована, одна снята, в пачке алиасов — ручная только одна."""
+    from remap.core.profile import REVERSE
+    page, ed = cables_page(window)
+    page.set_direction(REVERSE)
+    ed = page.cables
+    rows = ed.current.scene.source_rows
+    cabled = [r for r in rows if r.connected and len(r.notes) == 1]
+    bundle = next(r for r in rows if r.connected and len(r.notes) > 1)
+    drawn, gone = cabled[0].note, cabled[1].note
+    part = bundle.notes[1]
+    page.work.reverse_overrides = {drawn: Rule.map_to(drawn), gone: None, part: page.work.effective_reverse()[part]}
+    ed.refresh()
+    return page, ed, drawn, gone, bundle, part
+
+
+def test_reverse_tooltips_mark_hand_set_notes(window, app):
+    from remap.ui.cable_view import HAND_REMOVED_TIP, HAND_SET_TIP
+    _page, ed, drawn, gone, bundle, part = hand_tip_setup(window)
+    assert HAND_SET_TIP in ed.source_items[drawn].toolTip()
+    cable = next(c for c in ed.cable_items if drawn in c.cable.notes)
+    assert HAND_SET_TIP in cable.toolTip()
+    assert HAND_REMOVED_TIP in ed.pool_items[gone].toolTip() and HAND_SET_TIP not in ed.pool_items[gone].toolTip()
+    # пачка алиасов: названы только ручные ноты
+    tip = ed.source_items[bundle.note].toolTip()
+    assert f"Set by hand ({part}): forward changes don't affect them" in tip
+    cable = next(c for c in ed.cable_items if part in c.cable.notes)
+    assert f"Set by hand ({part}): forward changes don't affect them" in cable.toolTip()
+    other = next(r for r in ed.current.scene.source_rows if r.connected and r.note not in (drawn, bundle.note))
+    assert "by hand" not in ed.source_items[other.note].toolTip()
+
+
+def test_forward_tooltips_ignore_hand_set_notes(window, app):
+    from remap.core.profile import FORWARD
+    page, ed, *_ = hand_tip_setup(window)
+    page.set_direction(FORWARD)
+    assert all("by hand" not in i.toolTip() for i in [*ed.source_items.values(), *ed.cable_items])
+
+
+def test_map_change_text_without_rules_and_hand_set(window, app):
+    page = window.profiles_page
+    new_profile(page, source=None, target=None)
+    asked = []
+    page.confirm = lambda title, text, detail="": asked.append((title, text, detail)) or True
+    assert page.choose_map("source", EZD3) and not asked  # ни правил, ни ручных — не спрашиваем
+    page.work.reverse_overrides = {36: None}
+    assert page.choose_map("source", SD3)
+    detail = ("Problems with the rules are highlighted in the editor.\n"
+              "Hand-made changes in the reverse (←) direction will be reset: 1 note(s). "
+              "Ctrl+Z brings them back.")
+    assert asked == [("Change source map", "Change the source map?", detail)]
+
+
+def test_shell_header_follows_the_mockup(window, app):
+    """Окно 900×800; шапка: слот логотипа 144×22, разделитель и шелкография слева, три клавиши TAB 118×36 справа."""
+    from remap.ui.metal import Screw
+    from remap.ui.shell import BrandBlock
+    window.resize(900, 800)
+    window.show()
+    app.processEvents()
+    brand = window.centralWidget().findChild(BrandBlock)
+    assert brand.mapTo(window, QPoint(0, 0)).x() == 40 and brand.sizeHint().width() > 144 + 2 * 14
+    faces = [k.face_rect().translated(k.mapTo(window, QPoint(0, 0)))
+             for k in (window.nav_convert, window.nav_profiles, window.nav_maps)]
+    assert all(f.size().toTuple() == (118, 36) and f.top() == 14 for f in faces)  # по центру шапки 64
+    assert faces[2].right() == 900 - 40 and faces[1].left() - faces[0].right() == 8
+    assert len(window.centralWidget().findChildren(Screw)) == 4  # винты корпуса

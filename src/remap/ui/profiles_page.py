@@ -31,10 +31,10 @@ from __future__ import annotations
 import copy
 import functools
 
-from PySide6.QtCore import QEvent, QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QComboBox, QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QHeaderView, QInputDialog,
+    QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QHeaderView, QInputDialog,
     QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout,
     QWidget,
 )
@@ -49,7 +49,8 @@ from ..storage import Storage, id_taken
 from ..templates import list_map_templates, load_map_template
 from .cable_view import CableEditor
 from .maps_page import TEMPLATE, USER, MapRef, wrapped_tooltip
-from .combo import ComboBox
+from .profile_strip import MapCombo, ProfileStrip
+from .tips import tip
 from .settings import ui_settings
 from . import theme
 from .theme import repolish
@@ -60,10 +61,8 @@ ID_ROLE = Qt.ItemDataRole.UserRole           # ID профиля в хранил
 NAME_ROLE = Qt.ItemDataRole.UserRole + 3     # имя профиля без пометки «•»
 
 UNDO_LIMIT = 200
-UNDO_KEYS, REDO_KEYS = ("Ctrl+Z",), ("Ctrl+Y", "Ctrl+Shift+Z")
-UNDO_TIP = "Undo: Ctrl+Z · Redo: Ctrl+Y or Ctrl+Shift+Z"
+UNDO_KEYS, REDO_KEYS, SAVE_KEYS = ("Ctrl+Z",), ("Ctrl+Y", "Ctrl+Shift+Z"), ("Ctrl+S",)
 STATUS_MS, STATUS_FADE_MS = 4000, 600  # статус гаснет через ~4 с после последнего сообщения
-DIRECTION_W = 44  # кнопка направления между картами, px
 MATCH_TIP = ("Connect every unassigned note to the same number in the other map, if it is there\n"
              "(struck-through and connected notes are left alone; one undo step)")
 
@@ -77,9 +76,6 @@ DISMISS_TIP = "Hide the suggestions for these maps"
 
 DIRECTION_SIDES = {FORWARD: "source", REVERSE: "target"}  # карта исходной стороны направления
 SWAP_TEXT, SWAP_TIP = "⇄", "Swap source and target"  # кнопка направления (здесь и на Convert); ← — цвет reverse
-MAP_BTN_MIN = 130  # кнопка выбора карты над колонкой не уже, px
-MAP_BTN_PAD = 48   # поля и стрелка меню кнопки выбора карты, px (сверх ширины текста)
-COMBO_CHARS = 30  # ширина комбобокса профилей — в символах (строка заголовка от него не прыгает)
 
 
 def _undoable(fn):
@@ -215,20 +211,50 @@ class ProfilesPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(0, 10, 0, 0)
-        root.setSpacing(8)
+        root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 0)
+        root.setSpacing(0)
 
-        # верхняя строка: [профиль ▾] [New] [Duplicate] [Rename] [Delete] … статус [Revert] [Save]
-        self.combo = ComboBox()
-        self.combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        self.combo.setMinimumContentsLength(COMBO_CHARS)
+        # полоса профиля: [профиль ▾] […] [сохранить] | [SOURCE ▾] [⇄] [TARGET ▾]
+        self.strip = ProfileStrip()
+        self.combo = self.strip.combo
         self.combo.currentIndexChanged.connect(self._on_combo_changed)
-        self.new_btn, self.duplicate_btn, self.rename_btn, self.delete_btn = (
-            self._button(text, tip, slot) for text, tip, slot in (
-                ("New", "Create an empty profile", self.new_profile),
-                ("Duplicate", "Copy this profile under a new name", self.duplicate),
-                ("Rename", "Rename this profile", self.rename),
-                ("Delete", "Delete this profile", self.delete)))
+        self.save_btn = self.strip.save_btn
+        self.save_btn.setToolTip(tip("Save the profile (Ctrl+S)"))
+        self.save_btn.clicked.connect(lambda _=False: self.save())
+        self.actions_menu = QMenu(self)
+        self.new_action, self.duplicate_action, self.rename_action, self.delete_action = (
+            self.actions_menu.addAction(text, slot) for text, slot in (
+                ("New", self.new_profile), ("Duplicate", self.duplicate), ("Rename", self.rename),
+                ("Delete", self.delete)))
+        self.strip.set_actions_menu(self.actions_menu)
+        self.strip.dots_btn.setToolTip(tip("New / Duplicate / Rename / Delete"))
+        self.from_btn, self.to_btn = self.strip.from_btn, self.strip.to_btn
+        self.direction_btn = self.strip.direction_btn
+        self.direction_btn.clicked.connect(lambda _=False: self.toggle_direction())
+        # карты: слева в полосе — карта стороны источника направления, справа — цели (в ← — наоборот: поля остаются
+        # на местах, меняется карта, которую они выбирают — source_btn/target_btn)
+        for btn in (self.from_btn, self.to_btn):
+            menu = QMenu(btn)
+            menu.aboutToShow.connect(lambda m=menu, b=btn: self._fill_map_menu(m, self._side_of(b)))
+            btn.setMenu(menu)
+        root.addWidget(self.strip)
+        root.addSpacing(theme.STRIP_GAP)
+
+        self.cables = CableEditor()
+        self.cables.connect_requested.connect(self.connect_to)
+        self.cables.group_drop_requested.connect(self.group_drop)
+        self.cables.disconnect_requested.connect(self.clear_rules)
+        self.cables.strike_requested.connect(self.toggle_strike)
+        self.cables.write_to_requested.connect(self.set_write_to)
+        self.cables.same_number_requested.connect(self.connect_same_number)
+        self.cables.note_drop_requested.connect(self.assign_note)
+        root.addWidget(self.cables, stretch=1)
+
+        self.match_btn = self.cables.match_btn
+        self.match_btn.setToolTip(tip(MATCH_TIP))
+        self.match_btn.clicked.connect(lambda _=False: self.match_by_number())
+
+        # TEMP: placement undecided — статус и панель подсказок временно в нижней полосе под экранами (между винтами)
         self.status = QLabel()
         self.status.setObjectName("status")
         self.status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -243,54 +269,7 @@ class ProfilesPage(QWidget):
         self._status_timer.setSingleShot(True)
         self._status_timer.setInterval(STATUS_MS)
         self._status_timer.timeout.connect(self._status_fade.start)
-        self.revert_btn = self._button("Revert", f"Discard unsaved changes\n{UNDO_TIP}", self.revert)
-        self.save_btn = self._button("Save", "Save the profile", self.save)
-        self.save_btn.setObjectName("primary")
-        head = QHBoxLayout()
-        head.setContentsMargins(0, 0, 0, 0)
-        head.setSpacing(6)
-        for w in (self.combo, self.new_btn, self.duplicate_btn, self.rename_btn, self.delete_btn):
-            head.addWidget(w)
-        head.addSpacing(16)
-        head.addWidget(self.status, stretch=1)
-        head.addSpacing(10)
-        head.addWidget(self.revert_btn)
-        head.addWidget(self.save_btn)
-        root.addLayout(head)
-        self.header_controls = (self.combo, self.new_btn, self.duplicate_btn, self.rename_btn, self.delete_btn,
-                                self.revert_btn, self.save_btn)
-
-        self.cables = CableEditor(self.settings)
-        self.cables.connect_requested.connect(self.connect_to)
-        self.cables.group_drop_requested.connect(self.group_drop)
-        self.cables.disconnect_requested.connect(self.clear_rules)
-        self.cables.strike_requested.connect(self.toggle_strike)
-        self.cables.write_to_requested.connect(self.set_write_to)
-        self.cables.same_number_requested.connect(self.connect_same_number)
-        self.cables.note_drop_requested.connect(self.assign_note)
-        root.addWidget(self.cables, stretch=1)
-
-        # строка над колонками: «Unassigned» + Match by number | [карта «from» ▾] [⇄] [карта «to» ▾]
-        self.match_btn = self._button("Match by number", MATCH_TIP, self.match_by_number)
-        self.match_btn.setObjectName("link")
-        self.cables.pool_head.addWidget(self.match_btn)
-        self.direction_btn = self._button("", "", self.toggle_direction)
-        self.direction_btn.setObjectName("direction")
-        self.cables.gap_head.addWidget(self.direction_btn, alignment=Qt.AlignmentFlag.AlignCenter)
-
-        # над колонками сцены — карты: над «from» — карта стороны источника направления, над «to» — цели
-        # (в ← — наоборот: кнопки остаются на местах, меняется карта, которую они выбирают — source_btn/target_btn)
-        self.from_btn = QPushButton()
-        self.to_btn = QPushButton()
-        for btn, head_box in ((self.from_btn, self.cables.from_head), (self.to_btn, self.cables.to_head)):
-            menu = QMenu(btn)
-            menu.aboutToShow.connect(lambda m=menu, b=btn: self._fill_map_menu(m, self._side_of(b)))
-            btn.setMenu(menu)
-            btn.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
-            btn.setMinimumWidth(MAP_BTN_MIN)  # узкая колонка: сначала сжимается «N matches» панели подсказок
-            head_box.addWidget(btn, stretch=1)
-
-        # над колонкой «to», справа от карты — панель подсказок «N matches · Apply · ✕» (не диалог, ничего не блокирует)
+        # панель подсказок «N matches · Apply · ✕» (не диалог, ничего не блокирует)
         self.suggest_bar = QFrame()
         self.suggest_bar.setObjectName("suggestBar")
         self.suggest_label = QLabel()
@@ -310,47 +289,34 @@ class ProfilesPage(QWidget):
         bar.addWidget(self.suggest_dot)
         bar.addWidget(self.apply_btn)
         bar.addWidget(self.dismiss_btn)
-        self.cables.to_head.addWidget(self.suggest_bar)
-        self.cables.to_slot.installEventFilter(self)  # ширина колонки «to» — уместить панель подсказок
+        band = QWidget()
+        band.setFixedHeight(theme.BAND_H)
+        band_box = QHBoxLayout(band)
+        band_box.setContentsMargins(8, 0, 8, 0)
+        band_box.setSpacing(16)
+        band_box.addWidget(self.suggest_bar)
+        band_box.addWidget(self.status, stretch=1)
+        root.addWidget(band)
 
-        # отмена/повтор — на всё окно, пока видна вкладка Profiles (фокус может быть где угодно: комбобокс, кнопки,
-        # вкладки); на других вкладках выключены (showEvent / hideEvent)
+        # отмена/повтор и сохранение — на всё окно, пока видна вкладка Profiles (фокус может быть где угодно:
+        # комбобокс, кнопки, вкладки); на других вкладках выключены (showEvent / hideEvent)
         self._shortcuts = [QShortcut(QKeySequence(k), self, activated=slot, context=Qt.ShortcutContext.WindowShortcut)
-                           for keys, slot in ((UNDO_KEYS, self.undo), (REDO_KEYS, self.redo)) for k in keys]
+                           for keys, slot in ((UNDO_KEYS, self.undo), (REDO_KEYS, self.redo),
+                                              (SAVE_KEYS, self._save_if_dirty)) for k in keys]
 
-    def _button(self, text: str, tip: str, slot) -> QPushButton:
-        btn = QPushButton(text)
-        btn.setToolTip(tip)
-        btn.clicked.connect(lambda _=False: slot())
-        return btn
-
-    def eventFilter(self, obj, event) -> bool:
-        if obj is self.cables.to_slot and event.type() == QEvent.Type.Resize:
-            self._fit_suggest_bar()
-        return False
+    def _save_if_dirty(self) -> None:
+        if self.save_btn.isEnabled():
+            self.save()
 
     def showEvent(self, event) -> None:
         super().showEvent(event)
         for sc in self._shortcuts:
             sc.setEnabled(True)
-        self._fit_header()
 
     def hideEvent(self, event) -> None:
         super().hideEvent(event)
         for sc in self._shortcuts:
             sc.setEnabled(False)
-
-    def _fit_header(self) -> None:
-        """Контролы верхней строки — одной высоты (по самому высокому); кнопка направления — по высоте кнопок
-        карт. Считается при показе: размеры зависят от стиля окна, а при создании страницы он ещё не применён."""
-        for w in self.header_controls:
-            w.setMinimumHeight(0)
-            w.setMaximumHeight(16777215)
-            w.ensurePolished()
-        height = max(w.sizeHint().height() for w in self.header_controls)
-        for w in self.header_controls:
-            w.setFixedHeight(height)
-        self.direction_btn.setFixedSize(DIRECTION_W, self.from_btn.sizeHint().height())
 
     # --- диалоги (тесты подменяют эти методы) ---
 
@@ -605,19 +571,20 @@ class ProfilesPage(QWidget):
 
     def _show_direction(self, direction: str) -> None:
         self.direction = direction
-        self.direction_btn.setText(SWAP_TEXT)
+        self.from_btn.set_caption("SOURCE" if direction == FORWARD else "TARGET")  # поля на местах, карты — наоборот
+        self.to_btn.set_caption("TARGET" if direction == FORWARD else "SOURCE")
         repolish(self.direction_btn, "dir", direction)  # направление цветом не различаем: свойство dir остаётся для тестов и подсказок
 
     @property
-    def source_btn(self) -> QPushButton:
+    def source_btn(self) -> MapCombo:
         """Кнопка выбора исходной карты: над колонкой «from» в →, над «to» в ←."""
         return self.from_btn if self.direction == FORWARD else self.to_btn
 
     @property
-    def target_btn(self) -> QPushButton:
+    def target_btn(self) -> MapCombo:
         return self.to_btn if self.direction == FORWARD else self.from_btn
 
-    def _side_of(self, btn: QPushButton) -> str:
+    def _side_of(self, btn: MapCombo) -> str:
         return SOURCE if btn is self.source_btn else TARGET
 
     def _oriented(self) -> RemapProfile:
@@ -637,7 +604,7 @@ class ProfilesPage(QWidget):
     def _update_direction(self) -> None:
         """Кнопка направления «⇄»: есть профиль — активна (карты сторон видны над колонками)."""
         self.direction_btn.setEnabled(self.work is not None)
-        self.direction_btn.setToolTip(SWAP_TIP if self.work is not None else "")
+        self.direction_btn.setToolTip(tip(SWAP_TIP) if self.work is not None else "")
 
     @_undoable
     def save(self) -> bool:
@@ -681,15 +648,15 @@ class ProfilesPage(QWidget):
             self.dirty_changed.emit(dirty)
         self._mark_dirty_item()
         self.save_btn.setEnabled(dirty)
-        self.revert_btn.setEnabled(dirty)
-        for btn in (self.duplicate_btn, self.rename_btn, self.delete_btn, self.match_btn):
-            btn.setEnabled(has)
+        for action in (self.duplicate_action, self.rename_action, self.delete_action):
+            action.setEnabled(has)
+        self.match_btn.setEnabled(has)
         for btn in (self.from_btn, self.to_btn):
             btn.setEnabled(has)
         self._update_suggest_bar()
         self._update_direction()
-        self.source_btn.setToolTip(SOURCE_TIP)
-        self.target_btn.setToolTip(TARGET_TIP)
+        self.source_btn.setToolTip(tip(SOURCE_TIP))
+        self.target_btn.setToolTip(tip(TARGET_TIP))
         self.source_btn.setText(map_summary(self.work.source_map) if has else "—")
         self.target_btn.setText(map_summary(self.work.target_map) if has else "—")
 
@@ -741,19 +708,6 @@ class ProfilesPage(QWidget):
         self.suggest_bar.setToolTip(tip)
         self.apply_btn.setEnabled(ready > 0)
         self.apply_btn.setToolTip(f"Connect {ready} note{'' if ready == 1 else 's'} (one undo step)")
-        self._fit_suggest_bar()
-
-    def _fit_suggest_bar(self) -> None:
-        """Над узкой колонкой «to» «N matches ·» не помещается рядом с кнопкой карты — остаются Apply и ✕
-        (число — в подсказке панели)."""
-        for w in (self.suggest_label, self.suggest_dot):
-            w.setVisible(True)
-        self.suggest_bar.layout().invalidate()
-        btn = max(MAP_BTN_MIN, self.to_btn.fontMetrics().horizontalAdvance(self.to_btn.text()) + MAP_BTN_PAD)
-        room = self.cables.to_slot.width() - btn - self.cables.to_head.spacing()
-        fits = self.suggest_bar.sizeHint().width() <= room
-        for w in (self.suggest_label, self.suggest_dot):
-            w.setVisible(fits)
 
     @_undoable
     def apply_suggestions(self) -> int:
@@ -811,11 +765,14 @@ class ProfilesPage(QWidget):
                 return False
             m = duplicate_map(m, m.name, from_template=ref.read_only)  # meta копируется, source сохраняется
         what = "source" if side == SOURCE else "target"
-        hand_set = len(self.work.reverse_overrides)
-        if (self.work.rules or hand_set) and not self.confirm(
-                f"Change {what} map", f"The profile has {len(self.work.rules)} rule(s). Change the {what} map?",
-                "The rules are kept. Problems with them are highlighted in the editor."
-                + (f"\n{hand_set} hand-set reverse cable(s) will be lost." if hand_set else "")):
+        hand_set = len(self.work.reverse_overrides)  # и нарисованные вручную кабели, и снятые вручную
+        rules = len(self.work.rules)
+        text = f"The profile has {rules} rule(s); they are kept. Change the {what} map?" if rules else f"Change the {what} map?"
+        detail = "Problems with the rules are highlighted in the editor."
+        if hand_set:
+            detail += (f"\nHand-made changes in the reverse (←) direction will be reset: {hand_set} note(s)."
+                       " Ctrl+Z brings them back.")
+        if (rules or hand_set) and not self.confirm(f"Change {what} map", text, detail):
             return False
         if side == SOURCE:
             self.work.source_map = m

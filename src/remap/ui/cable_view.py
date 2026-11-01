@@ -1,10 +1,11 @@
 """Вид профиля «кабелями»: показ и правка перетаскиванием кабелей.
 
-Колонки (QSplitter): пул — отдельная QGraphicsView со своей прокруткой (неподключённые ноты по группам
-инструментов, зачёркнутые — delete — в своей группе); сцена — вторая QGraphicsView: колонка «from» (подключённые
-ноты), промежуток для кабелей и колонка «to» (карта цели) — одна общая прокрутка, кабели внутри сцены. Над пулом —
-заголовок «Unassigned» (не группа, не сворачивается), над сценой — слоты from_head / to_head, выровненные по
-колонкам и следующие за их границами; их заполняет страница (выбор карт, панель подсказок). Поверх всего —
+Два экрана рядом (`Screen` в утопленных блоках 260 и 564 px, ширины и колонки сцены 200 / 122 / 200 фиксированы):
+пул — отдельная QGraphicsView со своей прокруткой (неподключённые ноты по группам инструментов, зачёркнутые — delete —
+в своей группе); сцена — вторая QGraphicsView: колонка «from» (подключённые ноты), промежуток для кабелей и колонка
+«to» (карта цели) — одна общая прокрутка, кабели внутри сцены. Над пулом, внутри экрана, — заголовок «Unassigned»
+(не группа, не сворачивается) и кнопка «Match by number». Views стоят в экранах с запасом PAD вокруг содержимого, чтобы
+плашки лежали на сетке макета (поля экрана 14 + рамка). Поверх всего —
 прозрачный для мыши слой CableOverlay: на нём рисуется кабель-превью от исходных строк к курсору через границу пула
 и сцены. Пустая колонка «from» — подсказка по центру (EMPTY_HINT).
 
@@ -35,9 +36,7 @@ write_to_requested) — правила меняет ядро (core/profile.py) �
 Строка цели показывает номера, на которые идут кабели (TargetRow.lines); Write to — цветом акцента.
 
 Подсказки (set_suggestions) — пунктирные кабели (на мышь не реагируют), у строки-подсказки — кольцо вместо точки.
-Границы колонок сцены (правый край «from», края «to») тянутся мышью (зона — со стороны промежутка),
-граница пула — QSplitter; ширины — в QSettings (ширина пула в px, колонки — доли ширины сцены). Имя или подпись
-не помещается — полностью в подсказке.
+Имя или подпись не помещается — полностью в подсказке.
 
 После каждой правки — refresh(): раскладка строится заново (порядок не замораживается: снятая с кабеля нота
 сразу в своей группе пула). Чтобы вид не прыгал, прокрутка каждой колонки держится за якорь — строку под курсором
@@ -50,11 +49,10 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, QSettings, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPainterPathStroker, QPen
 from PySide6.QtWidgets import (
-    QApplication, QGraphicsItem, QGraphicsPathItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QLabel, QMenu,
-    QSizePolicy, QSplitter, QVBoxLayout, QWidget,
+    QApplication, QGraphicsItem, QGraphicsPathItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QMenu, QFrame, QWidget,
 )
 
 from ..core.notemap import primary_note
@@ -65,6 +63,9 @@ from .cable_layout import (
     SourceRow, TargetRow, build_layout, initial_show_all, target_group_keys,
 )
 from . import plates, text, theme
+from .field import ScreenButton
+from .glass import Screen
+from .metal import RecessedBlock
 
 ROW = 28            # шаг строк, px (сама строка — ROW - 2 * ROW_INSET)
 ROW_INSET = 2
@@ -80,15 +81,7 @@ CABLE_HOVER_EXTRA = 1.0            # кабель под курсором — т
 CABLE_HIT = 16      # ширина зоны попадания по кабелю (по 8 px в стороны)
 DIMMED = 0.3        # прозрачность прочих кабелей, пока один под курсором
 SWIPE_W = 6         # росчерк: ширина полосы пути курсора и кабеля при проверке пересечения, px
-POOL_WIDTH = 310    # начальная ширина пула
-SCENE_MIN = 460     # минимальная ширина сцены, px
-MIN_COL, MIN_GAP = 140.0, 40.0  # минимальные ширины колонки и промежутка для кабелей
-GRIP = 6            # ширина зоны захвата границы колонок, px
 SUGGESTED = 0.7     # непрозрачность пунктирного кабеля подсказки
-# ключи QSettings: ширина пула (px) и доли ширины сцены колонок
-POOL_KEY, COLUMNS_KEY = "cables/unassigned_width", "cables/scene_columns"
-POOL_MIN = 200      # минимальная ширина пула
-HEAD_H = 34         # высота строки-заголовка над колонками
 
 SIDES = {FORWARD: ("source", "target"), REVERSE: ("target", "source")}  # карты сторон «from» и «to» направления
 
@@ -115,6 +108,10 @@ SAME_NUMBER_HINT = "Double-click to connect to the same number"
 NUMBER_DROP_HINT = "Drop on a number to connect to that note"
 ROW_HINT = "Drag onto a target to map · Ctrl/Shift+click to select several · Right-click to delete or restore"
 CONNECTED_HINT = "Drag onto another target to remap · Right-click to remove the cable"
+HAND_SET_TIP = "Set by hand: forward changes don't affect it"
+HAND_SET_SOME_TIP = "Set by hand ({notes}): forward changes don't affect them"
+HAND_REMOVED_TIP = "Removed by hand: forward changes won't bring it back"
+HAND_REMOVED_SOME_TIP = "Removed by hand ({notes}): forward changes won't bring them back"
 ALIAS_HINT = "Click the arrow to show the notes one by one"
 MIXED_HINT = "Notes with different rules are always shown one by one"
 POOL_TITLE = "Unassigned"
@@ -129,27 +126,6 @@ TARGET_GROUP_HINT = "Drop notes here to connect those with the same numbers"
 SUGGESTED_HINT = "Apply in the bar above, or drag onto another target"
 SUGGESTED_WRITE_TO_HINT = ("The target is on several notes: drag the row onto it to choose the Write to note. "
                            "Apply skips it")
-
-
-def _setting(settings: QSettings | None, key: str, default, kind):
-    """Значение из QSettings нужного типа; нет или битое — default."""
-    if settings is None:
-        return default
-    try:
-        value = settings.value(key)
-        return default if value is None else kind(value)
-    except (TypeError, ValueError):
-        return default
-
-
-def _load_columns(settings: QSettings | None) -> tuple[float, float, float] | None:
-    try:
-        parts = tuple(float(x) for x in _setting(settings, COLUMNS_KEY, "", str).split(","))
-    except ValueError:
-        return None
-    if len(parts) != 3 or any(f <= 0 for f in parts) or sum(parts) > 1.001:
-        return None
-    return parts
 
 
 def cable_path(a: QPointF, b: QPointF) -> QPainterPath:
@@ -466,7 +442,9 @@ class _ColumnView(QGraphicsView):
 
     def __init__(self, on_width_changed: Callable[[], None], parent=None) -> None:
         super().__init__(parent)
-        self.setObjectName("cables")
+        self.setFrameShape(QFrame.Shape.NoFrame)  # фон и рамка — экран за view
+        self.setBackgroundBrush(Qt.BrushStyle.NoBrush)
+        self.viewport().setAutoFillBackground(False)
         self.setScene(QGraphicsScene(self))
         self.setRenderHint(QPainter.RenderHint.Antialiasing)
         self.setRenderHint(QPainter.RenderHint.TextAntialiasing)
@@ -476,13 +454,7 @@ class _ColumnView(QGraphicsView):
         self.handler: CableEditor | None = None
         self._on_width_changed = on_width_changed
         self._width = 0
-        self.guide_x: float | None = None  # граница колонок под курсором или перетаскиваемая — тонкая линия
         self.hint: tuple[float, float, str] | None = None  # подсказка пустой колонки: x, ширина, текст
-
-    def set_guide(self, x: float | None) -> None:
-        if x != self.guide_x:
-            self.guide_x = x
-            self.viewport().update()
 
     def set_hint(self, hint: tuple[float, float, str] | None) -> None:
         if hint != self.hint:
@@ -490,9 +462,6 @@ class _ColumnView(QGraphicsView):
             self.viewport().update()
 
     def drawForeground(self, p: QPainter, rect: QRectF) -> None:
-        if self.guide_x is not None:
-            p.setPen(QPen(theme.qcolor(theme.ACCENT, 0.6), 1))
-            p.drawLine(QPointF(self.guide_x, rect.top()), QPointF(self.guide_x, rect.bottom()))
         if self.hint is not None:  # по центру видимой части колонки (не зависит от высоты сцены)
             x, width, text = self.hint
             visible = self.mapToScene(self.viewport().rect()).boundingRect()
@@ -501,8 +470,8 @@ class _ColumnView(QGraphicsView):
             p.drawText(QRectF(x, visible.top(), width, visible.height()),
                        Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, text)
 
-    def width_px(self, minimum: int) -> int:
-        return max(self.viewport().width(), minimum)
+    def width_px(self) -> int:
+        return self.viewport().width()
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)
@@ -537,11 +506,11 @@ class _ColumnView(QGraphicsView):
                 return
         super().keyPressEvent(event)
 
-    def begin(self, height_rows: int, minimum: int) -> float:
+    def begin(self, height_rows: int) -> float:
         """Очистить сцену (позиция прокрутки сохраняется в end()); вернуть ширину сцены."""
         self._scroll = self.verticalScrollBar().value()
         self.scene().clear()
-        width = self.width_px(minimum)
+        width = self.width_px()
         self.scene().setSceneRect(0, 0, width, height_rows * ROW + 2 * PAD)
         return width
 
@@ -631,23 +600,28 @@ class _ViewState:
     seen: set[str] = field(default_factory=set)       # группы цели, начальный режим которых уже задан
 
 
-def _row_box(widget: QWidget) -> QHBoxLayout:
-    box = QHBoxLayout(widget)
-    box.setContentsMargins(0, 0, 0, 0)
-    box.setSpacing(6)
-    return box
+POOL_HEAD_BELOW = 6  # padding-bottom заголовка пула
 
 
-def _column(head: QWidget, view: QGraphicsView) -> QWidget:
-    """Колонка сплиттера: строка-заголовок и view под ней."""
-    col = QWidget()
-    box = QVBoxLayout(col)
-    box.setContentsMargins(0, 0, 0, 0)
-    box.setSpacing(6)
-    head.setFixedHeight(HEAD_H)
-    box.addWidget(head)
-    box.addWidget(view, stretch=1)
-    return col
+class _PoolHeader(QWidget):
+    """Заголовок пула внутри экрана: «UNASSIGNED» акцентом слева, кнопка «Match by number» справа, линия под ними.
+    Размеры — из макета: отступ сверху 8 (поле экрана), строка 30 px, под ней 6 px и линия 1 px (padding-bottom)."""
+
+    def __init__(self, button: QWidget, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._spec = text.mono(theme.POOL_HEAD_FONT, QFont.Weight.DemiBold, theme.POOL_HEAD_SPACING)
+        self.setFixedHeight(PAD + theme.POOL_HEAD_H + POOL_HEAD_BELOW + 1)
+        box = QHBoxLayout(self)
+        box.setContentsMargins(PAD, PAD, PAD, POOL_HEAD_BELOW + 1)
+        box.setSpacing(0)
+        box.addStretch(1)
+        box.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        body = QRectF(PAD, PAD, self.width() - 2 * PAD, theme.POOL_HEAD_H)
+        text.draw_text(p, body, POOL_TITLE.upper(), self._spec, theme.ACCENT)
+        p.fillRect(QRectF(PAD, self.height() - 1, self.width() - 2 * PAD, 1), theme.qcolor(theme.SCREEN_DIVIDER))
 
 
 class CableEditor(QWidget):
@@ -661,39 +635,31 @@ class CableEditor(QWidget):
     same_number_requested = Signal(list)    # двойной клик по строке Unassigned: ноты — на те же номера
     note_drop_requested = Signal(list, int)  # drop на номер строки цели (или выбор в меню бейджа): ровно на ноту
 
-    def __init__(self, settings: QSettings | None = None, parent=None) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self.settings = settings  # ширины колонок между запусками
         self.pool = _ColumnView(self._draw_pool)
         self.view = _ColumnView(self._draw_scene)
         self.pool.handler = self.view.handler = self
-        # над пулом — заголовок колонки; над сценой — слоты, выровненные по колонкам «from» и «to» (_place_heads)
-        pool_head = QWidget()
-        pool_head.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)  # ширину пула задаёт не заголовок
-        self.pool_title = QLabel(POOL_TITLE)
-        self.pool_title.setObjectName("columnTitle")
-        self.pool_head = _row_box(pool_head)  # страница добавляет кнопки справа от заголовка
-        self.pool_head.addWidget(self.pool_title)
-        self.pool_head.addStretch(1)
-        self.scene_head = QWidget()
-        self.from_slot, self.gap_slot, self.to_slot = (QWidget(self.scene_head) for _ in range(3))
-        self.from_head, self.gap_head, self.to_head = (_row_box(w) for w in (self.from_slot, self.gap_slot,
-                                                                             self.to_slot))
-        self.splitter = QSplitter(Qt.Orientation.Horizontal)
-        self.splitter.setChildrenCollapsible(False)
-        self.splitter.setHandleWidth(8)
-        self.splitter.addWidget(_column(pool_head, self.pool))
-        self.splitter.addWidget(_column(self.scene_head, self.view))
-        self.splitter.setStretchFactor(0, 0)
-        self.splitter.setStretchFactor(1, 1)
-        # ширина пула в px; точно — при первом показе (до него QSplitter масштабирует её пропорционально)
-        self._pool_width: int | None = _setting(settings, POOL_KEY, POOL_WIDTH, int)
-        self.splitter.setSizes([self._pool_width, 800])
-        self.splitter.splitterMoved.connect(self._save_pool_width)
-        self.pool.setMinimumWidth(POOL_MIN)
-        box = QVBoxLayout(self)
+        # пул и сцена — экраны в утопленных блоках; view стоят с запасом PAD вокруг содержимого (см. docstring модуля)
+        self.match_btn = ScreenButton("Match by number")
+        self.pool_title = _PoolHeader(self.match_btn)
+        self.pool_screen, self.scene_screen = Screen(), Screen()
+        for screen, head, view in ((self.pool_screen, self.pool_title, self.pool),
+                                   (self.scene_screen, None, self.view)):
+            screen.body.setContentsMargins(*[theme.SCREEN_PAD + 1 - PAD] * 4)
+            if head is not None:
+                head.setParent(screen)
+                screen.body.addWidget(head)
+            screen.body.addWidget(view, stretch=1)
+            screen.attach(view)
+        box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
-        box.addWidget(self.splitter)
+        box.setSpacing(theme.SCREEN_GAP)
+        for screen, width in ((self.pool_screen, theme.POOL_W), (self.scene_screen, theme.SCENE_W)):
+            block = RecessedBlock()
+            block.body.addWidget(screen)
+            block.setFixedWidth(width)
+            box.addWidget(block)
         self.overlay = CableOverlay(self)
 
         self.profile: RemapProfile | None = None  # рабочая копия страницы (настоящий профиль)
@@ -703,10 +669,6 @@ class CableEditor(QWidget):
         self.selection: set[int] = set()                   # выделенные ноты (строки пула и колонки «from»)
         self.suggested: dict[int, str] = {}                # подсказки: нота без правила -> артикуляция цели
         self.current: CableLayout | None = None  # последняя построенная раскладка
-        # доли ширины сцены: колонка «from», промежуток для кабелей, колонка «to» (None — по умолчанию от ширины)
-        self.columns: tuple[float, float, float] | None = _load_columns(settings)
-        # тащат границу колонок: индекс, ширины (px) и x мыши в начале
-        self._resize: tuple[int, tuple[float, float, float], float] | None = None
         self.cable_items: list[_CableItem] = []
         self.suggestion_items: list[_CableItem] = []             # пунктирные кабели подсказок
         self.pool_items: dict[int, _Row] = {}                    # нота -> строка пула (у алиасов — общая)
@@ -735,19 +697,6 @@ class CableEditor(QWidget):
         super().resizeEvent(event)
         self.overlay.setGeometry(self.rect())
         self.overlay.raise_()
-        self._apply_pool_width()
-
-    def showEvent(self, event) -> None:
-        super().showEvent(event)
-        self._apply_pool_width()
-
-    def _apply_pool_width(self) -> None:
-        """Сохранённая ширина пула — один раз, когда вид впервые показан с настоящей шириной."""
-        if self._pool_width is None or not self.isVisible():
-            return
-        width, self._pool_width = self._pool_width, None
-        total = sum(self.splitter.sizes())
-        self.splitter.setSizes([width, max(SCENE_MIN, total - width)])
 
     # --- направление ---
 
@@ -917,11 +866,6 @@ class CableEditor(QWidget):
         """Нажатие в одной из view. True — обработано здесь (элементам сцены не передавать).
         Нажатие на кабель левой кнопкой ничего не делает (не перетаскивание и не смена выделения)."""
         pos = event.position()
-        if event.button() == Qt.MouseButton.LeftButton and self._drag is None:
-            edge = self._boundary_at(view, pos.x())
-            if edge is not None:
-                self._resize = (edge, self._column_px(view.width_px(SCENE_MIN)), pos.x())
-                return True
         item = self._item_at(view, pos.toPoint())
         if event.button() == Qt.MouseButton.RightButton:
             if view is self.view and self._drag is None:  # в сцене: клик или росчерк — решит сдвиг
@@ -994,16 +938,6 @@ class CableEditor(QWidget):
             if view is self.view and event.buttons() & Qt.MouseButton.RightButton:
                 self._swipe_to(pos)
             return True
-        if self._resize is not None:
-            self._resize_to(pos.x())
-            return True
-        if self._drag is None and self._press is None and view is self.view:
-            edge = self._boundary_at(view, pos.x())
-            view.set_guide(None if edge is None else self._boundaries(view.width_px(SCENE_MIN))[edge])
-            if edge is not None:
-                view.viewport().setCursor(Qt.CursorShape.SplitHCursor)
-            else:
-                view.viewport().unsetCursor()
         if self._drag is not None:
             self.drag_to(QPointF(view.viewport().mapTo(self, pos.toPoint())))
             return True
@@ -1025,11 +959,6 @@ class CableEditor(QWidget):
             return True
         if event.button() != Qt.MouseButton.LeftButton:
             return self._drag is not None
-        if self._resize is not None:
-            self._resize = None
-            self.view.set_guide(None)
-            self._save_columns()
-            return True
         if self._drag is not None:
             self.end_drag(drop=True)
             return True
@@ -1407,7 +1336,7 @@ class CableEditor(QWidget):
             self.pool.scene().clear()
             return
         view = self.pool
-        width = view.begin(lay.pool.height, POOL_MIN)
+        width = view.begin(lay.pool.height)
         col = width - 2 * PAD
         scene = view.scene()
         for h in lay.pool.headers:
@@ -1434,76 +1363,12 @@ class CableEditor(QWidget):
             for n in item.notes:
                 by_note[n] = item
 
-    # --- ширины колонок сцены ---
+    # --- колонки сцены ---
 
-    def _column_px(self, width: float) -> tuple[float, float, float]:
-        """Ширины колонки «from», промежутка и колонки «to» в px при ширине сцены width."""
-        avail = width - 2 * PAD
-        if self.columns is None:  # по умолчанию: промежуток ~12 %, колонки поровну
-            gap = min(150.0, max(70.0, width * 0.12))
-            return (avail - gap) / 2, gap, (avail - gap) / 2
-        c2, gap, c3 = (f * avail for f in self.columns)
-        gap = max(MIN_GAP, gap)
-        c2 = max(MIN_COL, min(c2, avail - gap - MIN_COL))
-        c3 = max(MIN_COL, min(c3, avail - c2 - gap))
-        return c2, gap, c3
-
-    def _boundaries(self, width: float) -> tuple[float, float, float]:
-        """x границ: правый край колонки «from», левый и правый края колонки «to»."""
-        c2, gap, c3 = self._column_px(width)
-        return PAD + c2, PAD + c2 + gap, PAD + c2 + gap + c3
-
-    def _boundary_at(self, view: _ColumnView, x: float) -> int | None:
-        """Индекс границы колонок сцены под x (координаты viewport = сцены: горизонтальной прокрутки нет).
-        Зона — со стороны промежутка, чтобы не мешать точкам кабелей."""
-        if view is not self.view or self.current is None:
-            return None
-        b2, b3, b_end = self._boundaries(view.width_px(SCENE_MIN))
-        zones = ((b2 + PORT + 1, b2 + PORT + 1 + GRIP), (b3 - PORT - 1 - GRIP, b3 - PORT - 1),
-                 (b_end + 1, b_end + 1 + GRIP))
-        return next((i for i, (a, b) in enumerate(zones) if a <= x <= b), None)
-
-    def _resize_to(self, x: float) -> None:
-        """Тянут границу колонок: меняются две соседние части (колонка / промежуток / свободное место справа)."""
-        edge, (c2, gap, c3), start = self._resize
-        dx = x - start  # граница сдвигается на смещение мыши (не прыгает к курсору)
-        width = self.view.width_px(SCENE_MIN)
-        avail = width - 2 * PAD
-        if edge == 0:
-            new = max(MIN_COL, min(c2 + dx, c2 + gap - MIN_GAP))
-            c2, gap = new, c2 + gap - new
-        elif edge == 1:
-            new = max(MIN_GAP, min(gap + dx, gap + c3 - MIN_COL))
-            gap, c3 = new, gap + c3 - new
-        else:
-            c3 = max(MIN_COL, min(c3 + dx, avail - c2 - gap))
-        self.columns = (c2 / avail, gap / avail, c3 / avail)
-        self._draw_scene()
-        self.view.set_guide(self._boundaries(width)[edge])
-
-    def _save_columns(self) -> None:
-        if self.settings is not None and self.columns is not None:
-            self.settings.setValue(COLUMNS_KEY, ",".join(f"{f:.4f}" for f in self.columns))
-
-    def _save_pool_width(self, *_) -> None:
-        if self.settings is not None:
-            self.settings.setValue(POOL_KEY, self.splitter.sizes()[0])
-
-    def _scene_columns(self, width: float) -> tuple[float, float, float, float]:
-        """x колонки «from», x колонки «to», ширины колонок «from» и «to»."""
-        c2, gap, c3 = self._column_px(width)
-        return PAD, PAD + c2 + gap, c2, c3
-
-    def _place_heads(self) -> None:
-        """Слоты над сценой — ровно над колонками «from» и «to» и по центру промежутка между ними (за границами
-        колонок при перетаскивании). Слот промежутка не уже своего содержимого."""
-        lx, rx, col2, col3 = self._scene_columns(self.view.width_px(SCENE_MIN))
-        off = self.scene_head.mapFromGlobal(self.view.viewport().mapToGlobal(QPoint(0, 0))).x()
-        height = self.scene_head.height()
-        self.from_slot.setGeometry(round(off + lx), 0, round(col2), height)
-        self.to_slot.setGeometry(round(off + rx), 0, round(col3), height)
-        gap = max(rx - lx - col2, self.gap_slot.sizeHint().width())
-        self.gap_slot.setGeometry(round(off + (lx + col2 + rx) / 2 - gap / 2), 0, round(gap), height)
+    @staticmethod
+    def _scene_columns() -> tuple[float, float, float, float]:
+        """x колонки «from», x колонки «to», ширины колонок «from» и «to» (ширины фиксированы макетом)."""
+        return PAD, PAD + theme.COL_FROM + theme.COL_GAP, float(theme.COL_FROM), float(theme.COL_TO)
 
     # --- полные имена в подсказках ---
 
@@ -1524,14 +1389,13 @@ class CableEditor(QWidget):
         self.cable_items, self.source_items, self.scene_rows, self.target_items = [], {}, [], {}
         self.suggestion_items, self.scene_headers = [], {}
         self.hovered = None
-        self._place_heads()
         if lay is None:
             self.view.scene().clear()
             self.view.set_hint(None)
             return
         sc = lay.scene
-        width = self.view.begin(sc.height, SCENE_MIN)
-        lx, rx, col2, col3 = self._scene_columns(width)
+        self.view.begin(sc.height)
+        lx, rx, col2, col3 = self._scene_columns()
         scene = self.view.scene()
         # колонка «from» пуста (новый профиль) — что делать; пул пуст — подсказывать нечего
         empty = not sc.source_rows and bool(lay.pool.rows or lay.pool.headers)
@@ -1576,6 +1440,7 @@ class CableEditor(QWidget):
             tip = self._cable_tip(c.notes, c.dst) if c.dst is not None else ""
             if tip and names_differ(self.shown, c.notes[0], c.dst):
                 tip = f"{self._names_differ_tip(c.notes[0], c.dst)}\n{tip}"
+            tip = self._with_hand_tip(tip, c.notes, connected=True)
             item = _CableItem(cable_path(a, b), c, self, src, self.target_items[c.target.slot], tip)
             scene.addItem(item)
             (self.suggestion_items if c.suggested else self.cable_items).append(item)
@@ -1603,6 +1468,7 @@ class CableEditor(QWidget):
         if len(row.notes) > 1:
             tip = f"{tip}\n{MIXED_HINT if row.mixed else ALIAS_HINT}"
         tip = f"{note_tip(row.notes)}\n{tip}"
+        tip = self._with_hand_tip(tip, row.notes, connected=row.connected and not row.suggested)
         issues = [i for n in row.notes for i in self._issues.get(n, [])]
         if issues:
             tip = "\n".join(issues + [tip])
@@ -1635,6 +1501,25 @@ class CableEditor(QWidget):
         tip = f"{tip}\n{NUMBER_DROP_HINT}"
         return _Row(r, TARGET, t, lines[0][1], t.label, pill=(f"+{t.hidden}" if t.hidden else "…") if many else "",
                     badge=many, port=port, dashed=dashed, tooltip=tip, lines=lines)
+
+    def _with_hand_tip(self, tip: str, notes: tuple[int, ...], connected: bool) -> str:
+        """← : пометка «ручная правка» — по `reverse_overrides` прямого профиля (в → ничего не меняется)."""
+        if self.direction != REVERSE or self.profile is None:
+            return tip
+        over = self.profile.reverse_overrides
+        if connected:
+            hand = [n for n in notes if over.get(n) is not None]
+            if not hand:
+                return tip
+            if len(notes) == 1:
+                return f"{tip}\n{HAND_SET_TIP}"
+            return f"{tip}\n{HAND_SET_SOME_TIP.format(notes=', '.join(map(str, hand)))}"
+        gone = [n for n in notes if n in over and over[n] is None]
+        if not gone:
+            return tip
+        if len(notes) == 1:
+            return f"{tip}\n{HAND_REMOVED_TIP}"
+        return f"{tip}\n{HAND_REMOVED_SOME_TIP.format(notes=', '.join(map(str, gone)))}"
 
     def _names_differ_tip(self, src: int, dst: int) -> str:
         p = self.shown

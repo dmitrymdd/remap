@@ -445,7 +445,7 @@ class MapsPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QHBoxLayout(self)
-        root.setContentsMargins(0, 10, 0, 0)
+        root.setContentsMargins(theme.PAGE_MARGIN, 10, theme.PAGE_MARGIN, 16)
         root.setSpacing(16)
 
         left = QVBoxLayout()

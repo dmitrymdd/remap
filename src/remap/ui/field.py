@@ -370,3 +370,49 @@ class ScreenCheck(QAbstractButton):
         if e.type() in (QEvent.Type.HoverEnter, QEvent.Type.HoverLeave, QEvent.Type.EnabledChange):
             self.update()
         return super().event(e)
+
+
+class ScreenButton(QAbstractButton):
+    """Вторичная кнопка на экране («MATCH BY NUMBER»): 24 px, рамка, лёгкая заливка, Martian 9/500 в `<button>`
+    (`WDTH_BUTTON`). Подпись хранится как есть, рисуется заглавными."""
+
+    def __init__(self, label: str = "", parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setText(label)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.setAttribute(Qt.WidgetAttribute.WA_Hover)
+        self._spec = text.mono(theme.MATCH_FONT, QFont.Weight.Medium, theme.MATCH_SPACING, wdth=theme.WDTH_BUTTON)
+
+    def sizeHint(self) -> QSize:
+        width = text.text_width(self.text().upper(), self._spec) + 2 * (theme.MATCH_PAD + 1)
+        return QSize(int(width + 0.999), theme.MATCH_H)
+
+    def minimumSizeHint(self) -> QSize:
+        return self.sizeHint()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        r, face = theme.MATCH_RADIUS, QRectF(self.rect())
+        hot = self.isEnabled() and (self.underMouse() or self.hasFocus())
+        if not self.isEnabled():
+            p.setOpacity(theme.FIELD_DISABLED_OPACITY)
+        inner = face.adjusted(1, 1, -1, -1)
+        ring = QPainterPath()
+        ring.setFillRule(Qt.FillRule.OddEvenFill)
+        ring.addRoundedRect(face, r, r)
+        ring.addRoundedRect(inner, r - 1, r - 1)
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(qcolor(theme.POPUP_HOVER_BG if self.isDown() or hot else theme.MATCH_BG))
+        p.drawRoundedRect(face, r, r)  # заливка лежит под рамкой, как background-clip: border-box
+        p.setBrush(qcolor(theme.CHECK_HOVER_BORDER if hot else theme.CHIP_BORDER))
+        p.drawPath(ring)
+        text.draw_text(p, inner, self.text().upper(), self._spec, theme.SCREEN_BTN_TEXT,
+                       Qt.AlignmentFlag.AlignCenter)
+
+    def event(self, e) -> bool:
+        if e.type() in (QEvent.Type.HoverEnter, QEvent.Type.HoverLeave, QEvent.Type.EnabledChange):
+            self.update()
+        return super().event(e)
