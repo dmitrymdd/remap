@@ -17,9 +17,9 @@
 Порядок, группы, алиасы, высоты строк и кабели считает cable_layout (без Qt); здесь — рисование, выделение,
 перетаскивание, правый клик и подсказки. Профиль — рабочая копия страницы Profiles: виджет его НЕ меняет, а
 сигналами просит страницу (connect_requested / group_drop_requested / disconnect_requested / strike_requested /
-write_to_requested / primary_requested) — правила меняет ядро (core/profile.py) через страницу. Ноты и строки
+write_to_requested) — правила меняет ядро (core/profile.py) через страницу. Ноты и строки
 цели в сигналах — ориентированного профиля (в REVERSE ноты — целевой карты, строки цели — артикуляции исходной);
-страница разбирает их по направлению. Двойной клик по кабелю — сделать его основным (primary_requested).
+страница разбирает их по направлению.
 
 Мышь: строки пула и колонки «from» выделяются (Ctrl/Shift — несколько) и перетаскиваются на строку цели (назначение
 по совпадению номеров, см. assign_plan) или на заголовок группы цели (n → n для совпавших номеров); заголовок
@@ -75,10 +75,7 @@ BADGE_W = 32        # бейдж «+N» строки цели (кликабел�
 CHEVRON_W = 18      # шеврон раскрытия алиасов справа в строке
 INDENT = 14         # отступ строк нот под заголовком раскрытых алиасов
 PORT = 3.0          # радиус точки подключения кабеля
-CABLE_W = 2.0                      # подсказки (пунктир), превью от подключённых строк
-CABLE_PRIMARY_W = CABLE_W          # основной кабель ноты цели (Cable.primary)
-CABLE_THIN_W = CABLE_W / 2         # прочие кабели; превью от неназначенных нот (2 : 1: при 100 %
-                                   # на обычном экране 2 : 1.33 у изогнутых кабелей почти не различимо)
+CABLE_W = 2.0       # кабели, подсказки (пунктир), превью
 CABLE_HOVER_EXTRA = 1.0            # кабель под курсором — толще на столько
 CABLE_HIT = 16      # ширина зоны попадания по кабелю (по 8 px в стороны)
 DIMMED = 0.3        # прозрачность прочих кабелей, пока один под курсором
@@ -114,7 +111,6 @@ STATE_TIPS = {
 }
 # ←: ноты цели без обратного правила при сохранении не спрашиваются (полнота — статус)
 REVERSE_UNASSIGNED_TIP = "No rule in this direction: kept on the same number when converting"
-PRIMARY_HINT = "Double-click to make primary"
 SAME_NUMBER_HINT = "Double-click to connect to the same number"
 NUMBER_DROP_HINT = "Drop on a number to connect to that note"
 ROW_HINT = "Drag onto a target to map · Ctrl/Shift+click to select several · Right-click to delete or restore"
@@ -417,11 +413,6 @@ class _CableItem(QGraphicsPathItem):
             self.setToolTip(tooltip)
         self.set_style(False)
 
-    @property
-    def ends(self) -> tuple[int, int]:
-        """(нота строки, нота цели) ориентированного профиля: у строки алиасов — её показываемый номер."""
-        return self.src.model.shown, self.cable.dst
-
     def set_style(self, hovered: bool) -> None:
         self._hovered = hovered
         if self.cable.suggested:
@@ -430,15 +421,14 @@ class _CableItem(QGraphicsPathItem):
             self.setPen(pen)
             self.setZValue(0.4)
             return
-        width = CABLE_PRIMARY_W if self.cable.primary else CABLE_THIN_W
         if self.swiped:  # снимется при отпускании правой кнопки — цвет ошибки, толще
-            pen = QPen(theme.qcolor(theme.ERR_LED), width + CABLE_HOVER_EXTRA, Qt.PenStyle.DashLine)
+            pen = QPen(theme.qcolor(theme.ERR_LED), CABLE_W + CABLE_HOVER_EXTRA, Qt.PenStyle.DashLine)
             pen.setCapStyle(Qt.PenCapStyle.RoundCap)
             self.setPen(pen)
             self.setZValue(0.7)
             return
         color = plates.cable_color(self.src.selected, hovered)  # кабель выбранной строки — белый
-        pen = QPen(theme.qcolor(color), width + CABLE_HOVER_EXTRA if hovered else width)
+        pen = QPen(theme.qcolor(color), CABLE_W + CABLE_HOVER_EXTRA if hovered else CABLE_W)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         self.setPen(pen)
         self.setZValue(0.6 if hovered else 0.5)
@@ -570,11 +560,10 @@ class CableOverlay(QWidget):
         self.preview: list[QPainterPath] | None = None
         self.end: QPointF | None = None
         self.valid = False  # под курсором — строка цели (кабель ярче)
-        self.width = CABLE_W
 
-    def show_preview(self, starts: list[QPointF], end: QPointF, valid: bool = False, width: float = CABLE_W) -> None:
+    def show_preview(self, starts: list[QPointF], end: QPointF, valid: bool = False) -> None:
         self.preview = [preview_path(a, end) for a in starts]
-        self.end, self.valid, self.width = end, valid, width
+        self.end, self.valid = end, valid
         self.update()
 
     def clear_preview(self) -> None:
@@ -587,7 +576,7 @@ class CableOverlay(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         color = plates.cable_color(hovered=self.valid)
-        pen = QPen(theme.qcolor(color), self.width)
+        pen = QPen(theme.qcolor(color), CABLE_W)
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         p.setPen(pen)
         p.setBrush(Qt.BrushStyle.NoBrush)
@@ -669,7 +658,6 @@ class CableEditor(QWidget):
     disconnect_requested = Signal(list)     # ноты: снять кабель (правило убрать)
     strike_requested = Signal(list)         # ноты: зачеркнуть (delete) или, если все зачёркнуты, вернуть
     write_to_requested = Signal(int)        # нота цели: сделать Write to и перенаправить правила
-    primary_requested = Signal(int, int)    # двойной клик: кабель (нота строки, нота цели) — сделать основным
     same_number_requested = Signal(list)    # двойной клик по строке Unassigned: ноты — на те же номера
     note_drop_requested = Signal(list, int)  # drop на номер строки цели (или выбор в меню бейджа): ровно на ноту
 
@@ -927,8 +915,7 @@ class CableEditor(QWidget):
 
     def view_press(self, view: _ColumnView, event) -> bool:
         """Нажатие в одной из view. True — обработано здесь (элементам сцены не передавать).
-        Двойной клик по кабелю — сделать его основным; первое нажатие двойного клика по кабелю ничего не делает
-        (не перетаскивание и не смена выделения)."""
+        Нажатие на кабель левой кнопкой ничего не делает (не перетаскивание и не смена выделения)."""
         pos = event.position()
         if event.button() == Qt.MouseButton.LeftButton and self._drag is None:
             edge = self._boundary_at(view, pos.x())
@@ -947,8 +934,6 @@ class CableEditor(QWidget):
         if event.button() != Qt.MouseButton.LeftButton or self._drag is not None:
             return self._drag is not None
         if isinstance(item, _CableItem):
-            if event.type() == QEvent.Type.MouseButtonDblClick and not item.cable.primary:
-                QTimer.singleShot(0, lambda ends=item.ends: self.primary_requested.emit(*ends))
             return True
         scene_pt = view.mapToScene(pos.toPoint())
         if isinstance(item, _Row) and item.role == TARGET:
@@ -1157,12 +1142,6 @@ class CableEditor(QWidget):
         self._frame.start()
         self._tick()
 
-    def _preview_width(self, d: _Drag) -> float:
-        """Тянут только неназначенные ноты (без правила map) — тонкий кабель-превью, иначе обычный."""
-        rules = self.shown.rules if self.shown is not None else {}
-        mapped = any(rules.get(n) is not None and rules[n].action == "map" for n in d.notes)
-        return CABLE_W if mapped else CABLE_THIN_W
-
     def drag_to(self, at: QPointF) -> None:
         if self._drag is not None:
             self._drag.cursor = QPointF(at)
@@ -1263,7 +1242,7 @@ class CableEditor(QWidget):
         d.step()
         self._autoscroll(d.cursor)
         self._update_hover()
-        self.overlay.show_preview(self._drag_anchors(d), d.pos, self._droppable(d.hover), self._preview_width(d))
+        self.overlay.show_preview(self._drag_anchors(d), d.pos, self._droppable(d.hover))
 
     def _drag_anchors(self, d: _Drag) -> list[QPointF]:
         if d.header is not None:
@@ -1597,8 +1576,6 @@ class CableEditor(QWidget):
             tip = self._cable_tip(c.notes, c.dst) if c.dst is not None else ""
             if tip and names_differ(self.shown, c.notes[0], c.dst):
                 tip = f"{self._names_differ_tip(c.notes[0], c.dst)}\n{tip}"
-            if tip and not c.primary:
-                tip += f"\n{PRIMARY_HINT}"
             item = _CableItem(cable_path(a, b), c, self, src, self.target_items[c.target.slot], tip)
             scene.addItem(item)
             (self.suggestion_items if c.suggested else self.cable_items).append(item)

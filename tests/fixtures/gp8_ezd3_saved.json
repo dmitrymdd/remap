@@ -1,0 +1,793 @@
+{
+  "format": 2,
+  "name": "Guitar Pro 8 - EZD3",
+  "source_map": {
+    "name": "EZdrummer 3",
+    "names": {
+      "6": "Snare: Zone Trigger",
+      "7": "Hi-Hat: Edge Trigger",
+      "8": "Hi-Hat: Tip Trigger",
+      "9": "Hi-Hat: Tip Trigger",
+      "10": "Hi-Hat: Pedal Closed",
+      "11": "Hi-Hat: Closed Tip",
+      "12": "Hi-Hat: Open Tip 0",
+      "13": "Hi-Hat: Open Tip 1",
+      "14": "Hi-Hat: Open Tip 2",
+      "15": "Hi-Hat: Open Tip 3",
+      "16": "Hi-Hat: Open Tip 4",
+      "17": "Hi-Hat: Open Tip 5",
+      "18": "Hi-Hat: Edge Trigger",
+      "19": "Hi-Hat: Tip Trigger",
+      "20": "Hi-Hat: Edge Trigger",
+      "21": "Hi-Hat: Pedal Closed",
+      "22": "Hi-Hat: Closed Edge",
+      "23": "Hi-Hat: Pedal Open",
+      "24": "Hi-Hat: Open Edge 1",
+      "25": "Hi-Hat: Open Edge 2",
+      "26": "Hi-Hat: Open Edge 3",
+      "27": "Crash 2: Bow",
+      "28": "Crash 2: Crash",
+      "29": "Ride: Bow",
+      "30": "Ride: Bell",
+      "31": "Crash 3: Bow",
+      "32": "Crash 3: Crash",
+      "33": "Snare: Edge",
+      "34": "Kick: Hit",
+      "35": "Kick: Hit",
+      "36": "Kick: Hit",
+      "37": "Snare: Sidestick",
+      "38": "Snare: Center",
+      "39": "Snare: Center",
+      "40": "Snare: Rimshot",
+      "41": "Floortom 2: Center",
+      "42": "Hi-Hat: Closed Tip",
+      "43": "Floortom 1: Center",
+      "44": "Hi-Hat: Pedal Closed",
+      "45": "Racktom 3: Center",
+      "46": "Hi-Hat: Open Edge 2",
+      "47": "Racktom 2: Center",
+      "48": "Racktom 1: Center",
+      "49": "Crash 2: Crash",
+      "50": "Crash 2: Muted Hit",
+      "51": "Ride: Bow",
+      "52": "China: Crash",
+      "53": "Ride: Bell",
+      "54": "China: Muted Hit",
+      "55": "Splash: Crash",
+      "56": "Splash: Muted Hit",
+      "57": "Crash 3: Crash",
+      "58": "Crash 3: Muted Hit",
+      "59": "Ride: Edge",
+      "60": "Hi-Hat: Open Edge 4",
+      "61": "Hi-Hat: Closed Tip",
+      "62": "Hi-Hat: Tight Edge",
+      "63": "Hi-Hat: Tight Tip",
+      "64": "Hi-Hat: Open Edge 0",
+      "65": "Hi-Hat: Closed Edge",
+      "66": "Snare: Center",
+      "67": "Snare: Sidestick",
+      "68": "Snare: Center",
+      "69": "Snare: Center",
+      "70": "Snare: Center",
+      "71": "Snare: Rim Only",
+      "72": "Floortom 2: Rim Only",
+      "73": "Floortom 2: Rimshot",
+      "74": "Floortom 1: Rim Only",
+      "75": "Floortom 1: Rimshot",
+      "76": "Snare: Rim Only",
+      "77": "Racktom 3: Rim Only",
+      "78": "Racktom 3: Rimshot",
+      "79": "Racktom 2: Rim Only",
+      "80": "Racktom 2: Rimshot",
+      "81": "Racktom 1: Rim Only",
+      "82": "Racktom 1: Rimshot",
+      "83": "Crash 1: Muted Hit",
+      "84": "Crash 1: Bow",
+      "85": "Ride: Bell",
+      "86": "Crash 1: Crash",
+      "87": "Crash 1: Bow",
+      "88": "Ride: Bell",
+      "89": "Crash 2: Bow",
+      "90": "Ride: Bell",
+      "91": "Crash 2: Crash",
+      "92": "Ride: Bell",
+      "93": "Ride: Bell",
+      "94": "Crash 2: Muted Hit",
+      "95": "Crash 4: Muted Hit",
+      "96": "Crash 4: Bow",
+      "97": "Ride: Bell",
+      "98": "Crash 4: Crash",
+      "99": "Crash 4: Muted Hit",
+      "100": "Ride: Bell",
+      "101": "Crash 3: Bow",
+      "102": "Ride: Bell",
+      "103": "Crash 3: Crash",
+      "104": "Ride: Bow",
+      "105": "Ride: Bell",
+      "106": "Crash 3: Muted Hit",
+      "107": "China: Muted Hit",
+      "108": "China: Bow",
+      "109": "Ride: Bell",
+      "110": "China: Crash",
+      "111": "China: Bow",
+      "112": "Ride: Bell",
+      "113": "Ride: Bow",
+      "114": "Ride: Bell",
+      "115": "Ride: Edge",
+      "116": "Ride: Bow",
+      "117": "Ride: Bell",
+      "118": "Ride: Muted Hit",
+      "119": "Hi-Hat: Closed Tip",
+      "120": "Hi-Hat: Open Edge 0",
+      "121": "Hi-Hat: Open Edge 4",
+      "122": "Hi-Hat: Closed Edge",
+      "123": "Hi-Hat: Open Edge 2",
+      "124": "Hi-Hat: Open Edge 5",
+      "125": "Snare: Center",
+      "126": "Snare: Rimshot",
+      "127": "Snare: Sidestick"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": "EZdrummer 3 library loaded inside Superior Drummer 3, default preset. Transcribed from the SD3 \"MIDI Mapping Keys\" view.",
+      "status": "verified",
+      "notes": "This is the layout of the EZdrummer 3 library inside SD3, not of the EZdrummer 3 plugin itself.\nBased on template EZdrummer 3"
+    }
+  },
+  "target_map": {
+    "name": "Guitar Pro 8",
+    "names": {
+      "29": "Ride (choke)",
+      "30": "Reverse Cymbal (hit)",
+      "31": "Snare (side stick)",
+      "33": "Metronome (hit)",
+      "34": "Metronome (bell)",
+      "35": "Kick (hit)",
+      "36": "Kick (hit)",
+      "37": "Snare (side stick)",
+      "38": "Snare (hit)",
+      "39": "Hand Clap (hit)",
+      "40": "Electric Snare (hit)",
+      "41": "Low Floor Tom (hit)",
+      "42": "Hi-Hat (closed)",
+      "43": "Very Low Tom (hit)",
+      "44": "Pedal Hi-Hat (hit)",
+      "45": "Low Tom (hit)",
+      "46": "Hi-Hat (open)",
+      "47": "Mid Tom (hit)",
+      "48": "High Tom (hit)",
+      "49": "Crash high (hit)",
+      "50": "High Floor Tom (hit)",
+      "51": "Ride (middle)",
+      "52": "China (hit)",
+      "53": "Ride (bell)",
+      "54": "Tambourine (hit)",
+      "55": "Splash (hit)",
+      "56": "Cowbell medium (hit)",
+      "57": "Crash medium (hit)",
+      "58": "Vibraslap (hit)",
+      "59": "Ride (edge)",
+      "60": "Bongo High (hit)",
+      "61": "Bongo Low (hit)",
+      "62": "Conga high (mute)",
+      "63": "Conga high (hit)",
+      "64": "Conga low (hit)",
+      "65": "Timbale high (hit)",
+      "66": "Timbale low (hit)",
+      "67": "Agogo high (hit)",
+      "68": "Agogo low (hit)",
+      "69": "Cabasa (hit)",
+      "70": "Left Maraca (hit)",
+      "71": "Whistle high (hit)",
+      "72": "Whistle low (hit)",
+      "73": "Guiro (hit)",
+      "74": "Guiro (scrap-return)",
+      "75": "Claves (hit)",
+      "76": "Woodblock high (hit)",
+      "77": "Woodblock low (hit)",
+      "78": "Cuica (mute)",
+      "79": "Cuica (open)",
+      "80": "Triangle (mute)",
+      "81": "Triangle (hit)",
+      "82": "Shaker (hit)",
+      "83": "Tinkle Bell (hit) / Jingle Bell (hit)",
+      "84": "Bell Tree (hit)",
+      "85": "Castanets (hit)",
+      "86": "Surdo (hit)",
+      "87": "Surdo (mute)",
+      "91": "Snare (rim shot)",
+      "92": "Hi-Hat (half)",
+      "93": "Ride (edge)",
+      "94": "Ride (choke)",
+      "95": "Splash (choke)",
+      "96": "China (choke)",
+      "97": "Crash high (choke)",
+      "98": "Crash medium (choke)",
+      "99": "Cowbell low (hit)",
+      "100": "Cowbell low (tip)",
+      "101": "Cowbell medium (tip)",
+      "102": "Cowbell high (hit)",
+      "103": "Cowbell high (tip)",
+      "104": "Bongo High (mute)",
+      "105": "Bongo High (slap)",
+      "106": "Bongo Low (mute)",
+      "107": "Bongo Low (slap)",
+      "108": "Conga low (slap)",
+      "109": "Conga low (mute)",
+      "110": "Conga high (slap)",
+      "111": "Tambourine (return)",
+      "112": "Tambourine (roll)",
+      "113": "Tambourine (hand)",
+      "114": "Grancassa (hit)",
+      "115": "Piatti (hit)",
+      "116": "Piatti (hand)",
+      "117": "Cabasa (return)",
+      "118": "Left Maraca (return)",
+      "119": "Right Maraca (hit)",
+      "120": "Right Maraca (return)",
+      "122": "Shaker (return)",
+      "123": "Bell Tree (return)",
+      "124": "Golpe (thumb)",
+      "125": "Golpe (finger)",
+      "126": "Ride (middle)",
+      "127": "Ride (bell)"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": null,
+      "status": "verified",
+      "notes": "Based on template Guitar Pro 8"
+    }
+  },
+  "rules": [
+    {
+      "src": 6,
+      "action": "delete"
+    },
+    {
+      "src": 7,
+      "action": "delete"
+    },
+    {
+      "src": 8,
+      "action": "delete"
+    },
+    {
+      "src": 9,
+      "action": "delete"
+    },
+    {
+      "src": 10,
+      "action": "delete"
+    },
+    {
+      "src": 11,
+      "action": "delete"
+    },
+    {
+      "src": 12,
+      "action": "delete"
+    },
+    {
+      "src": 13,
+      "action": "delete"
+    },
+    {
+      "src": 14,
+      "action": "delete"
+    },
+    {
+      "src": 15,
+      "action": "delete"
+    },
+    {
+      "src": 16,
+      "action": "delete"
+    },
+    {
+      "src": 17,
+      "action": "delete"
+    },
+    {
+      "src": 18,
+      "action": "delete"
+    },
+    {
+      "src": 19,
+      "action": "delete"
+    },
+    {
+      "src": 20,
+      "action": "delete"
+    },
+    {
+      "src": 21,
+      "action": "delete"
+    },
+    {
+      "src": 22,
+      "action": "delete"
+    },
+    {
+      "src": 23,
+      "action": "delete"
+    },
+    {
+      "src": 24,
+      "action": "delete"
+    },
+    {
+      "src": 25,
+      "action": "delete"
+    },
+    {
+      "src": 26,
+      "action": "delete"
+    },
+    {
+      "src": 27,
+      "action": "delete"
+    },
+    {
+      "src": 28,
+      "action": "delete"
+    },
+    {
+      "src": 29,
+      "action": "delete"
+    },
+    {
+      "src": 30,
+      "action": "delete"
+    },
+    {
+      "src": 31,
+      "action": "delete"
+    },
+    {
+      "src": 32,
+      "action": "delete"
+    },
+    {
+      "src": 33,
+      "action": "delete"
+    },
+    {
+      "src": 34,
+      "action": "delete"
+    },
+    {
+      "src": 35,
+      "action": "delete"
+    },
+    {
+      "src": 36,
+      "action": "delete"
+    },
+    {
+      "src": 37,
+      "action": "delete"
+    },
+    {
+      "src": 38,
+      "action": "delete"
+    },
+    {
+      "src": 39,
+      "action": "delete"
+    },
+    {
+      "src": 40,
+      "action": "delete"
+    },
+    {
+      "src": 41,
+      "action": "delete"
+    },
+    {
+      "src": 42,
+      "action": "delete"
+    },
+    {
+      "src": 43,
+      "action": "delete"
+    },
+    {
+      "src": 44,
+      "action": "delete"
+    },
+    {
+      "src": 45,
+      "action": "delete"
+    },
+    {
+      "src": 46,
+      "action": "delete"
+    },
+    {
+      "src": 47,
+      "action": "delete"
+    },
+    {
+      "src": 48,
+      "action": "delete"
+    },
+    {
+      "src": 49,
+      "action": "delete"
+    },
+    {
+      "src": 50,
+      "action": "delete"
+    },
+    {
+      "src": 51,
+      "action": "delete"
+    },
+    {
+      "src": 52,
+      "action": "delete"
+    },
+    {
+      "src": 53,
+      "action": "delete"
+    },
+    {
+      "src": 54,
+      "action": "delete"
+    },
+    {
+      "src": 55,
+      "action": "delete"
+    },
+    {
+      "src": 56,
+      "action": "delete"
+    },
+    {
+      "src": 57,
+      "action": "delete"
+    },
+    {
+      "src": 58,
+      "action": "delete"
+    },
+    {
+      "src": 59,
+      "action": "delete"
+    },
+    {
+      "src": 60,
+      "action": "delete"
+    },
+    {
+      "src": 61,
+      "action": "delete"
+    },
+    {
+      "src": 62,
+      "action": "delete"
+    },
+    {
+      "src": 63,
+      "action": "delete"
+    },
+    {
+      "src": 64,
+      "action": "delete"
+    },
+    {
+      "src": 65,
+      "action": "delete"
+    },
+    {
+      "src": 66,
+      "action": "delete"
+    },
+    {
+      "src": 67,
+      "action": "delete"
+    },
+    {
+      "src": 68,
+      "action": "delete"
+    },
+    {
+      "src": 69,
+      "action": "delete"
+    },
+    {
+      "src": 70,
+      "action": "delete"
+    },
+    {
+      "src": 71,
+      "action": "delete"
+    },
+    {
+      "src": 72,
+      "action": "delete"
+    },
+    {
+      "src": 73,
+      "action": "delete"
+    },
+    {
+      "src": 74,
+      "action": "delete"
+    },
+    {
+      "src": 75,
+      "action": "delete"
+    },
+    {
+      "src": 76,
+      "action": "delete"
+    },
+    {
+      "src": 77,
+      "action": "delete"
+    },
+    {
+      "src": 78,
+      "action": "delete"
+    },
+    {
+      "src": 79,
+      "action": "delete"
+    },
+    {
+      "src": 80,
+      "action": "delete"
+    },
+    {
+      "src": 81,
+      "action": "delete"
+    },
+    {
+      "src": 82,
+      "action": "delete"
+    },
+    {
+      "src": 83,
+      "action": "delete"
+    },
+    {
+      "src": 84,
+      "action": "delete"
+    },
+    {
+      "src": 85,
+      "action": "delete"
+    },
+    {
+      "src": 86,
+      "action": "delete"
+    },
+    {
+      "src": 87,
+      "action": "delete"
+    },
+    {
+      "src": 88,
+      "action": "delete"
+    },
+    {
+      "src": 89,
+      "action": "delete"
+    },
+    {
+      "src": 90,
+      "action": "delete"
+    },
+    {
+      "src": 91,
+      "action": "delete"
+    },
+    {
+      "src": 92,
+      "action": "delete"
+    },
+    {
+      "src": 93,
+      "action": "delete"
+    },
+    {
+      "src": 94,
+      "action": "delete"
+    },
+    {
+      "src": 95,
+      "action": "delete"
+    },
+    {
+      "src": 96,
+      "action": "delete"
+    },
+    {
+      "src": 97,
+      "action": "delete"
+    },
+    {
+      "src": 98,
+      "action": "delete"
+    },
+    {
+      "src": 99,
+      "action": "delete"
+    },
+    {
+      "src": 100,
+      "action": "delete"
+    },
+    {
+      "src": 101,
+      "action": "delete"
+    },
+    {
+      "src": 102,
+      "action": "delete"
+    },
+    {
+      "src": 103,
+      "action": "delete"
+    },
+    {
+      "src": 104,
+      "action": "delete"
+    },
+    {
+      "src": 105,
+      "action": "delete"
+    },
+    {
+      "src": 106,
+      "action": "delete"
+    },
+    {
+      "src": 107,
+      "action": "delete"
+    },
+    {
+      "src": 108,
+      "action": "delete"
+    },
+    {
+      "src": 109,
+      "action": "delete"
+    },
+    {
+      "src": 110,
+      "action": "delete"
+    },
+    {
+      "src": 111,
+      "action": "delete"
+    },
+    {
+      "src": 112,
+      "action": "delete"
+    },
+    {
+      "src": 113,
+      "action": "delete"
+    },
+    {
+      "src": 114,
+      "action": "delete"
+    },
+    {
+      "src": 115,
+      "action": "delete"
+    },
+    {
+      "src": 116,
+      "action": "delete"
+    },
+    {
+      "src": 117,
+      "action": "delete"
+    },
+    {
+      "src": 118,
+      "action": "delete"
+    },
+    {
+      "src": 119,
+      "action": "delete"
+    },
+    {
+      "src": 120,
+      "action": "delete"
+    },
+    {
+      "src": 121,
+      "action": "delete"
+    },
+    {
+      "src": 122,
+      "action": "delete"
+    },
+    {
+      "src": 123,
+      "action": "delete"
+    },
+    {
+      "src": 124,
+      "action": "delete"
+    },
+    {
+      "src": 125,
+      "action": "delete"
+    },
+    {
+      "src": 126,
+      "action": "delete"
+    },
+    {
+      "src": 127,
+      "action": "delete"
+    }
+  ],
+  "reverse_rules": [
+    {
+      "src": 29,
+      "action": "map",
+      "dst": 118
+    },
+    {
+      "src": 31,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 37,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 38,
+      "action": "map",
+      "dst": 38
+    },
+    {
+      "src": 51,
+      "action": "map",
+      "dst": 29
+    },
+    {
+      "src": 53,
+      "action": "map",
+      "dst": 30
+    },
+    {
+      "src": 59,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 93,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 94,
+      "action": "map",
+      "dst": 118
+    },
+    {
+      "src": 126,
+      "action": "map",
+      "dst": 29
+    },
+    {
+      "src": 127,
+      "action": "map",
+      "dst": 30
+    }
+  ]
+}

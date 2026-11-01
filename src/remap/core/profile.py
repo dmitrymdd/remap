@@ -11,8 +11,8 @@ from .notemap import (
     NoteMap, articulations, check_note, map_body_from_dict, map_body_to_dict, normalize_name, primary_note,
 )
 
-FORMAT_VERSION = 2               # пишется всегда
-READ_VERSIONS = (1, 2)           # читаются; у формата 1 нет reverse_rules (выводятся из прямых)
+FORMAT_VERSION = 3               # пишется всегда
+READ_VERSIONS = (1, 2, 3)        # читаются; у формата 1 нет обратных правил, у формата 2 нет reverse_manual
 
 FORWARD, REVERSE = "forward", "reverse"  # направление конвертации
 DIRECTIONS = (FORWARD, REVERSE)
@@ -60,46 +60,45 @@ class RemapProfile:
     поэтому последующая правка карты в менеджере карт профиль не меняет.
     Обе карты необязательны.
 
-    Двунаправленность: reverse_rules — правила обратного направления, нота ЦЕЛЕВОЙ карты -> нота
-    исходной (та же форма Rule). None — не заданы, действуют выведенные из прямых (derive_reverse());
-    рабочий набор — effective_reverse(). Прямой кабель a -> b основной, если обратное правило b — b -> a
-    (primary_pairs()); отдельного хранения «основного» нет.
+    Двунаправленность: обратная схема (нота ЦЕЛЕВОЙ карты -> нота исходной, та же форма Rule) не хранится, а
+    вычисляется из прямых правил (derive_reverse()). Храним только ручные правки в обратном направлении:
+    reverse_overrides — нота цели -> её правило; None — кабель сняли руками, правила нет. Ручная нота правками прямых
+    не меняется никогда, остальные всегда равны вычисленному. Рабочий набор — effective_reverse().
     """
     name: str
     source_map: NoteMap | None = None
     target_map: NoteMap | None = None
     rules: dict[int, Rule] = field(default_factory=dict)
-    reverse_rules: dict[int, Rule] | None = None
+    reverse_overrides: dict[int, Rule | None] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         self.source_map = copy.deepcopy(self.source_map)
         self.target_map = copy.deepcopy(self.target_map)
         self.rules = dict(self.rules)
-        if self.reverse_rules is not None:
-            self.reverse_rules = dict(self.reverse_rules)
+        self.reverse_overrides = dict(self.reverse_overrides)
         self.validate()
 
     def validate(self) -> None:
-        for what, rules in (("src", self.rules), ("reverse src", self.reverse_rules or {})):
-            for src, rule in rules.items():
-                check_note(src, what)
-                if not isinstance(rule, Rule):
-                    raise TypeError(f"rule for note {src} must be a Rule, got {type(rule).__name__}")
+        for src, rule in self.rules.items():
+            check_note(src, "src")
+            if not isinstance(rule, Rule):
+                raise TypeError(f"rule for note {src} must be a Rule, got {type(rule).__name__}")
+        for src, rule in self.reverse_overrides.items():
+            check_note(src, "reverse src")
+            if rule is not None and not isinstance(rule, Rule):
+                raise TypeError(f"reverse rule for note {src} must be a Rule or None, got {type(rule).__name__}")
 
     def effective_reverse(self) -> dict[int, Rule]:
-        """Правила обратного направления: заданные или (reverse_rules = None) выведенные из прямых."""
-        if self.reverse_rules is not None:
-            return dict(self.reverse_rules)
-        return derive_reverse(self)
+        """Действующие правила обратного направления: вычисленные из прямых с учётом ручных правок."""
+        return _reverse_rules(self, self.reverse_overrides)
 
     def reversed(self) -> RemapProfile:
-        """Профиль обратного направления: карты поменяны местами, rules — effective_reverse(),
-        reverse_rules — прямые правила. Через него обратная сторона переиспользует convert/validate/suggest/assign.
-
-        Инволюция по СОДЕРЖАНИЮ: p.reversed().reversed() даёт те же карты и правила, но при
-        reverse_rules = None выведенные правила становятся заданными явно. Поэтому сравнивать — через to_dict()
-        (там пишутся действующие правила), а не через ==."""
-        return RemapProfile(self.name, self.target_map, self.source_map, self.effective_reverse(), dict(self.rules))
+        """Профиль обратного направления: карты поменяны местами, rules — effective_reverse(), а его обратная сторона —
+        прямые правила (заданы как ручные: p.reversed().effective_reverse() == p.rules). Через него обратная сторона
+        переиспользует convert/validate/suggest/assign. Результат правки в нём — назад через with_reverse_edit()."""
+        q = RemapProfile(self.name, self.target_map, self.source_map, self.effective_reverse())
+        q.reverse_overrides = {n: self.rules.get(n) for n in set(self.rules) | set(derive_reverse(q))}
+        return q
 
     def oriented(self, direction: str) -> RemapProfile:
         """FORWARD — сам профиль, REVERSE — reversed()."""
@@ -110,7 +109,8 @@ class RemapProfile:
         raise ValueError(f"unknown direction {direction!r}, expected one of {DIRECTIONS}")
 
     def to_dict(self) -> dict[str, Any]:
-        """JSON-объект формата 2; reverse_rules пишутся всегда (действующие — заданные или выведенные)."""
+        """JSON-объект формата 3. reverse_rules — весь действующий набор: чтобы применить профиль, логика выведения не
+        нужна. reverse_manual — ноты, заданные руками; нота в этом списке и не в reverse_rules — кабель снят."""
         self.validate()
         return {
             "format": FORMAT_VERSION,
@@ -119,6 +119,7 @@ class RemapProfile:
             "target_map": _map_to_dict(self.target_map),
             "rules": _rules_to_list(self.rules),
             "reverse_rules": _rules_to_list(self.effective_reverse()),
+            "reverse_manual": sorted(self.reverse_overrides),
         }
 
     def to_json(self) -> str:
@@ -140,17 +141,17 @@ class RemapProfile:
                 raise ValueError("'name' must be a string")
             rules = _rules_from_list(data.get("rules", []), "rules")
             raw_reverse = data.get("reverse_rules") if version >= 2 else None
-            reverse = None if raw_reverse is None else _rules_from_list(raw_reverse, "reverse_rules")
+            stored = None if raw_reverse is None else _rules_from_list(raw_reverse, "reverse_rules")
             p = cls(
                 name=name,
                 source_map=_map_from_dict(data.get("source_map"), "source_map"),
                 target_map=_map_from_dict(data.get("target_map"), "target_map"),
                 rules=rules,
             )
-            # совпадают с выведенными — храним как None: поведение то же (sync_reverse ведёт их одинаково),
-            # а прочитанный и только что созданный профиль равны и через ==
-            p.reverse_rules = reverse
-            p.reverse_rules = normalized_reverse(p)
+            if version >= 3:
+                p.reverse_overrides = _overrides_from_manual(data.get("reverse_manual", []), stored or {})
+            elif stored is not None:
+                p.reverse_overrides = _overrides_from_saved(p, stored)
             return p
         except KeyError as e:
             raise ProfileFormatError(f"required field {e.args[0]!r} is missing") from e
@@ -192,6 +193,31 @@ def _rules_from_list(raw: Any, what: str) -> dict[int, Rule]:
     return rules
 
 
+def _overrides_from_manual(raw: Any, stored: dict[int, Rule]) -> dict[int, Rule | None]:
+    """Формат 3: ручные ноты со значениями из reverse_rules (остальные значения вычисляются заново)."""
+    if not isinstance(raw, list):
+        raise ValueError("'reverse_manual' must be a list")
+    out: dict[int, Rule | None] = {}
+    for n in raw:
+        check_note(n, "reverse_manual")
+        if n in out:
+            raise ValueError(f"'reverse_manual': note {n} twice")
+        out[n] = stored.get(n)
+    return out
+
+
+def _overrides_from_saved(p: RemapProfile, stored: dict[int, Rule]) -> dict[int, Rule | None]:
+    """Формат 2 хранил только полный набор: ручное — то, что отличается от вычисленного, поэтому действующие правила
+    после чтения те же, что записаны. Повтор до совпадения: алиас копирует донора, и ручной донор меняет его значение."""
+    overrides: dict[int, Rule | None] = {}
+    while True:
+        effective = _reverse_rules(p, overrides)
+        differ = {n: stored.get(n) for n in set(effective) | set(stored) if effective.get(n) != stored.get(n)}
+        if not differ:
+            return overrides
+        overrides.update(differ)
+
+
 def _map_to_dict(m: NoteMap | None) -> dict[str, Any] | None:
     return None if m is None else map_body_to_dict(m)
 
@@ -203,26 +229,47 @@ def _map_from_dict(data: Any, what: str) -> NoteMap | None:
 # --- обратное направление ---
 
 def derive_reverse(p: RemapProfile) -> dict[int, Rule]:
-    """Обратные правила, выведенные из прямых (по возрастанию ноты цели).
+    """Обратные правила, вычисленные только из прямых (по возрастанию ноты цели); ручные правки — effective_reverse().
 
-    - Нота цели b, на которую идут прямые map: b -> b, если среди них есть сама b (n -> n), иначе b -> наименьшая
-      из них (это и есть основной кабель b).
-    - Прочие ноты той же артикуляции цели (алиасы, normalize_name), на которые кабели не идут: то же, что у
-      Write to артикуляции, если у него есть правило, иначе — что у наименьшей её ноты с правилом.
+    - Нота цели b, на которую идут прямые map: b -> b, если среди них есть сама b (n -> n); иначе Write to исходной карты,
+      если он явно задан и среди них (при обратной конвертации — та же нота, что при drop в ←); иначе наименьшая.
+    - Прочие ноты той же артикуляции цели (алиасы), на которые кабели не идут: то же, что у Write to артикуляции, если
+      на него идут кабели, иначе — что у наименьшей её ноты с кабелями.
     - Остальные ноты цели правила не получают. keep кабелем не считается и обратного правила не порождает
       (при обратной конвертации такая нота и так остаётся на месте — keep по умолчанию)."""
+    return _reverse_rules(p, {})
+
+
+def _reverse_rules(p: RemapProfile, overrides: dict[int, Rule | None]) -> dict[int, Rule]:
+    """Вычисление обратных правил: ноты с кабелями, затем ручные правки, затем копии у алиасов (алиас без своей ручной
+    правки копирует донора с учётом его ручной правки, иначе «Ride: Bell» вела бы на разные ноты)."""
     incoming = _incoming(p)
-    out = {b: Rule.map_to(b if b in srcs else min(srcs)) for b, srcs in incoming.items()}
+    out = {b: Rule.map_to(_default_source(p, b, srcs)) for b, srcs in incoming.items()}
+    for n, rule in overrides.items():
+        if rule is None:
+            out.pop(n, None)
+        else:
+            out[n] = rule
     tgt = p.target_map
     if tgt is not None:
         for notes in articulations(tgt).values():
+            if len(notes) < 2:
+                continue
             donor = _donor(tgt, notes, incoming)
-            if len(notes) < 2 or donor is None:
+            if donor not in out:
                 continue
             for n in notes:
-                if n not in incoming:
+                if n not in incoming and n not in overrides:
                     out[n] = out[donor]
     return dict(sorted(out.items()))
+
+
+def _default_source(p: RemapProfile, b: int, srcs: list[int]) -> int:
+    """Куда нота цели b идёт назад, если кабелей на неё несколько: тот же номер, явный Write to источника, наименьшая."""
+    if b in srcs:
+        return b
+    primary = p.source_map.primary if p.source_map is not None else ()
+    return min([a for a in srcs if a in primary] or srcs)
 
 
 def _incoming(p: RemapProfile) -> dict[int, list[int]]:
@@ -244,153 +291,26 @@ def _donor(tgt: NoteMap, notes: list[int], incoming: dict[int, list[int]]) -> in
     return wt if wt in incoming else donors[0]
 
 
-def _alias_copies(p: RemapProfile, b: int) -> list[int]:
-    """Алиасы ноты цели b без своих кабелей, чьё выведенное обратное правило — копия правила b (b — их донор по
-    derive_reverse). Пусто — b нет в целевой карте или донор артикуляции не b."""
-    tgt = p.target_map
-    if tgt is None or b not in tgt.names:
-        return []
-    notes = articulations(tgt)[normalize_name(tgt.names[b])]
-    incoming = _incoming(p)
-    if _donor(tgt, notes, incoming) != b:
-        return []
-    return [n for n in notes if n != b and n not in incoming]
+def with_reverse_edit(p: RemapProfile, rules: dict[int, Rule], source_map: NoteMap | None = None) -> RemapProfile:
+    """Новый профиль: обратная схема стала равна rules (результат правки в ←), прямые правила не меняются. source_map —
+    новая копия исходной карты, если правка задала Write to: правка считается от старой карты, чтобы новый Write to не
+    выглядел ручной правкой нот, которые за ним просто следуют.
 
-
-def normalized_reverse(p: RemapProfile) -> dict[int, Rule] | None:
-    """reverse_rules профиля, а если они равны выведенным из прямых — None (поведение то же: sync_reverse ведёт
-    их одинаково; так хранятся прочитанные из JSON и правленые в редакторе)."""
-    if p.reverse_rules is None or p.reverse_rules == derive_reverse(p):
-        return None
-    return dict(sorted(p.reverse_rules.items()))
-
-
-def primary_pairs(p: RemapProfile) -> set[tuple[int, int]]:
-    """Основные кабели (a, b): прямое правило a -> b, и обратное правило b — b -> a.
-    На каждую ноту цели — не больше одного."""
-    rev = p.effective_reverse()
-    return {(a, r.dst) for a, r in p.rules.items()
-            if r.action == "map" and rev.get(r.dst) == Rule.map_to(a)}
-
-
-def sync_reverse(before: RemapProfile, after: RemapProfile) -> dict[int, Rule] | None:
-    """reverse_rules для after после правки прямых правил или Write to цели (before -> after).
-
-    Заданное обратное правило, равное выведенному из before, следует за прямыми: заменяется выведенным из
-    after (или убирается). Отличающееся от выведенного (задано вручную) — не трогается.
-    reverse_rules = None (выводятся) — остаётся None."""
-    if after.reverse_rules is None:
-        return None
-    old, new = derive_reverse(before), derive_reverse(after)
-    out = dict(after.reverse_rules)
-    for b in set(old) | set(new):
-        if old.get(b) != new.get(b) and out.get(b) == old.get(b):
-            if b in new:
-                out[b] = new[b]
-            else:
-                out.pop(b, None)
-    return dict(sorted(out.items()))
-
-
-def with_primary_cable(p: RemapProfile, a: int, b: int) -> RemapProfile:
-    """Новый профиль: прямой кабель a -> b — основной (двойной клик в направлении →): обратное правило b -> a.
-
-    Алиасы той же артикуляции цели без своих кабелей, чьё обратное правило скопировано с b (b — их донор по
-    derive_reverse, правило совпадает с прежним правилом b), переходят на a вместе с b — иначе одна нота
-    «Ride: Bell» вела бы на a, а остальные — на прежнюю ноту. Прямые правила не меняются.
-    Кабель уже основной — профиль не меняется (копия). Нет прямого правила a -> b — ValueError."""
-    if p.rules.get(a) != Rule.map_to(b):
-        raise ValueError(f"note {a} is not mapped to {b}")
+    Изменившиеся ноты становятся ручными. Новое значение равно вычисленному — нота снова автоматическая. Так и со снятым
+    кабелем: вычисленный кабель снят — нота остаётся ручной (None) и сам он не вернётся; снят кабель, проведённый только в
+    ← (тут ничего не вычисляется), — нота снова автоматическая, как до него."""
+    old = p.effective_reverse()
     out = copy.deepcopy(p)
-    rev = p.effective_reverse()
-    old, new = rev.get(b), Rule.map_to(a)
-    if old == new:
-        return out
-    rev[b] = new
-    if old is not None:
-        for n in _alias_copies(p, b):
-            if rev.get(n) == old:
-                rev[n] = new
-    out.reverse_rules = dict(sorted(rev.items()))
-    out.reverse_rules = normalized_reverse(out)
+    if source_map is not None:
+        out.source_map = copy.deepcopy(source_map)
+    changed = sorted(n for n in set(old) | set(rules) if old.get(n) != rules.get(n))
+    for n in changed:
+        out.reverse_overrides[n] = rules.get(n)
+    for n in changed:
+        others = {k: v for k, v in out.reverse_overrides.items() if k != n}
+        if _reverse_rules(out, others).get(n) == rules.get(n):
+            out.reverse_overrides = others
     return out
-
-
-def with_forward_primary(p: RemapProfile, a: int, b: int) -> RemapProfile:
-    """Новый профиль: обратный кабель b -> a — основной (двойной клик в направлении ←): прямое правило a -> b
-    (на какую ноту a пишется при прямой конвертации) вместо прежнего a -> b'. Меняется только то, какой кабель
-    основной: обратное правило прежней цели b' (и его копии у алиасов) остаётся как было (keep_old_target_reverse),
-    прочие выведенные обратные правила следуют за прямыми (sync_reverse). Постусловие: (a, b) в primary_pairs() —
-    если синхронизация сдвинула правило b, b -> a ставится явно. Нет обратного правила b -> a — ValueError."""
-    if p.effective_reverse().get(b) != Rule.map_to(a):
-        raise ValueError(f"target note {b} is not mapped back to {a}")
-    out = copy.deepcopy(p)
-    out.rules[a] = Rule.map_to(b)
-    out.reverse_rules = sync_reverse(p, out)
-    keep_old_target_reverse(p, out, a)
-    pin_primary(out, a, b)
-    out.reverse_rules = normalized_reverse(out)
-    return out
-
-
-def keep_old_target_reverse(before: RemapProfile, after: RemapProfile, a: int) -> list[int]:
-    """Прямое правило a сменило цель b' -> b (before -> after): обратное правило b' — каким было в before.
-
-    Без этого sync_reverse убрал бы выведенное b' -> a (на b' больше не идёт кабель от a) или перевёл бы его на
-    другой источник — в ← пропадал бы кабель, которого не трогали. Фиксируется (задаётся явно, значением из
-    before.effective_reverse()) только правило b' и копии его правила у алиасов артикуляции b' без своих кабелей
-    (b' — их донор по derive_reverse: это одно и то же правило). Только выведенные: ручное правило sync_reverse и
-    так не трогает. Остальные обратные правила остаются выведенными и дальше следуют за прямыми.
-    Фиксировать приходится ПОСЛЕ sync_reverse: правило, равное выведенному, она считает следующим за прямыми.
-    after меняется на месте; возвращает зафиксированные ноты (по возрастанию)."""
-    old_rule, new_rule = before.rules.get(a), after.rules.get(a)
-    if old_rule is None or old_rule.action != "map" or old_rule == new_rule:
-        return []
-    old = old_rule.dst
-    notes = [old, *_alias_copies(before, old)]
-    was, derived = before.effective_reverse(), derive_reverse(before)
-    manual = before.reverse_rules or {}
-    keep = [n for n in sorted(notes)
-            if n in was and (before.reverse_rules is None or manual.get(n) == derived.get(n))]
-    rev = after.effective_reverse()
-    keep = [n for n in keep if rev.get(n) != was[n]]
-    if keep:
-        for n in keep:
-            rev[n] = was[n]
-        after.reverse_rules = dict(sorted(rev.items()))
-    return keep
-
-
-def pin_primary(p: RemapProfile, a: int, b: int) -> None:
-    """Если (a, b) не основной кабель — обратное правило b -> a явно (профиль меняется на месте)."""
-    if (a, b) not in primary_pairs(p):
-        rev = p.effective_reverse()
-        rev[b] = Rule.map_to(a)
-        p.reverse_rules = dict(sorted(rev.items()))
-
-
-def keep_existing_primary(before: RemapProfile, after: RemapProfile, numbers: list[int]) -> list[int]:
-    """После подключения n -> n на номера numbers (двойной клик по Unassigned в →): где на номер уже шли кабели
-    (в before), новый кабель — НЕОСНОВНОЙ, прежний основной остаётся. derive_reverse предпочёл бы n -> n — поэтому
-    обратные правила номера и алиасов его артикуляции без кабелей возвращаются к прежним и задаются явно
-    (after меняется на месте; в after.reverse_rules уже должна быть синхронизация прямых). Возвращает занятые номера."""
-    inc = _incoming(before)
-    occupied = [n for n in numbers if n in inc]
-    if not occupied:
-        return []
-    old, rev = before.effective_reverse(), after.effective_reverse()
-    tgt, inc_after = after.target_map, _incoming(after)
-    for n in occupied:
-        notes = articulations(tgt)[normalize_name(tgt.names[n])] if tgt is not None and n in tgt.names else [n]
-        for m in notes:
-            if m != n and m in inc_after:
-                continue  # у алиаса свои кабели — его правило выводится из них
-            if m in old:
-                rev[m] = old[m]
-            else:
-                rev.pop(m, None)
-    after.reverse_rules = dict(sorted(rev.items()))
-    return occupied
 
 
 def missing_rules(p: RemapProfile, direction: str = FORWARD) -> list[int]:

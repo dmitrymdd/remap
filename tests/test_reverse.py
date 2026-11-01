@@ -1,5 +1,5 @@
-"""Двунаправленные профили: выведение обратных правил, reversed(), sync_reverse, формат 2, обратная
-конвертация, совпадение основных кабелей со старым правилом показа."""
+"""Двунаправленные профили: вычисление обратных правил, ручные правки по нотам, reversed(), формат 3, обратная
+конвертация."""
 import json
 from dataclasses import replace
 from pathlib import Path
@@ -10,10 +10,9 @@ import pytest
 from remap.core import FORWARD, REVERSE, ProfileFormatError, RemapProfile, Rule, analyze, convert, legacy_profile
 from remap.core.legacy_map import NOTE_MAP
 from remap.core.notemap import NoteMap
-from remap.core.profile import derive_reverse, missing_rules, primary_pairs, sync_reverse
-from remap.core.suggest import apply_suggested, suggestion_targets
-from remap.templates import load_map_template
-from remap.ui.cable_layout import build_layout
+from remap.core.profile import (
+    DST_NOT_IN_TARGET, KEEP_DIFFERENT, SRC_NOT_IN_SOURCE, derive_reverse, missing_rules, validate_profile, with_reverse_edit,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 SAMPLES = sorted(p for p in (ROOT / 'samples' / 'midi').glob('*.mid') if not p.stem.endswith('_remapped'))
@@ -21,7 +20,7 @@ M = Rule.map_to
 
 
 def prof(rules, src=None, tgt=None, reverse=None):
-    return RemapProfile('p', src, tgt, rules, reverse)
+    return RemapProfile('p', src, tgt, rules, reverse or {})
 
 
 HATS = NoteMap('T', {42: 'Hat', 44: 'Hat', 46: 'Hat', 36: 'Kick', 38: 'Snare'})
@@ -34,6 +33,16 @@ def test_many_to_one_reverse_goes_to_same_number_or_lowest():
     assert derive_reverse(prof({124: M(60), 121: M(60)})) == {60: M(121)}
     # n -> n важнее наименьшей
     assert derive_reverse(prof({35: M(36), 36: M(36)})) == {36: M(36)}
+
+
+def test_many_to_one_prefers_explicit_write_to_of_the_source_map():
+    src = NoteMap('S', {84: 'Bow', 87: 'Bow', 90: 'Bell'}, primary={87})
+    tgt = NoteMap('T', {85: 'Crash'})
+    assert derive_reverse(prof({84: M(85), 87: M(85)}, src, tgt)) == {85: M(87)}  # тот же адрес, что drop в ←
+    assert derive_reverse(prof({85: M(85), 87: M(85)}, src, tgt)) == {85: M(85)}  # тот же номер важнее
+    assert derive_reverse(prof({84: M(85), 90: M(85)}, src, tgt)) == {85: M(84)}  # Write to нет среди источников
+    single = NoteMap('S', {10: 'A', 20: 'B'})  # primary_note() вернул бы ноту, но явного Write to нет: наименьшая
+    assert derive_reverse(prof({10: M(85), 20: M(85)}, single, tgt)) == {85: M(10)}
 
 
 def test_target_aliases_follow_write_to_or_lowest_with_rule():
@@ -54,13 +63,6 @@ def test_untouched_notes_get_no_reverse_rule():
     assert derive_reverse(prof({})) == {}
 
 
-def test_primary_pairs_one_per_target_note():
-    p = prof({60: M(60), 121: M(60), 124: M(60), 35: M(36), 37: M(36)})
-    assert primary_pairs(p) == {(60, 60), (35, 36)}
-    # заданное обратное правило решает, какой кабель основной
-    assert primary_pairs(replace(p, reverse_rules={60: M(124), 36: Rule.delete()})) == {(124, 60)}
-
-
 # --- reversed / oriented / полнота ---
 
 SRC = NoteMap('S', {35: 'Kick', 36: 'Kick', 38: 'Snare', 40: 'Rim'})
@@ -71,19 +73,19 @@ def test_reversed_swaps_maps_and_rules():
     p = prof({35: M(36), 36: M(36), 40: M(38), 38: Rule.delete()}, SRC, TGT)
     r = p.reversed()
     assert r.source_map == TGT and r.target_map == SRC
-    assert r.rules == {36: M(36), 38: M(40)} and r.reverse_rules == p.rules
+    assert r.rules == {36: M(36), 38: M(40)} and r.effective_reverse() == p.rules
     assert p.oriented(FORWARD) is p and p.oriented(REVERSE).to_dict() == r.to_dict()
     with pytest.raises(ValueError):
         p.oriented('sideways')
 
 
-def test_reversed_is_an_involution_by_content():
+def test_reversed_twice_gives_the_same_rules():
     p = prof({35: M(36), 36: M(36), 40: M(38)}, SRC, TGT)
     back = p.reversed().reversed()
-    assert back.reverse_rules == derive_reverse(p)  # выведенные стали заданными явно
-    assert back != p and back.to_dict() == p.to_dict()
-    q = replace(p, reverse_rules={36: M(35), 37: Rule.delete()})
-    assert q.reversed().reversed() == q  # заданные — совпадает и объект
+    assert (back.rules, back.source_map, back.target_map) == (p.rules, p.source_map, p.target_map)
+    q = prof(p.rules, SRC, TGT, {36: M(35), 37: Rule.delete(), 38: None})
+    assert q.reversed().rules == q.effective_reverse() == {36: M(35), 37: Rule.delete()}
+    assert q.reversed().reversed().effective_reverse() == q.effective_reverse()
 
 
 def test_missing_rules_per_direction():
@@ -93,55 +95,130 @@ def test_missing_rules_per_direction():
     assert missing_rules(prof({35: M(36)}), REVERSE) == []  # без карты — пусто
 
 
-# --- sync_reverse ---
+# --- ручные правки по нотам ---
 
-def test_sync_reverse_follows_forward_edits():
-    before = prof({35: M(36)}, SRC, TGT)
-    stored = replace(before, reverse_rules=derive_reverse(before))
-    after = replace(stored, rules={35: M(36), 40: M(38)})  # новый кабель
-    assert sync_reverse(stored, after) == {36: M(35), 38: M(40)}
-    after2 = replace(stored, rules={35: M(36), 36: M(36)})  # n -> n отбирает основной
-    assert sync_reverse(stored, after2) == {36: M(36)}
-    after3 = replace(stored, rules={})  # кабель снят — правило уходит
-    assert sync_reverse(stored, after3) == {}
-
-
-def test_sync_reverse_keeps_manual_rules_and_none():
-    before = prof({35: M(36), 40: M(38)}, SRC, TGT, reverse={36: M(36), 38: M(40)})  # 36 -> 36 задано вручную
-    after = replace(before, rules={35: M(36)})
-    assert sync_reverse(before, after) == {36: M(36)}  # ручное 36 не тронуто, 38 ушло вслед за кабелем
+def test_untouched_notes_follow_forward_edits():
     p = prof({35: M(36)}, SRC, TGT)
-    assert sync_reverse(p, replace(p, rules={})) is None
+    assert p.effective_reverse() == {36: M(35)}
+    p.rules[40] = M(38)  # новый кабель
+    assert p.effective_reverse() == {36: M(35), 38: M(40)}
+    p.rules[36] = M(36)  # n -> n забирает обратное правило
+    assert p.effective_reverse()[36] == M(36)
+    p.rules = {}  # кабели сняты — правила уходят
+    assert p.effective_reverse() == {}
+
+
+def test_hand_set_notes_never_change_on_forward_edits():
+    p = prof({35: M(36), 40: M(38)}, SRC, TGT, {36: M(40), 38: None, 37: Rule.delete()})
+    expected = {36: M(40), 37: Rule.delete()}
+    assert p.effective_reverse() == expected
+    for rules in ({}, {36: M(36)}, {38: M(38), 40: M(36)}, {35: M(37), 36: M(37)}):
+        p.rules = rules
+        assert p.effective_reverse() == expected
+
+
+def test_reverse_edit_marks_only_changed_notes_and_keeps_forward():
+    p = prof({35: M(36), 40: M(38)}, SRC, TGT)
+    q = with_reverse_edit(p, {36: M(40), 38: M(40), 37: Rule.delete()})
+    assert q.reverse_overrides == {36: M(40), 37: Rule.delete()} and q.rules == p.rules and not p.reverse_overrides
+
+
+def test_reverse_edit_equal_to_derived_is_automatic_again():
+    p = prof({35: M(36)}, SRC, TGT, {36: M(40)})
+    assert with_reverse_edit(p, {36: M(35)}).reverse_overrides == {}
+    q = with_reverse_edit(p, {36: M(36)})  # другое значение — остаётся ручной
+    assert q.reverse_overrides == {36: M(36)}
+
+
+def test_cut_of_a_derived_cable_stays_cut():
+    p = prof({35: M(36)}, SRC, TGT)
+    cut = with_reverse_edit(p, {})
+    assert cut.reverse_overrides == {36: None} and cut.effective_reverse() == {}
+    cut.rules = {}  # вычисленного больше нет, а отметка остаётся
+    cut.rules = {40: M(36)}
+    assert cut.effective_reverse() == {}
+
+
+def test_cut_of_a_cable_drawn_only_in_reverse_is_automatic_again():
+    p = prof({35: M(36)}, SRC, TGT)
+    drawn = with_reverse_edit(p, {36: M(35), 37: M(38)})
+    assert drawn.reverse_overrides == {37: M(38)}
+    gone = with_reverse_edit(drawn, {36: M(35)})  # снят кабель, которого нет в прямой схеме
+    assert gone.reverse_overrides == {}
+    gone.rules[38] = M(37)
+    assert gone.effective_reverse()[37] == M(38)  # прямой кабель на эту ноту снова даёт обратное правило
+
+
+def test_restoring_a_struck_note_with_no_derived_rule_is_automatic():
+    p = prof({}, SRC, TGT)
+    struck = with_reverse_edit(p, {37: Rule.delete()})
+    assert with_reverse_edit(struck, {}).reverse_overrides == {}  # зачёркивание — не кабель
+
+
+def test_target_aliases_copy_a_hand_set_donor():
+    p = prof({10: M(42)}, tgt=HATS)
+    assert p.effective_reverse() == {42: M(10), 44: M(10), 46: M(10)}
+    p.reverse_overrides = {42: M(11)}
+    assert p.effective_reverse() == {42: M(11), 44: M(11), 46: M(11)}
+    p.reverse_overrides = {42: None}
+    assert p.effective_reverse() == {}
+    p.reverse_overrides = {42: M(11), 46: Rule.delete()}  # ручная нота донора не копирует
+    assert p.effective_reverse() == {42: M(11), 44: M(11), 46: Rule.delete()}
 
 
 # --- JSON ---
 
-def test_json_format_2_round_trip_with_manual_reverse():
+def test_json_format_3_round_trip_with_hand_set_reverse():
     src = replace(SRC, primary={36})
-    p = prof({35: M(36), 36: M(36)}, src, TGT, reverse={36: M(35), 37: Rule.delete(), 38: Rule.keep()})
+    p = prof({35: M(36), 36: M(36), 40: M(38)}, src, TGT, {36: M(35), 37: Rule.delete(), 38: None})
     data = json.loads(p.to_json())
-    assert data['format'] == 2 and data['source_map']['primary'] == [36]
-    assert data['reverse_rules'] == [{'src': 36, 'action': 'map', 'dst': 35}, {'src': 37, 'action': 'delete'},
-                                     {'src': 38, 'action': 'keep'}]
+    assert data['format'] == 3 and data['source_map']['primary'] == [36]
+    assert data['reverse_rules'] == [{'src': 36, 'action': 'map', 'dst': 35}, {'src': 37, 'action': 'delete'}]
+    assert data['reverse_manual'] == [36, 37, 38]  # 38 в списке и не в правилах: кабель снят
     back = RemapProfile.from_json(p.to_json())
-    assert back == p and back.source_map.primary == {36}
+    assert back == p and back.reverse_overrides == {36: M(35), 37: Rule.delete(), 38: None}
+    assert back.source_map.primary == {36}
 
 
-def test_derived_reverse_is_written_and_read_back_as_derived():
+def test_json_format_3_recomputes_automatic_notes():
+    data = json.loads(prof({35: M(36), 40: M(38)}, SRC, TGT).to_json())
+    assert data['reverse_rules'] == [{'src': 36, 'action': 'map', 'dst': 35}, {'src': 38, 'action': 'map', 'dst': 40}]
+    assert data['reverse_manual'] == []
+    data['reverse_rules'] = []  # значения автоматических нот из файла не читаются
+    back = RemapProfile.from_json(json.dumps(data))
+    assert back.reverse_overrides == {} and back.effective_reverse() == {36: M(35), 38: M(40)}
+
+
+def test_format_2_reads_differences_as_hand_set():
     p = prof({35: M(36), 40: M(38)}, SRC, TGT)
     data = json.loads(p.to_json())
-    assert data['reverse_rules'] == [{'src': 36, 'action': 'map', 'dst': 35}, {'src': 38, 'action': 'map', 'dst': 40}]
-    back = RemapProfile.from_json(p.to_json())
-    assert back.reverse_rules is None and back == p  # равны выведенным — снова None
+    del data['reverse_manual']
+    data['format'] = 2
+    back = RemapProfile.from_json(json.dumps(data))
+    assert back.reverse_overrides == {} and back == p  # равны вычисленным — ручных нет
+    data['reverse_rules'] = [{'src': 36, 'action': 'map', 'dst': 40}, {'src': 37, 'action': 'delete'}]
+    back = RemapProfile.from_json(json.dumps(data))
+    assert back.reverse_overrides == {36: M(40), 37: Rule.delete(), 38: None}  # 38 в файле нет: кабель снят
+    assert back.effective_reverse() == {36: M(40), 37: Rule.delete()}
+
+
+def test_format_2_keeps_alias_values_next_to_a_hand_set_donor():
+    data = json.loads(prof({10: M(42)}, tgt=HATS).to_json())
+    del data['reverse_manual']
+    data['format'] = 2
+    data['reverse_rules'] = [{'src': 42, 'action': 'map', 'dst': 11}, {'src': 44, 'action': 'map', 'dst': 10},
+                             {'src': 46, 'action': 'map', 'dst': 11}]
+    back = RemapProfile.from_json(json.dumps(data))
+    assert back.effective_reverse() == {42: M(11), 44: M(10), 46: M(11)}  # точно как в файле
 
 
 def test_format_1_still_reads():
     text = json.dumps({'format': 1, 'name': 'old', 'rules': [{'src': 35, 'action': 'map', 'dst': 36}],
                        'reverse_rules': [{'src': 36, 'action': 'delete'}]})  # у формата 1 поле не читается
     p = RemapProfile.from_json(text)
-    assert p.reverse_rules is None and p.effective_reverse() == {36: M(35)}
+    assert p.reverse_overrides == {} and p.effective_reverse() == {36: M(35)}
     p2 = RemapProfile.from_json(json.dumps({'format': 2, 'name': 'x', 'rules': []}))  # формат 2 без поля
-    assert p2.reverse_rules is None
+    assert p2.reverse_overrides == {}
 
 
 @pytest.mark.parametrize('reverse', [
@@ -153,6 +230,13 @@ def test_format_1_still_reads():
 def test_bad_reverse_rules_raise_format_error(reverse):
     with pytest.raises(ProfileFormatError):
         RemapProfile.from_json(json.dumps({'format': 2, 'name': 'x', 'rules': [], 'reverse_rules': reverse}))
+
+
+@pytest.mark.parametrize('manual', [{}, [200], [36, 36], ['36'], 36])
+def test_bad_reverse_manual_raises_format_error(manual):
+    with pytest.raises(ProfileFormatError):
+        RemapProfile.from_json(json.dumps({'format': 3, 'name': 'x', 'rules': [], 'reverse_rules': [],
+                                           'reverse_manual': manual}))
 
 
 # --- обратная конвертация ---
@@ -200,46 +284,17 @@ def test_round_trip_on_samples(tmp_path, sample):
         assert back == original
 
 
-# --- основной кабель: совпадение со старым правилом показа (_mark_primary) ---
+# --- замечания в обратном направлении ---
 
-def old_mark_primary(cables):
-    """Эталон прежнего правила показа: на ноту цели — n -> n, иначе наименьшая из идущих на неё (по кабелям сцены)."""
-    by_dst = {}
-    for c in cables:
-        if not c.suggested and c.dst is not None:
-            by_dst.setdefault(c.dst, []).extend(c.notes)
-    main = {(d if d in notes else min(notes), d) for d, notes in by_dst.items()}
-    return [any((n, c.dst) in main for n in c.notes) for c in cables]
-
-
-def suggested_profile(src_id, tgt_id):
-    src, tgt = load_map_template(src_id), load_map_template(tgt_id)
-    p, _ = apply_suggested(RemapProfile('p', src, tgt), suggestion_targets(src, tgt))
-    return p
-
-
-def with_many_to_one(p):
-    """Все ноты без правила — на 38 и на 39 через одну (многие-в-одну, n -> n нет или есть)."""
-    free = [n for n in sorted(p.source_map.names) if n not in p.rules]
-    for i, n in enumerate(free):
-        p.rules[n] = M(38 if i % 2 else 39)
-    return p
-
-
-@pytest.mark.parametrize('make', [
-    legacy_profile,
-    lambda: suggested_profile('EZdrummer 3', 'Superior Drummer 3'),
-    lambda: suggested_profile('Superior Drummer 3', 'EZdrummer 3'),
-    lambda: RemapProfile('p', load_map_template('General MIDI'), load_map_template('Superior Drummer 3'),
-                         legacy_profile().rules),
-    lambda: with_many_to_one(suggested_profile('EZdrummer 3', 'Superior Drummer 3')),
-], ids=['legacy', 'ezd3-sd3', 'sd3-ezd3', 'legacy-gm-sd3', 'ezd3-sd3-many'])
-def test_primary_cables_match_old_rule(make):
-    p = make()
-    assert any(r.action == 'map' for r in p.rules.values())
-    cables = [c for c in build_layout(p, set()).scene.cables if not c.suggested]
-    assert [c.primary for c in cables] == old_mark_primary(cables)
-    # и по профилю: ровно один основной кабель на каждую ноту цели с кабелями
-    pairs = primary_pairs(p)
-    targets = {r.dst for r in p.rules.values() if r.action == 'map'}
-    assert sorted(b for _, b in pairs) == sorted(targets)
+def test_validate_profile_reverse_names_profile_maps():
+    src = NoteMap("S", {36: "Kick", 38: "Snare"})
+    tgt = NoteMap("T", {36: "Kick", 40: "Snare"})
+    p = prof({36: M(36)}, src, tgt, reverse={36: M(50), 41: M(36), 40: Rule.keep()})
+    issues = {(i.code, i.note): i.message for i in validate_profile(p, REVERSE)}
+    assert issues[(DST_NOT_IN_TARGET, 36)] == "note 36 is mapped to 50, which is not in the source map"
+    assert issues[(SRC_NOT_IN_SOURCE, 41)] == "rule for note 41, which is not in the target map"
+    assert issues[("keep_not_in_target_map", 40)] == "note 40 is kept, but the source map has no note 40"
+    # в прямом направлении — как раньше
+    p2 = prof({38: Rule.keep()}, src, NoteMap("T", {38: "Tom"}))
+    (issue,) = [i for i in validate_profile(p2) if i.code == KEEP_DIFFERENT]
+    assert issue.message == 'note 38 is kept, but it is "Snare" in the source map and "Tom" in the target map'

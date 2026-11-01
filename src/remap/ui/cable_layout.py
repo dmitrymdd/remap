@@ -15,8 +15,8 @@
 
 Раскладка строится заново после КАЖДОЙ правки (placement(), порядок не замораживается): подключили — строка
 сразу напротив цели; убрали кабель или зачеркнули — сразу в своей группе пула. Пул — по группам и номерам
-(зачёркнутые — тоже), напротив каждой цели сначала строки с основным кабелем (primary_pairs), затем остальные по
-номеру — номер основного кабеля на строке цели верхний. Чтобы вид не прыгал, прокрутку держит виджет.
+(зачёркнутые — тоже), напротив каждой цели сначала строки n -> n, затем остальные по
+номеру — свой номер на строке цели верхний. Чтобы вид не прыгал, прокрутку держит виджет.
 
 Алиасы источника (одно имя на нескольких нотах, normalize_name) в одном месте (пул или строка цели) —
 ОДНА строка с несколькими нотами (SourceRow.notes) и одним кабелем; правила при этом по-прежнему по нотам.
@@ -42,12 +42,12 @@ SourceRow.same), иначе — наименьшую; остальные — з�
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 
 from ..core.notemap import (
     NoteMap, articulations, display_group, group_sort_key, instrument_group, normalize_name, primary_note,
 )
-from ..core.profile import RemapProfile, Rule, primary_pairs
+from ..core.profile import RemapProfile, Rule
 from ..core.suggest import plan_suggestions
 
 UNASSIGNED, KEEP, DELETE, MAPPED = "unassigned", "keep", "delete", "map"
@@ -147,7 +147,6 @@ class Cable:
     target: TargetRow
     dst_y: int = 0  # строка номера dst в блоке цели (абсолютная)
     suggested: bool = False  # пунктир: подсказка, правила ещё нет
-    primary: bool = False    # основной кабель ноты цели (один на ноту, см. _mark_primary) — толще прочих
 
     @property
     def src(self) -> int:
@@ -244,13 +243,13 @@ def _wanted_slot(p: RemapProfile, n: int, suggested: Mapping[int, str]) -> str |
     return None
 
 
-def _bundle_order(primary: set[int], notes: Iterable[int]) -> tuple[int, ...]:
-    """Ноты напротив одной цели: сначала с основным кабелем (primary — их ноты), затем остальные — по номеру."""
-    return tuple(sorted(notes, key=lambda n: (n not in primary, n)))
+def _bundle_order(p: RemapProfile, notes: Iterable[int]) -> tuple[int, ...]:
+    """Ноты напротив одной цели: сначала те, что идут на свой номер (n -> n), затем остальные — по номеру."""
+    return tuple(sorted(notes, key=lambda n: (p.rules.get(n) != Rule.map_to(n), n)))
 
 
 def placement(p: RemapProfile, suggested: Mapping[int, str] = {}) -> Placement:
-    """Пул — по группам и номерам, напротив цели — строки с основным кабелем, затем остальные по номерам.
+    """Пул — по группам и номерам, напротив цели — строки n -> n, затем остальные по номерам.
     suggested — подсказки (нота -> артикуляция цели), только для нот без правила."""
     names = p.source_map.names if p.source_map is not None else {}
     pool: list[int] = []
@@ -261,8 +260,7 @@ def placement(p: RemapProfile, suggested: Mapping[int, str] = {}) -> Placement:
             slots.setdefault(key, []).append(n)
         else:
             pool.append(n)
-    primary = {a for a, _ in primary_pairs(p)} if slots else set()  # один раз, а не на каждую связку
-    return Placement(tuple(_grouped(pool, names)), {k: _bundle_order(primary, v) for k, v in slots.items()})
+    return Placement(tuple(_grouped(pool, names)), {k: _bundle_order(p, v) for k, v in slots.items()})
 
 
 # --- раскладка ---
@@ -374,7 +372,7 @@ def _unit_rows(ctx: _Ctx, notes: Iterable[int], y: int, block: str | None, slot:
         # разные правила (или подсказки на разные номера) — раскрыто всегда
         mixed = len({(p.rules.get(n), ctx.suggested_at(n, slot) and ctx.planned.get(n)) for n in members}) > 1
         # строка алиасов (и заголовок раскрытых) — на месте первой ноты места, её ноты — по возрастанию;
-        # строки нот под заголовком — в порядке места (в связке — основной кабель первым)
+        # строки нот под заголовком — в порядке места (в связке — кабель n -> n первым)
         if not mixed and key not in expanded:
             out.append(_source_row(ctx, sorted(members), y + len(out), block, slot, alias=key))
             continue
@@ -411,22 +409,12 @@ def _pool_layout(ctx: _Ctx, order: Placement, collapsed: set[str], expanded: set
     return PoolLayout(heads, rows, y)
 
 
-def _mark_primary(cables: list[Cable], pairs: set[tuple[int, int]]) -> list[Cable]:
-    """Основной кабель — тот, чья пара (исходная нота, нота цели) есть в primary_pairs() профиля: обратное
-    правило ноты цели ведёт назад на эту исходную ноту. Пока обратные правила выводятся из прямых — ровно
-    один на ноту цели: n -> n, иначе наименьшая из идущих на неё. Строка алиасов (свёрнутая, «+N») основная, если
-    среди её нот есть основная. Подсказки (пунктир) основными не бывают."""
-    return [replace(c, primary=True) if not c.suggested and any((n, c.dst) in pairs for n in c.notes) else c
-            for c in cables]
-
-
 def _scene_layout(ctx: _Ctx, order: Placement, show_all: set[str], expanded: set[str]) -> SceneLayout:
     p = ctx.p
     s_rows: list[SourceRow] = []
     t_heads: list[Header] = []
     t_rows: list[TargetRow] = []
     cables: list[Cable] = []
-    pairs = primary_pairs(p)
     y = 0
     for gkey, glabel, rows in _target_groups(p):
         visible = rows
@@ -451,10 +439,8 @@ def _scene_layout(ctx: _Ctx, order: Placement, show_all: set[str], expanded: set
             placed = TargetRow(r.slot, r.label, r.notes, r.write_to, r.in_map, y, max(1, len(units)), lines)
             t_rows.append(placed)
             s_rows.extend(units)
-            slot_cables = []
             for row in cabled:
                 dst = ctx.dst(row.shown)
-                slot_cables.append(Cable(row.notes, dst, row.y, placed, y + first.get(dst, 0), row.suggested))
-            cables.extend(_mark_primary(slot_cables, pairs))
+                cables.append(Cable(row.notes, dst, row.y, placed, y + first.get(dst, 0), row.suggested))
             y += placed.height
     return SceneLayout(s_rows, t_heads, t_rows, cables, y)

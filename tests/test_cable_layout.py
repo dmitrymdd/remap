@@ -479,92 +479,45 @@ def test_same_marks_rows_going_to_their_own_number():
     assert not any(r.same for r in pool)
 
 
-# --- основной кабель: ровно один на ноту цели (Cable.primary) ---
+# --- порядок связки: свой номер первым, затем по возрастанию ---
 
-def primary_cables(p, expanded=frozenset()):
-    lay = build_layout(p, no_collapse(), expanded=set(expanded))
-    return {c.notes: c.primary for c in lay.scene.cables if not c.suggested}
-
-
-def test_primary_cable_same_number_wins():
-    # 12, 13, 15 -> артикуляция 12, 45, 78: основной — 12 -> 12, остальные — тоньше
-    src = NoteMap("S", {12: "Hat", 13: "Hat", 15: "Hat"})
-    tgt = NoteMap("T", {12: "Hat", 45: "Hat", 78: "Hat"}, primary={12})
-    p = profile({n: Rule.map_to(12) for n in (12, 13, 15)}, src=src, tgt=tgt)
-    assert primary_cables(p, {"a:hat|hat"}) == {(12,): True, (13,): False, (15,): False}
-    assert primary_cables(p) == {(12, 13, 15): True}  # свёрнутая строка содержит основную ноту
-
-
-def test_primary_cable_without_same_number_lowest_source():
-    # 12, 45 -> 34 (номера не совпали): основной — наименьшая нота, 12 -> 34
-    src = NoteMap("S", {12: "Ride", 45: "Ride"})
-    tgt = NoteMap("T", {34: "Ride", 56: "Ride"}, primary={34})
-    p = profile({12: Rule.map_to(34), 45: Rule.map_to(34)}, src=src, tgt=tgt)
-    assert primary_cables(p, {"a:ride|ride"}) == {(12,): True, (45,): False}
-    # на разные ноты цели — у каждой ноты свой основной
-    p = profile({12: Rule.map_to(56), 45: Rule.map_to(34)}, src=src, tgt=NoteMap("T", tgt.names))
-    lay = build_layout(p, no_collapse())
-    assert {c.notes: c.primary for c in lay.scene.cables} == {(12,): True, (45,): True}
-
-
-def test_many_into_one_single_primary_across_different_names():
-    # «многие в одну»: 60, 121 (алиасы) и 124 (другое имя, не дубликат) -> 60: основной только 60 -> 60
-    src = NoteMap("S", {60: "Hat: Edge 4", 121: "Hat: Edge 4", 124: "Hat: Edge 5", 70: "Hat: Edge 5"})
-    tgt = NoteMap("T", {60: "Hat: Edge 4"})
-    p = profile({60: Rule.map_to(60), 121: Rule.map_to(60), 124: Rule.map_to(60), 70: Rule.map_to(60)},
-                src=src, tgt=tgt)
-    lay = build_layout(p, no_collapse(), expanded={"a:hat: edge 4|hat: edge 4", "a:hat: edge 4|hat: edge 5"})
-    assert {c.notes: c.primary for c in lay.scene.cables} == {(60,): True, (121,): False, (124,): False,
-                                                              (70,): False}
-    assert sum(c.primary for c in build_layout(p, no_collapse()).scene.cables) == 1  # и в свёрнутом виде
-    # без n -> n — наименьшая нота источника, тоже одна
-    p = profile({121: Rule.map_to(60), 124: Rule.map_to(60), 70: Rule.map_to(60)}, src=src, tgt=tgt)
-    lay = build_layout(p, no_collapse(), expanded={"a:hat: edge 4|hat: edge 5"})
-    assert [c.notes for c in lay.scene.cables if c.primary] == [(70,)]
-
-
-def test_single_cable_is_primary_and_suggestions_are_not():
-    p = profile({36: Rule.map_to(36), 38: Rule.map_to(39)})
-    assert all(primary_cables(p).values())
-    sugg = build_layout(profile(), no_collapse(), suggested={36: "kick: hit"})
-    assert [c.primary for c in sugg.scene.cables] == [False]
-
-
-# --- основной кабель — первым в связке ---
-
-def test_bundle_primary_row_first_then_ascending():
+def test_bundle_same_number_first_then_ascending():
     src = NoteMap("S", {33: "A", 34: "B", 35: "C", 36: "D"})
     tgt = NoteMap("T", {35: "Kick", 36: "Kick", 60: "Snare"})
-    # 35 -> 35 и 36 -> 36 основные (n -> n), 33 и 34 — нет
     p = profile({33: Rule.map_to(35), 34: Rule.map_to(36), 35: Rule.map_to(35), 36: Rule.map_to(36)}, src, tgt)
     lay = build_layout(p, no_collapse())
     assert lay.placement.slots["a:kick"] == (35, 36, 33, 34)
-    assert lay.target_row("a:kick").lines == ((0, 35), (1, 36))  # номер основного кабеля — верхний
-    # основной задан обратным правилом: 33 -> 35 первым, номер 35 на строке цели — сверху
-    p.reverse_rules = {35: Rule.map_to(33), 36: Rule.map_to(36)}
-    lay = build_layout(p, no_collapse())
-    assert lay.placement.slots["a:kick"] == (33, 36, 34, 35)
-    assert lay.target_row("a:kick").lines[0] == (0, 35)
-    # сменился основной — связка сразу пересортирована
-    p.reverse_rules = {35: Rule.map_to(35), 36: Rule.map_to(34)}
-    assert build_layout(p, no_collapse()).placement.slots["a:kick"] == (34, 35, 33, 36)
+    assert lay.target_row("a:kick").lines == ((0, 35), (1, 36))  # свой номер на строке цели — верхний
 
 
-def test_bundle_primary_first_in_reverse_kick_case():
-    """← : EZD3 34, 35, 36 «Kick: Hit» -> SD3 35; SD3 34 / 36 «Kick: Open» назначены обратно на 34 / 36.
-    Основной (толстый) — SD3 35 (прямое 35 -> 35), он первым, строка «Kick: Open +1» — под ним."""
+def test_bundle_order_as_in_the_mockup_and_independent_of_the_reverse_scheme():
+    src = NoteMap("S", {34: "Kick: Open", 35: "Kick: Hit", 36: "Kick: Open"})
+    tgt = NoteMap("T", {35: "Kick: Hit"})
+    p = profile({n: Rule.map_to(35) for n in (34, 35, 36)}, src, tgt)
+    assert build_layout(p, no_collapse()).placement.slots["a:kick: hit"] == (35, 34, 36)  # 35, потом 34 и 36
+    p.reverse_overrides = {35: Rule.map_to(36)}  # ручное обратное правило порядок прямой схемы не меняет
+    assert build_layout(p, no_collapse()).placement.slots["a:kick: hit"] == (35, 34, 36)
+
+
+def test_bundle_without_same_number_is_ascending():
+    src = NoteMap("S", {60: "Hat: Edge 4", 121: "Hat: Edge 4", 124: "Hat: Edge 5", 70: "Hat: Edge 5"})
+    tgt = NoteMap("T", {60: "Hat: Edge 4"})
+    p = profile({121: Rule.map_to(60), 124: Rule.map_to(60), 70: Rule.map_to(60)}, src, tgt)
+    assert build_layout(p, no_collapse()).placement.slots["a:hat: edge 4"] == (70, 121, 124)
+
+
+def test_bundle_in_reverse_kick_case():
+    """← : EZD3 34, 35, 36 «Kick: Hit» -> SD3 35; SD3 34 / 36 «Kick: Open» назначены обратно на 34 / 36: все на свои
+    номера — по возрастанию; 34 и 36 идут на разные номера, их строка раскрыта."""
     ezd, sd3 = load_map_template("EZdrummer 3"), load_map_template("Superior Drummer 3")
     p = RemapProfile("p", ezd, sd3, {n: Rule.map_to(35) for n in (34, 35, 36)})
-    p.reverse_rules = {35: Rule.map_to(35), 34: Rule.map_to(34), 36: Rule.map_to(36)}
+    p.reverse_overrides = {35: Rule.map_to(35), 34: Rule.map_to(34), 36: Rule.map_to(36)}
     lay = build_layout(p.reversed(), no_collapse())
     slot = "a:" + normalize_name(ezd.names[35])
-    assert lay.placement.slots[slot][0] == 35
-    # 34 и 36 идут на разные номера — их строка раскрыта (заголовок «+1» и строка на ноту), но вся — под 35
-    first, header, *children = [r for r in lay.scene.source_rows if set(r.notes) <= {34, 35, 36}]
-    assert first.notes == (35,) and header.notes == (34, 36) and header.expanded and first.y < header.y
+    assert lay.placement.slots[slot] == (34, 35, 36)
+    header, *children, last = [r for r in lay.scene.source_rows if set(r.notes) <= {34, 35, 36}]
+    assert header.notes == (34, 36) and header.expanded and last.notes == (35,)
     assert [c.notes for c in children] == [(34,), (36,)]
-    assert [c.primary for c in lay.scene.cables if c.target.slot == slot] == [True, False, False]
-    assert lay.target_row(slot).lines[0] == (0, 35)
 
 
 def _ranks(headers):

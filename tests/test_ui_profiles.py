@@ -685,6 +685,11 @@ def test_removed_cable_row_goes_straight_to_pool(window):
 
 # --- вид «кабелями»: правка ---
 
+def ends(cable):
+    """(нота строки, нота цели) кабеля в ориентированном профиле: у строки алиасов — её показываемый номер."""
+    return cable.src.model.shown, cable.cable.dst
+
+
 def cables_page(window, accept=True, size=(1300, 900)):
     """Новый профиль EZD3 → SD3; accept — применить подсказки; подсказки затем скрыты (✕)."""
     page = window.profiles_page
@@ -984,7 +989,7 @@ def _crossing(ed, x, y0, y1):
         ys = [path.pointAtPercent(t / 200).y() for t in range(201)
               if abs(path.pointAtPercent(t / 200).x() - x) < 1.5]
         if ys and y0 <= min(ys) <= y1:
-            out.add(c.ends)
+            out.add(ends(c))
     return out
 
 
@@ -1007,7 +1012,7 @@ def test_swipe_marks_crossed_cables_and_deletes_them_in_one_undo_step(window, ap
     assert ed.swiping and not ed.swiped_cables()
     for k in range(1, 9):  # протяжка вниз через кабели
         _right(ed.view, "MouseMove", QPointF(x + (k % 2) * 3, y0 + (y1 - y0) * k / 8))
-    marked = {c.ends for c in ed.swiped_cables()}
+    marked = {ends(c) for c in ed.swiped_cables()}
     assert marked == expected  # отмечено ровно то, что пересёк путь
     assert all(c.pen().color().name().upper() == theme.ERR_LED for c in ed.swiped_cables())
     # во время росчерка — ни перестройки, ни правки
@@ -1015,12 +1020,12 @@ def test_swipe_marks_crossed_cables_and_deletes_them_in_one_undo_step(window, ap
     _right(ed.view, "MouseButtonRelease", QPointF(x, y1))
     app.processEvents()
     oriented = page.work.oriented(page.direction)
-    gone = {n for c in before_items if c.ends in marked for n in c.cable.notes}
+    gone = {n for c in before_items if ends(c) in marked for n in c.cable.notes}
     assert gone and all(oriented.rules.get(n) is None or oriented.rules[n].action != "map" for n in gone)
     assert not ed.swiping and not ed.swiped_cables()
     assert len(page._undo) == steps + 1  # один шаг отмены на весь росчерк
     assert page.undo() and page.work.to_dict() == before_rules
-    assert {c.ends for c in ed.cable_items} >= marked
+    assert {ends(c) for c in ed.cable_items} >= marked
 
 
 def test_fast_swipe_hits_cables_between_mouse_events(window, app):
@@ -1031,7 +1036,7 @@ def test_fast_swipe_hits_cables_between_mouse_events(window, app):
     y0, y1 = cables[0].src.rect.top() - 2, cables[6].src.rect.bottom() + 2
     _right(ed.view, "MouseButtonPress", QPointF(x - 20, y0))
     _right(ed.view, "MouseMove", QPointF(x + 20, y1))  # один длинный отрезок
-    assert {c.ends for c in ed.swiped_cables()} == _crossing(ed, x, y0, y1) and len(ed.swiped_cables()) >= 5
+    assert {ends(c) for c in ed.swiped_cables()} == _crossing(ed, x, y0, y1) and len(ed.swiped_cables()) >= 5
     ed.cancel_swipe()
 
 
@@ -1470,46 +1475,40 @@ def test_truncated_names_in_tooltips(window, app):
     assert all(not i.toolTip().startswith(i.name) for i in fits if i.toolTip())
 
 
-def test_primary_cable_thicker_others_thinner(window):
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_double_click_on_a_cable_does_nothing(window, app, direction):
+    from remap.core.profile import REVERSE
+    page, ed = cables_page(window)
+    if direction == "reverse":
+        page.set_direction(REVERSE)
+    item = ed.cable_items[0]
+    before, steps = page.work.to_dict(), len(page._undo)
+    double_click(app, ed.view, item.path().pointAtPercent(0.5))
+    assert page.work.to_dict() == before and len(page._undo) == steps
+
+
+def test_all_cables_have_one_width(window):
     src = NoteMap("S", {12: "Hat", 13: "Hat", 15: "Hat", 20: "Tom"})
     tgt = NoteMap("T", {12: "Hat", 45: "Hat", 78: "Hat", 30: "Tom"}, primary={12})
     rules = {n: Rule.map_to(12) for n in (13, 15)} | {12: Rule.map_to(12), 20: Rule.map_to(30)}
     ed = window.profiles_page.cables
     ed.set_profile(RemapProfile("p", src, tgt, rules))
     ed.toggle_alias("a:hat|hat", in_pool=False)
-    width = {item.cable.notes: item.pen().widthF() for item in ed.cable_items}
-    assert width == {(12,): cable_view.CABLE_PRIMARY_W, (13,): cable_view.CABLE_THIN_W,
-                     (15,): cable_view.CABLE_THIN_W, (20,): cable_view.CABLE_PRIMARY_W}
-    assert cable_view.CABLE_PRIMARY_W == cable_view.CABLE_W and cable_view.CABLE_THIN_W == cable_view.CABLE_W / 2
-
-
-def test_drag_preview_thin_from_unassigned_notes(window):
-    src = NoteMap("S", {36: "Kick", 38: "Snare"})
-    tgt = NoteMap("T", {36: "Kick", 38: "Snare"})
-    ed = window.profiles_page.cables
-    ed.set_profile(RemapProfile("p", src, tgt, {36: Rule.map_to(36)}))
-    ed.begin_drag({38}, QPointF(0, 0))
-    assert ed.overlay.width == cable_view.CABLE_THIN_W
-    ed.cancel_drag()
-    ed.begin_drag({36}, QPointF(0, 0))  # подключённая строка — обычный кабель
-    assert ed.overlay.width == cable_view.CABLE_W
-    ed.cancel_drag()
+    assert {item.pen().widthF() for item in ed.cable_items} == {cable_view.CABLE_W} and len(ed.cable_items) == 4
 
 
 # --- двунаправленные профили ---
 
 def test_reverse_rules_follow_connect_with_undo_redo(window, app):
-    from remap.core.profile import derive_reverse
     page, _ed = cables_page(window, accept=False)
-    page.work.reverse_rules = derive_reverse(page.work)  # заданы явно (как после сохранения формата 2)
     key, notes = three_note_articulation(page.work)
     n = notes[0]
-    assert n not in page.work.reverse_rules
+    assert n not in page.work.effective_reverse()
     assert page.connect_to([n], "a:" + key)
     rev = page.work.effective_reverse()
     assert rev[n] == Rule.map_to(n)
     assert all(rev[m] == Rule.map_to(n) for m in notes)  # алиасы цели — туда же
-    assert page.work.reverse_rules is None  # следуют за прямыми и равны выведенным — хранятся как None
+    assert page.work.reverse_overrides == {}  # ничего ручного
     assert page.undo()
     assert not set(notes) & set(page.work.effective_reverse())
     assert page.redo()
@@ -1518,13 +1517,18 @@ def test_reverse_rules_follow_connect_with_undo_redo(window, app):
 
 def test_map_change_resets_reverse_rules_in_one_undo_step(window, app):
     page, _ed = cables_page(window)
-    manual = {36: Rule.delete(), 38: Rule.map_to(40)}
-    page.work.reverse_rules = dict(manual)
+    manual = {36: Rule.delete(), 38: Rule.map_to(40), 40: None}
+    page.work.reverse_overrides = dict(manual)
+    asked = []
+    page.confirm = lambda title, text, detail="": asked.append(detail) or True
     assert page.choose_map("target", EZD3)
-    assert page.work.reverse_rules is None  # снова выводятся из прямых
+    assert "3 hand-set reverse cable(s) will be lost" in asked[0]  # подтверждение говорит о потере
+    assert page.work.reverse_overrides == {}  # снова вычисляются из прямых
     assert page.undo()
-    assert page.work.reverse_rules == manual and page.work.target_map.name == "Superior Drummer 3"
-    assert page.redo() and page.work.reverse_rules is None
+    assert page.work.reverse_overrides == manual and page.work.target_map.name == "Superior Drummer 3"
+    assert page.redo() and page.work.reverse_overrides == {}
+    assert page.choose_map("target", None)
+    assert "hand-set" not in asked[1]  # ручных нет — и не говорим
 
 
 def test_convert_direction_toggle(app, storage, tmp_path):
@@ -1587,13 +1591,6 @@ def double_click(app, view, scene_pt):
                  QEvent.Type.MouseButtonRelease):
         send_mouse(view, kind, scene_pt)
     app.processEvents()
-
-
-def secondary_cable(ed):
-    """Неосновной кабель: раскрыть подключённую строку алиасов (её ноты идут на одну ноту цели)."""
-    row = next(r for r in ed.current.scene.source_rows if r.connected and r.alias and len(r.notes) > 1)
-    ed.toggle_alias(row.alias, in_pool=False)
-    return next(c for c in ed.cable_items if not c.cable.primary)
 
 
 def test_reverse_uses_forward_layout(window, app):
@@ -1718,8 +1715,9 @@ def test_reverse_assign_write_to_goes_to_source_copy(window, app, storage):
     page.answers["write_to"] = [notes[2]]
     assert page.connect_to([other, notes[0], notes[1]], "a:" + key)
     assert [x[0] for x in page.answers["asked"]] == ["write_to"] and page.answers["preselect"] == notes[0]
-    assert page.work.reverse_rules == {notes[0]: Rule.map_to(notes[0]), notes[1]: Rule.map_to(notes[1]),
-                                       other: Rule.map_to(notes[2])}
+    assert page.work.effective_reverse() == {notes[0]: Rule.map_to(notes[0]), notes[1]: Rule.map_to(notes[1]),
+                                             other: Rule.map_to(notes[2])}
+    assert page.work.reverse_overrides == page.work.effective_reverse()  # всё проведено руками
     assert page.work.rules == {}  # прямые не тронуты
     assert page.work.source_map.primary & set(notes) == {notes[2]}  # Write to — в копии ИСХОДНОЙ карты
     assert page.work.target_map.primary == sd3_primary
@@ -1728,7 +1726,7 @@ def test_reverse_assign_write_to_goes_to_source_copy(window, app, storage):
     item = ed.target_items["a:" + key]
     assert item.badge and item.port == "left"  # как в →: точка строки цели — со стороны кабелей
     assert page.set_write_to(notes[1])
-    assert page.work.reverse_rules[other] == Rule.map_to(notes[1])
+    assert page.work.effective_reverse()[other] == Rule.map_to(notes[1])
     assert page.work.source_map.primary & set(notes) == {notes[1]}
     # перетаскивание из пула — тот же путь, что в →; превью — цветом ←
     single = next(n for n in sorted(page.work.target_map.names)
@@ -1752,7 +1750,7 @@ def test_reverse_right_click_strike_and_group_drop(window, app):
     ed.right_click(row)
     app.processEvents()
     assert note not in w.effective_reverse() and ed.current.source_row(note).block is not None  # сразу в пул
-    assert w.reverse_rules is not None  # отличается от выведенных — ручное
+    assert w.reverse_overrides == {note: None}  # снятый кабель — ручная правка
     # правый клик по строке пула — зачеркнуть (delete) / вернуть
     pool = ed.pool_rows[0]
     n = pool.notes[0]
@@ -1790,99 +1788,11 @@ def test_reverse_suggestions_bar(window, app):
     assert page.cables.suggested == fwd and page.suggest_bar.isVisibleTo(page)
     # снимок отмены хранит подсказки обоих направлений
     assert page.undo()  # Apply в ←
-    assert page.direction == REVERSE and page._suggest[REVERSE] and page.work.reverse_rules is None
-
-
-def test_double_click_forward_makes_cable_primary(window, app):
-    from remap.core.profile import FORWARD, primary_pairs
-    from remap.ui.cable_view import PRIMARY_HINT
-    page, ed = cables_page(window)
-    item = secondary_cable(ed)
-    primary = next(c for c in ed.cable_items if c.cable.primary)
-    assert PRIMARY_HINT in item.toolTip() and PRIMARY_HINT not in primary.toolTip()
-    a, b = item.ends
-    old = page.work.effective_reverse()[b]
-    sel = set(ed.selection)
-    point = item.path().pointAtPercent(0.5)
-    double_click(app, ed.view, point)
-    assert not ed.dragging and ed.selection == sel  # первое нажатие ничего не делает
-    assert (a, b) in primary_pairs(page.work) and page.work.effective_reverse()[b] == Rule.map_to(a)
-    assert page.status.text() == f"Reverse: {b} → {a} (was {b} → {old.dst})"
-    assert any(c.cable.primary and c.ends == (a, b) for c in ed.cable_items)
-    # уже основной — ничего (не шаг отмены)
-    steps = len(page._undo)
-    assert not page.make_primary(a, b) and len(page._undo) == steps
-    assert page.undo() and page.work.effective_reverse()[b] == old and page.direction == FORWARD
-
-
-def test_double_click_reverse_sets_forward_rule(window, app):
-    from remap.core.profile import REVERSE, primary_pairs
-    page, ed = reverse_page(window)
-    item = secondary_cable(ed)
-    b, a = item.ends  # в ←: нота цели b ведёт назад на исходную a
-    old = page.work.rules[a]
-    assert old != Rule.map_to(b)
-    double_click(app, ed.view, item.path().pointAtPercent(0.5))
-    w = page.work
-    assert w.rules[a] == Rule.map_to(b) and (a, b) in primary_pairs(w)
-    assert page.status.text() == f"Forward: {a} → {b} (was {a} → {old.dst})"
-    assert any(c.cable.primary and c.ends == (b, a) for c in ed.cable_items)
-    # было без правила — «was unassigned»
-    assert page.undo()
-    p = page.work
-    p.rules.pop(a)
-    p.reverse_rules = {b: Rule.map_to(a)}
-    page._changed()
-    assert page.make_primary(b, a)
-    assert page.status.text() == f"Forward: {a} → {b} (was unassigned)" and (a, b) in primary_pairs(page.work)
-    assert page.direction == REVERSE
+    assert page.direction == REVERSE and page._suggest[REVERSE] and page.work.reverse_overrides == {}
 
 
 def _scene_cables(ed):
-    return {c.ends for c in ed.cable_items}
-
-
-def test_double_click_forward_keeps_every_other_cable(window, app):
-    # → : у каждой ноты цели с несколькими кабелями — двойной клик по неосновному; прочие кабели на месте
-    page, ed = cables_page(window)
-    item = secondary_cable(ed)
-    before, rules = _scene_cables(ed), dict(page.work.rules)
-    double_click(app, ed.view, item.path().pointAtPercent(0.5))
-    assert any(c.cable.primary and c.ends == item.ends for c in ed.cable_items)
-    assert _scene_cables(ed) == before and page.work.rules == rules
-
-
-def test_double_click_reverse_keeps_every_other_cable(window, app):
-    from remap.core.profile import REVERSE
-    page, ed = cables_page(window, accept=False)
-    page.assign_note([38], 38)              # → 38 «Snare: Center» -> 38; в ← выведено 38 -> 38 (основной)
-    page.set_direction(REVERSE)
-    page.assign_note([40], 38)               # ← 40 «Snare: Rimshot» -> 38 (неосновной)
-    QApplication.processEvents()
-    item = next(c for c in ed.cable_items if c.ends == (40, 38))
-    assert not item.cable.primary
-    before = _scene_cables(ed)
-    double_click(app, ed.view, item.path().pointAtPercent(0.5))
-    assert page.work.rules[38] == Rule.map_to(40)  # основной сменился
-    assert _scene_cables(ed) == before  # кабель ← 38 -> 38 остаётся (неосновным)
-    assert any(c.cable.primary and c.ends == (40, 38) for c in ed.cable_items)
-    assert not any(c.cable.primary and c.ends == (38, 38) for c in ed.cable_items)
-
-
-def test_reverse_double_click_undo_restores_exactly(window, app):
-    from remap.core.profile import REVERSE
-    page, ed = cables_page(window, accept=False)
-    page.assign_note([38], 38)
-    page.set_direction(REVERSE)
-    page.assign_note([40], 38)
-    QApplication.processEvents()
-    snapshot, cables = page.work.to_dict(), _scene_cables(ed)
-    item = next(c for c in ed.cable_items if c.ends == (40, 38))
-    double_click(app, ed.view, item.path().pointAtPercent(0.5))
-    assert page.work.to_dict() != snapshot
-    assert page.undo()
-    assert page.work.to_dict() == snapshot and _scene_cables(ed) == cables  # в точности как было
-    assert page.redo() and page.work.rules[38] == Rule.map_to(40)
+    return {ends(c) for c in ed.cable_items}
 
 
 def test_undo_redo_switch_to_direction_of_the_step(window, app):
@@ -1904,16 +1814,16 @@ def test_undo_redo_switch_to_direction_of_the_step(window, app):
     assert page.redo() and page.direction == FORWARD and src not in page.work.rules
 
 
-def test_reverse_edits_normalize_to_none(window, app):
+def test_reverse_edit_back_to_derived_is_automatic_again(window, app):
     page, ed = reverse_page(window)
     w = page.work
-    assert w.reverse_rules is None
+    assert w.reverse_overrides == {}
     row = next(i for i in ed.scene_rows if i.model.connected and len(i.notes) == 1)
     note, dst = row.notes[0], w.effective_reverse()[row.notes[0]].dst
     page.clear_rules([note])
-    assert w.reverse_rules is not None and note not in w.reverse_rules
-    page.assign_note([note], dst)  # вернули то же — снова равно выведенным
-    assert w.reverse_rules is None
+    assert w.reverse_overrides == {note: None}
+    page.assign_note([note], dst)  # вернули то же — снова равно вычисленному
+    assert w.reverse_overrides == {}
 
 
 def test_save_dialog_forward_only_in_reverse(window, app, storage):
@@ -1967,7 +1877,7 @@ def bare_page(window, rules=None, reverse=None):
     """EZD3 → SD3 с заданными правилами (подсказки скрыты)."""
     page, ed = cables_page(window, accept=False)
     page.work.rules = dict(rules or {})
-    page.work.reverse_rules = reverse
+    page.work.reverse_overrides = dict(reverse or {})
     page._changed()
     ed.refresh()
     return page, ed
@@ -1978,38 +1888,17 @@ def dbl_pool_row(app, ed, note):
     double_click(app, ed.pool, item.rect.center())
 
 
-def test_primary_row_moves_first_after_double_click(window, app):
-    from remap.core.profile import REVERSE
-    for direction in ("forward", REVERSE):
-        page, ed = cables_page(window) if direction == "forward" else reverse_page(window)
-        item = secondary_cable(ed)
-        src, dst = item.ends
-        slot = item.cable.target.slot
-        assert ed.current.placement.slots[slot][0] != src
-        double_click(app, ed.view, item.path().pointAtPercent(0.5))
-        assert ed.current.placement.slots[slot][0] == src  # связка пересортирована сразу
-        row = ed.current.target_row(slot)
-        assert row.lines[0][1] == dst  # номер основного кабеля — верхний (у раскрытых алиасов — под заголовком)
-        first = min((c for c in ed.cable_items if c.cable.target.slot == slot), key=lambda c: c.cable.src_y)
-        assert first.cable.primary and first.ends == (src, dst)
-        page.answers["save_changes"] = "discard"
-        page.select(LEGACY_ID)
-
-
-def test_kick_bundle_primary_first_in_reverse(window, app):
+def test_kick_bundle_same_numbers_ascending_in_reverse(window, app):
     page, ed = reverse_page(window)
     ezd = page.work.source_map
     slot = "a:" + normalize_name(ezd.names[35])
     assert page.connect_to([34, 36], slot)  # SD3 Kick: Open -> EZD3 Kick: Hit (номера совпали: 34 -> 34, 36 -> 36)
     ed.refresh()
-    assert ed.current.placement.slots[slot][0] == 35
-    rows = [i for i in ed.scene_rows if set(i.notes) <= {34, 35, 36}]
-    assert rows[0].notes == (35,) and rows[0].port == "right"
-    assert ed.current.target_row(slot).lines[0] == (0, 35)
+    assert ed.current.placement.slots[slot] == (34, 35, 36)  # все на свои номера — по возрастанию
+    assert ed.current.target_row(slot).lines[0][1] == 34
 
 
-def test_double_click_unassigned_free_number_is_primary(window, app):
-    from remap.core.profile import primary_pairs
+def test_double_click_unassigned_free_number_connects(window, app):
     from remap.ui.cable_view import SAME_NUMBER_HINT
     page, ed = bare_page(window)
     (t,) = shared_numbers(page.work, 1)
@@ -2018,35 +1907,31 @@ def test_double_click_unassigned_free_number_is_primary(window, app):
     steps = len(page._undo)
     dbl_pool_row(app, ed, t)
     assert not ed.dragging
-    assert page.work.rules == {t: Rule.map_to(t)} and (t, t) in primary_pairs(page.work)
+    assert page.work.rules == {t: Rule.map_to(t)} and page.work.effective_reverse()[t] == Rule.map_to(t)
     assert len(page._undo) == steps + 1
     assert t in ed.source_items and t not in ed.pool_items  # строка ушла из пула напротив цели
     assert page.status.text() == "1 note connected to the same number"
     assert page.undo() and page.work.rules == {}
 
 
-def test_double_click_unassigned_occupied_number_stays_secondary_forward(window, app):
-    from remap.core.profile import primary_pairs
+def test_double_click_unassigned_occupied_number_takes_the_reverse_rule(window, app):
     page, ed = bare_page(window)
     t, u = shared_numbers(page.work, 2)
-    page.work.rules = {u: Rule.map_to(t)}  # на номер t уже идёт кабель от u — он основной
+    page.work.rules = {u: Rule.map_to(t)}  # на номер t уже идёт кабель от u
     page._changed()
     ed.refresh()
-    assert primary_pairs(page.work) == {(u, t)}
+    assert page.work.effective_reverse()[t] == Rule.map_to(u)
     dbl_pool_row(app, ed, t)
     w = page.work
     assert w.rules == {u: Rule.map_to(t), t: Rule.map_to(t)}
-    assert primary_pairs(w) == {(u, t)} and w.effective_reverse()[t] == Rule.map_to(u)
-    assert w.reverse_rules is not None  # зафиксировано явно: выведение выбрало бы t -> t
-    thick = {c.ends: c.cable.primary for c in ed.cable_items if c.cable.dst == t}
-    assert thick == {(u, t): True, (t, t): False}
+    assert w.effective_reverse()[t] == Rule.map_to(t) and w.reverse_overrides == {}  # как обычный drop
 
 
-def test_double_click_unassigned_occupied_number_stays_secondary_reverse(window, app):
-    from remap.core.profile import REVERSE, primary_pairs
+def test_double_click_unassigned_occupied_number_in_reverse(window, app):
+    from remap.core.profile import REVERSE
     page, ed = bare_page(window)
     t, u = shared_numbers(page.work, 2)
-    page.work.rules = {t: Rule.map_to(u)}  # прямое t -> u; обратно u -> t — основной кабель на исходную t
+    page.work.rules = {t: Rule.map_to(u)}  # прямое t -> u; обратно u -> t
     page._changed()
     page.set_direction(REVERSE)
     assert t in ed.pool_items  # нота цели t без обратного правила
@@ -2054,9 +1939,7 @@ def test_double_click_unassigned_occupied_number_stays_secondary_reverse(window,
     w = page.work
     assert w.rules == {t: Rule.map_to(u)}  # прямые не тронуты
     assert w.effective_reverse()[t] == Rule.map_to(t) and w.effective_reverse()[u] == Rule.map_to(t)
-    assert primary_pairs(w) == {(t, u)}  # основной по-прежнему u -> t, новый t -> t — неосновной
-    thick = {c.ends: c.cable.primary for c in ed.cable_items if c.cable.dst == t}
-    assert thick == {(u, t): True, (t, t): False}
+    assert w.reverse_overrides == {t: Rule.map_to(t)}  # проведено в ← — ручное
 
 
 def test_double_click_unassigned_missing_number_and_partial_alias_row(window, app):
@@ -2185,13 +2068,11 @@ def test_drop_zones_feedback_and_tooltip(window, app):
 
 
 def test_drop_on_number_line_maps_exactly_forward(window, app):
-    from remap.core.profile import primary_pairs
     page, ed = cables_page(window, accept=False)
     key, notes = three_note_articulation(page.work)
     slot = "a:" + key
     assert page.connect_to(notes[:2], slot)  # n -> n: на строке цели номера notes[0] и notes[1]
     primary = set(page.work.target_map.primary)
-    pairs = primary_pairs(page.work)
     x, y = notes_off(page.work, notes, 2)
     steps = len(page._undo)
     drop(app, ed, [x], line_point(ed, slot, notes[1]))
@@ -2199,11 +2080,10 @@ def test_drop_on_number_line_maps_exactly_forward(window, app):
     w = page.work
     assert w.rules[x] == Rule.map_to(notes[1]) and w.rules[y] == Rule.map_to(notes[0])
     assert page.answers["asked"] == [] and w.target_map.primary == primary  # ни вопроса, ни Write to
-    assert primary_pairs(w) == pairs  # основные — n -> n, новые кабели неосновные
     assert len(page._undo) == steps + 2
-    # тот же ряд — на другой номер той же артикуляции: перенацелен, основной не тронут
+    # тот же ряд — на другой номер той же артикуляции: перенацелент
     drop(app, ed, [x], line_point(ed, slot, notes[0]))
-    assert w.rules[x] == Rule.map_to(notes[0]) and primary_pairs(w) == pairs
+    assert w.rules[x] == Rule.map_to(notes[0])
     assert page.undo() and page.work.rules[x] == Rule.map_to(notes[1])
 
 
@@ -2358,7 +2238,7 @@ def test_drop_on_single_note_articulation_number(window, app, direction):
 # --- полировка: Match by number, статус, горячие клавиши, прокрутка ---
 
 def test_match_by_number_button_one_undo_step(window, app):
-    from remap.core.profile import REVERSE, number_matches, primary_pairs
+    from remap.core.profile import REVERSE, number_matches
     page, ed = bare_page(window)
     t, u = shared_numbers(page.work, 2)
     page.work.rules = {u: Rule.map_to(t)}  # номер t уже занят кабелем от u
@@ -2371,7 +2251,7 @@ def test_match_by_number_button_one_undo_step(window, app):
     w = page.work
     assert all(w.rules[n] == Rule.map_to(n) for n in expected) and w.rules[u] == Rule.map_to(t)
     assert w.rules[struck] == Rule.delete()
-    assert (u, t) in primary_pairs(w)  # как двойной клик: занятый номер — новый кабель неосновной
+    assert w.effective_reverse()[t] == Rule.map_to(t) and w.reverse_overrides == {}  # занятый номер: как обычный drop
     assert page.status.text() == f"Matched {len(expected)} notes by number"
     assert len(page._undo) == steps + 1 and all(n in ed.source_items for n in expected)
     page.match_btn.click()
@@ -2396,10 +2276,10 @@ def test_names_differ_tooltip_on_real_maps(window):
         if direction:
             page.set_direction(direction)
         shown, items = page.cables.shown, page.cables.cable_items
-        differ = [c for c in items if names_differ(shown, *c.ends)]
+        differ = [c for c in items if names_differ(shown, *ends(c))]
         assert differ and len(differ) < len(items)
         for c in items:
-            src, dst = shown.source_map.names[c.ends[0]], shown.target_map.names[c.ends[1]]
+            src, dst = shown.source_map.names[ends(c)[0]], shown.target_map.names[ends(c)[1]]
             assert c.toolTip().startswith(f"Names differ: {src} → {dst}\n") == (c in differ)
 
 

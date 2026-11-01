@@ -1,0 +1,705 @@
+{
+  "format": 2,
+  "name": "Guitar Pro 8 - General MIDI",
+  "source_map": {
+    "name": "General MIDI",
+    "names": {
+      "35": "Acoustic Bass Drum",
+      "36": "Bass Drum 1",
+      "37": "Side Stick",
+      "38": "Acoustic Snare",
+      "39": "Hand Clap",
+      "40": "Electric Snare",
+      "41": "Low Floor Tom",
+      "42": "Closed Hi-Hat",
+      "43": "High Floor Tom",
+      "44": "Pedal Hi-Hat",
+      "45": "Low Tom",
+      "46": "Open Hi-Hat",
+      "47": "Low-Mid Tom",
+      "48": "Hi-Mid Tom",
+      "49": "Crash Cymbal 1",
+      "50": "High Tom",
+      "51": "Ride Cymbal 1",
+      "52": "Chinese Cymbal",
+      "53": "Ride Bell",
+      "54": "Tambourine",
+      "55": "Splash Cymbal",
+      "56": "Cowbell",
+      "57": "Crash Cymbal 2",
+      "58": "Vibraslap",
+      "59": "Ride Cymbal 2",
+      "60": "Hi Bongo",
+      "61": "Low Bongo",
+      "62": "Mute Hi Conga",
+      "63": "Open Hi Conga",
+      "64": "Low Conga",
+      "65": "High Timbale",
+      "66": "Low Timbale",
+      "67": "High Agogo",
+      "68": "Low Agogo",
+      "69": "Cabasa",
+      "70": "Maracas",
+      "71": "Short Whistle",
+      "72": "Long Whistle",
+      "73": "Short Guiro",
+      "74": "Long Guiro",
+      "75": "Claves",
+      "76": "Hi Wood Block",
+      "77": "Low Wood Block",
+      "78": "Mute Cuica",
+      "79": "Open Cuica",
+      "80": "Mute Triangle",
+      "81": "Open Triangle"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": null,
+      "status": "verified",
+      "notes": "Based on template General MIDI"
+    }
+  },
+  "target_map": {
+    "name": "Guitar Pro 8",
+    "names": {
+      "29": "Ride (choke)",
+      "30": "Reverse Cymbal (hit)",
+      "31": "Snare (side stick)",
+      "33": "Metronome (hit)",
+      "34": "Metronome (bell)",
+      "35": "Kick (hit)",
+      "36": "Kick (hit)",
+      "37": "Snare (side stick)",
+      "38": "Snare (hit)",
+      "39": "Hand Clap (hit)",
+      "40": "Electric Snare (hit)",
+      "41": "Low Floor Tom (hit)",
+      "42": "Hi-Hat (closed)",
+      "43": "Very Low Tom (hit)",
+      "44": "Pedal Hi-Hat (hit)",
+      "45": "Low Tom (hit)",
+      "46": "Hi-Hat (open)",
+      "47": "Mid Tom (hit)",
+      "48": "High Tom (hit)",
+      "49": "Crash high (hit)",
+      "50": "High Floor Tom (hit)",
+      "51": "Ride (middle)",
+      "52": "China (hit)",
+      "53": "Ride (bell)",
+      "54": "Tambourine (hit)",
+      "55": "Splash (hit)",
+      "56": "Cowbell medium (hit)",
+      "57": "Crash medium (hit)",
+      "58": "Vibraslap (hit)",
+      "59": "Ride (edge)",
+      "60": "Bongo High (hit)",
+      "61": "Bongo Low (hit)",
+      "62": "Conga high (mute)",
+      "63": "Conga high (hit)",
+      "64": "Conga low (hit)",
+      "65": "Timbale high (hit)",
+      "66": "Timbale low (hit)",
+      "67": "Agogo high (hit)",
+      "68": "Agogo low (hit)",
+      "69": "Cabasa (hit)",
+      "70": "Left Maraca (hit)",
+      "71": "Whistle high (hit)",
+      "72": "Whistle low (hit)",
+      "73": "Guiro (hit)",
+      "74": "Guiro (scrap-return)",
+      "75": "Claves (hit)",
+      "76": "Woodblock high (hit)",
+      "77": "Woodblock low (hit)",
+      "78": "Cuica (mute)",
+      "79": "Cuica (open)",
+      "80": "Triangle (mute)",
+      "81": "Triangle (hit)",
+      "82": "Shaker (hit)",
+      "83": "Tinkle Bell (hit) / Jingle Bell (hit)",
+      "84": "Bell Tree (hit)",
+      "85": "Castanets (hit)",
+      "86": "Surdo (hit)",
+      "87": "Surdo (mute)",
+      "91": "Snare (rim shot)",
+      "92": "Hi-Hat (half)",
+      "93": "Ride (edge)",
+      "94": "Ride (choke)",
+      "95": "Splash (choke)",
+      "96": "China (choke)",
+      "97": "Crash high (choke)",
+      "98": "Crash medium (choke)",
+      "99": "Cowbell low (hit)",
+      "100": "Cowbell low (tip)",
+      "101": "Cowbell medium (tip)",
+      "102": "Cowbell high (hit)",
+      "103": "Cowbell high (tip)",
+      "104": "Bongo High (mute)",
+      "105": "Bongo High (slap)",
+      "106": "Bongo Low (mute)",
+      "107": "Bongo Low (slap)",
+      "108": "Conga low (slap)",
+      "109": "Conga low (mute)",
+      "110": "Conga high (slap)",
+      "111": "Tambourine (return)",
+      "112": "Tambourine (roll)",
+      "113": "Tambourine (hand)",
+      "114": "Grancassa (hit)",
+      "115": "Piatti (hit)",
+      "116": "Piatti (hand)",
+      "117": "Cabasa (return)",
+      "118": "Left Maraca (return)",
+      "119": "Right Maraca (hit)",
+      "120": "Right Maraca (return)",
+      "122": "Shaker (return)",
+      "123": "Bell Tree (return)",
+      "124": "Golpe (thumb)",
+      "125": "Golpe (finger)",
+      "126": "Ride (middle)",
+      "127": "Ride (bell)"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": null,
+      "status": "verified",
+      "notes": "Based on template Guitar Pro 8"
+    }
+  },
+  "rules": [
+    {
+      "src": 35,
+      "action": "map",
+      "dst": 35
+    },
+    {
+      "src": 36,
+      "action": "map",
+      "dst": 36
+    },
+    {
+      "src": 37,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 38,
+      "action": "map",
+      "dst": 38
+    },
+    {
+      "src": 39,
+      "action": "map",
+      "dst": 39
+    },
+    {
+      "src": 40,
+      "action": "map",
+      "dst": 40
+    },
+    {
+      "src": 41,
+      "action": "map",
+      "dst": 41
+    },
+    {
+      "src": 42,
+      "action": "map",
+      "dst": 42
+    },
+    {
+      "src": 43,
+      "action": "map",
+      "dst": 43
+    },
+    {
+      "src": 44,
+      "action": "map",
+      "dst": 44
+    },
+    {
+      "src": 45,
+      "action": "map",
+      "dst": 45
+    },
+    {
+      "src": 46,
+      "action": "map",
+      "dst": 46
+    },
+    {
+      "src": 47,
+      "action": "map",
+      "dst": 47
+    },
+    {
+      "src": 48,
+      "action": "map",
+      "dst": 48
+    },
+    {
+      "src": 49,
+      "action": "map",
+      "dst": 97
+    },
+    {
+      "src": 50,
+      "action": "map",
+      "dst": 50
+    },
+    {
+      "src": 51,
+      "action": "map",
+      "dst": 51
+    },
+    {
+      "src": 52,
+      "action": "map",
+      "dst": 52
+    },
+    {
+      "src": 53,
+      "action": "map",
+      "dst": 53
+    },
+    {
+      "src": 54,
+      "action": "map",
+      "dst": 54
+    },
+    {
+      "src": 55,
+      "action": "map",
+      "dst": 55
+    },
+    {
+      "src": 56,
+      "action": "map",
+      "dst": 56
+    },
+    {
+      "src": 57,
+      "action": "map",
+      "dst": 57
+    },
+    {
+      "src": 58,
+      "action": "map",
+      "dst": 58
+    },
+    {
+      "src": 59,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 60,
+      "action": "map",
+      "dst": 60
+    },
+    {
+      "src": 61,
+      "action": "map",
+      "dst": 61
+    },
+    {
+      "src": 62,
+      "action": "map",
+      "dst": 62
+    },
+    {
+      "src": 63,
+      "action": "map",
+      "dst": 63
+    },
+    {
+      "src": 64,
+      "action": "map",
+      "dst": 64
+    },
+    {
+      "src": 65,
+      "action": "map",
+      "dst": 65
+    },
+    {
+      "src": 66,
+      "action": "map",
+      "dst": 66
+    },
+    {
+      "src": 67,
+      "action": "map",
+      "dst": 67
+    },
+    {
+      "src": 68,
+      "action": "map",
+      "dst": 68
+    },
+    {
+      "src": 69,
+      "action": "map",
+      "dst": 69
+    },
+    {
+      "src": 70,
+      "action": "map",
+      "dst": 70
+    },
+    {
+      "src": 71,
+      "action": "map",
+      "dst": 71
+    },
+    {
+      "src": 72,
+      "action": "map",
+      "dst": 72
+    },
+    {
+      "src": 73,
+      "action": "map",
+      "dst": 73
+    },
+    {
+      "src": 74,
+      "action": "map",
+      "dst": 74
+    },
+    {
+      "src": 75,
+      "action": "map",
+      "dst": 75
+    },
+    {
+      "src": 76,
+      "action": "map",
+      "dst": 76
+    },
+    {
+      "src": 77,
+      "action": "map",
+      "dst": 77
+    },
+    {
+      "src": 78,
+      "action": "map",
+      "dst": 78
+    },
+    {
+      "src": 79,
+      "action": "map",
+      "dst": 79
+    },
+    {
+      "src": 80,
+      "action": "map",
+      "dst": 80
+    },
+    {
+      "src": 81,
+      "action": "map",
+      "dst": 81
+    }
+  ],
+  "reverse_rules": [
+    {
+      "src": 29,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 31,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 35,
+      "action": "map",
+      "dst": 35
+    },
+    {
+      "src": 36,
+      "action": "map",
+      "dst": 36
+    },
+    {
+      "src": 37,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 38,
+      "action": "map",
+      "dst": 38
+    },
+    {
+      "src": 39,
+      "action": "map",
+      "dst": 39
+    },
+    {
+      "src": 40,
+      "action": "map",
+      "dst": 40
+    },
+    {
+      "src": 41,
+      "action": "map",
+      "dst": 41
+    },
+    {
+      "src": 42,
+      "action": "map",
+      "dst": 42
+    },
+    {
+      "src": 43,
+      "action": "map",
+      "dst": 43
+    },
+    {
+      "src": 44,
+      "action": "map",
+      "dst": 44
+    },
+    {
+      "src": 45,
+      "action": "map",
+      "dst": 45
+    },
+    {
+      "src": 46,
+      "action": "map",
+      "dst": 46
+    },
+    {
+      "src": 47,
+      "action": "map",
+      "dst": 47
+    },
+    {
+      "src": 48,
+      "action": "map",
+      "dst": 48
+    },
+    {
+      "src": 49,
+      "action": "map",
+      "dst": 49
+    },
+    {
+      "src": 50,
+      "action": "map",
+      "dst": 50
+    },
+    {
+      "src": 51,
+      "action": "map",
+      "dst": 51
+    },
+    {
+      "src": 52,
+      "action": "map",
+      "dst": 52
+    },
+    {
+      "src": 53,
+      "action": "map",
+      "dst": 53
+    },
+    {
+      "src": 54,
+      "action": "map",
+      "dst": 54
+    },
+    {
+      "src": 55,
+      "action": "map",
+      "dst": 55
+    },
+    {
+      "src": 56,
+      "action": "map",
+      "dst": 56
+    },
+    {
+      "src": 57,
+      "action": "map",
+      "dst": 57
+    },
+    {
+      "src": 58,
+      "action": "map",
+      "dst": 58
+    },
+    {
+      "src": 59,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 60,
+      "action": "map",
+      "dst": 60
+    },
+    {
+      "src": 61,
+      "action": "map",
+      "dst": 61
+    },
+    {
+      "src": 62,
+      "action": "map",
+      "dst": 62
+    },
+    {
+      "src": 63,
+      "action": "map",
+      "dst": 63
+    },
+    {
+      "src": 64,
+      "action": "map",
+      "dst": 64
+    },
+    {
+      "src": 65,
+      "action": "map",
+      "dst": 65
+    },
+    {
+      "src": 66,
+      "action": "map",
+      "dst": 66
+    },
+    {
+      "src": 67,
+      "action": "map",
+      "dst": 67
+    },
+    {
+      "src": 68,
+      "action": "map",
+      "dst": 68
+    },
+    {
+      "src": 69,
+      "action": "map",
+      "dst": 69
+    },
+    {
+      "src": 70,
+      "action": "map",
+      "dst": 70
+    },
+    {
+      "src": 71,
+      "action": "map",
+      "dst": 71
+    },
+    {
+      "src": 72,
+      "action": "map",
+      "dst": 72
+    },
+    {
+      "src": 73,
+      "action": "map",
+      "dst": 73
+    },
+    {
+      "src": 74,
+      "action": "map",
+      "dst": 74
+    },
+    {
+      "src": 75,
+      "action": "map",
+      "dst": 75
+    },
+    {
+      "src": 76,
+      "action": "map",
+      "dst": 76
+    },
+    {
+      "src": 77,
+      "action": "map",
+      "dst": 77
+    },
+    {
+      "src": 78,
+      "action": "map",
+      "dst": 78
+    },
+    {
+      "src": 79,
+      "action": "map",
+      "dst": 79
+    },
+    {
+      "src": 80,
+      "action": "map",
+      "dst": 80
+    },
+    {
+      "src": 81,
+      "action": "map",
+      "dst": 81
+    },
+    {
+      "src": 91,
+      "action": "map",
+      "dst": 38
+    },
+    {
+      "src": 92,
+      "action": "map",
+      "dst": 46
+    },
+    {
+      "src": 93,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 94,
+      "action": "map",
+      "dst": 59
+    },
+    {
+      "src": 95,
+      "action": "map",
+      "dst": 55
+    },
+    {
+      "src": 96,
+      "action": "map",
+      "dst": 52
+    },
+    {
+      "src": 97,
+      "action": "map",
+      "dst": 49
+    },
+    {
+      "src": 98,
+      "action": "map",
+      "dst": 57
+    },
+    {
+      "src": 126,
+      "action": "map",
+      "dst": 51
+    },
+    {
+      "src": 127,
+      "action": "map",
+      "dst": 53
+    }
+  ]
+}

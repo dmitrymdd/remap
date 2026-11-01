@@ -1,0 +1,735 @@
+{
+  "format": 1,
+  "name": "GM – SD3 (legacy)",
+  "source_map": {
+    "name": "General MIDI",
+    "names": {
+      "35": "Acoustic Bass Drum",
+      "36": "Bass Drum 1",
+      "37": "Side Stick",
+      "38": "Acoustic Snare",
+      "39": "Hand Clap",
+      "40": "Electric Snare",
+      "41": "Low Floor Tom",
+      "42": "Closed Hi-Hat",
+      "43": "High Floor Tom",
+      "44": "Pedal Hi-Hat",
+      "45": "Low Tom",
+      "46": "Open Hi-Hat",
+      "47": "Low-Mid Tom",
+      "48": "Hi-Mid Tom",
+      "49": "Crash Cymbal 1",
+      "50": "High Tom",
+      "51": "Ride Cymbal 1",
+      "52": "Chinese Cymbal",
+      "53": "Ride Bell",
+      "54": "Tambourine",
+      "55": "Splash Cymbal",
+      "56": "Cowbell",
+      "57": "Crash Cymbal 2",
+      "58": "Vibraslap",
+      "59": "Ride Cymbal 2",
+      "60": "Hi Bongo",
+      "61": "Low Bongo",
+      "62": "Mute Hi Conga",
+      "63": "Open Hi Conga",
+      "64": "Low Conga",
+      "65": "High Timbale",
+      "66": "Low Timbale",
+      "67": "High Agogo",
+      "68": "Low Agogo",
+      "69": "Cabasa",
+      "70": "Maracas",
+      "71": "Short Whistle",
+      "72": "Long Whistle",
+      "73": "Short Guiro",
+      "74": "Long Guiro",
+      "75": "Claves",
+      "76": "Hi Wood Block",
+      "77": "Low Wood Block",
+      "78": "Mute Cuica",
+      "79": "Open Cuica",
+      "80": "Mute Triangle",
+      "81": "Open Triangle"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": null,
+      "status": "verified",
+      "notes": "Based on template General MIDI"
+    }
+  },
+  "target_map": {
+    "name": "Superior Drummer 3",
+    "names": {
+      "6": "Snare: Trigger",
+      "7": "Hi-Hat: Edge Trigger",
+      "8": "Hi-Hat: Tip Trigger",
+      "9": "Hi-Hat: Bell Trigger",
+      "10": "Hi-Hat: Closed Pedal",
+      "11": "Hi-Hat: Closed Tip",
+      "12": "Hi-Hat: Open Tip 0",
+      "13": "Hi-Hat: Open Tip 1",
+      "14": "Hi-Hat: Open Tip 2",
+      "15": "Hi-Hat: Open Tip 3",
+      "16": "Hi-Hat: Open Tip 4",
+      "17": "Hi-Hat: Open Tip 5",
+      "18": "Hi-Hat: Edge Trigger",
+      "19": "Hi-Hat: Tip Trigger",
+      "20": "Hi-Hat: Shaft Trigger",
+      "21": "Hi-Hat: Closed Pedal",
+      "22": "Hi-Hat: Closed Edge",
+      "23": "Hi-Hat: Open Pedal",
+      "24": "Hi-Hat: Open Edge 1",
+      "25": "Hi-Hat: Open Edge 2",
+      "26": "Hi-Hat: Open Edge 3",
+      "27": "Cymbal 1: Crash",
+      "28": "Cymbal 2: Crash",
+      "29": "Cymbal 3: Crash",
+      "30": "Ride: Crash",
+      "31": "Cymbal 4: Crash",
+      "32": "Cymbal 5: Crash",
+      "33": "Snare: Edge",
+      "34": "Kick: Open",
+      "35": "Kick: Hit",
+      "36": "Kick: Open",
+      "37": "Snare: Sidestick",
+      "38": "Snare: Center",
+      "39": "Snare: Ruffs",
+      "40": "Snare: Rimshot",
+      "41": "Floortom 2: Center",
+      "42": "Hi-Hat: Closed Tip",
+      "43": "Floortom 1: Center",
+      "44": "Hi-Hat: Closed Pedal",
+      "45": "Racktom 3: Center",
+      "46": "Hi-Hat: Open Edge 2",
+      "47": "Racktom 2: Center",
+      "48": "Racktom 1: Center",
+      "49": "Cymbal 2: Crash",
+      "50": "Cymbal 2: Mute Hit",
+      "51": "Ride: Bow Tip",
+      "52": "Cymbal 5: Crash",
+      "53": "Ride: Bell Shank",
+      "54": "Cymbal 5: Mute Hit",
+      "55": "Cymbal 3: Crash",
+      "56": "Cymbal 3: Mute Hit",
+      "57": "Cymbal 4: Crash",
+      "58": "Cymbal 4: Mute Hit",
+      "59": "Ride: Crash",
+      "60": "Hi-Hat: Open Edge 4",
+      "61": "Hi-Hat: Closed Tip",
+      "62": "Hi-Hat: Tight Edge",
+      "63": "Hi-Hat: Tight Tip",
+      "64": "Hi-Hat: Open Edge 0",
+      "65": "Hi-Hat: Seq Hits",
+      "66": "Snare: Backward Swirl",
+      "67": "Snare: Forward Swirl",
+      "68": "Snare: Mute",
+      "69": "Snare: Flams",
+      "70": "Snare: Thump",
+      "71": "Snare: Rim Only",
+      "72": "Floortom 2: Rim Only",
+      "73": "Floortom 2: Rimshot",
+      "74": "Floortom 1: Rim Only",
+      "75": "Floortom 1: Rimshot",
+      "76": "Snare: Sidestick",
+      "77": "Racktom 3: Rim Only",
+      "78": "Racktom 3: Rimshot",
+      "79": "Racktom 2: Rim Only",
+      "80": "Racktom 2: Rimshot",
+      "81": "Racktom 1: Rim Only",
+      "82": "Racktom 1: Rimshot",
+      "83": "Cymbal 1: Mute Hit",
+      "84": "Cymbal 1: Bow Tip",
+      "85": "Cymbal 1: Bell Shank",
+      "86": "Cymbal 1: Crash",
+      "87": "Cymbal 1: Bow Shank",
+      "88": "Cymbal 1: Bell Tip",
+      "89": "Cymbal 2: Bow Tip",
+      "90": "Cymbal 2: Bell Shank",
+      "91": "Cymbal 2: Crash",
+      "92": "Cymbal 2: Bow Shank",
+      "93": "Cymbal 2: Bell Tip",
+      "94": "Cymbal 2: Mute Hit",
+      "95": "Cymbal 3: Mute Hit",
+      "96": "Cymbal 3: Bow Tip",
+      "97": "Cymbal 3: Bell Shank",
+      "98": "Cymbal 3: Crash",
+      "99": "Cymbal 3: Bow Shank",
+      "100": "Cymbal 3: Bell Tip",
+      "101": "Cymbal 4: Bow Tip",
+      "102": "Cymbal 4: Bell Shank",
+      "103": "Cymbal 4: Crash",
+      "104": "Cymbal 4: Bow Shank",
+      "105": "Cymbal 4: Bell Tip",
+      "106": "Cymbal 4: Mute Hit",
+      "107": "Cymbal 5: Mute Hit",
+      "108": "Cymbal 5: Bow Tip",
+      "109": "Cymbal 5: Bell Shank",
+      "110": "Cymbal 5: Crash",
+      "111": "Cymbal 5: Bow Shank",
+      "112": "Cymbal 5: Bell Tip",
+      "113": "Ride: Bow Tip",
+      "114": "Ride: Bell Shank",
+      "115": "Ride: Crash",
+      "116": "Ride: Bow Shank",
+      "117": "Ride: Bell Tip",
+      "118": "Ride: Mute Hit",
+      "119": "Hi-Hat: Closed Bell",
+      "120": "Hi-Hat: Open Bell 0",
+      "121": "Hi-Hat: Open Bell 1",
+      "122": "Hi-Hat: Open Bell 2",
+      "123": "Hi-Hat: Open Bell 3",
+      "124": "Hi-Hat: Open Bell 4",
+      "125": "Snare: Mid Center",
+      "126": "Snare: Backward brushTrig",
+      "127": "Snare: Forward brushTrig"
+    },
+    "primary": [],
+    "order": null,
+    "extra_lines": [],
+    "meta": {
+      "source": "Superior Drummer 3 core library, default preset. Transcribed from the SD3 \"MIDI Mapping Keys\" view.",
+      "status": "verified",
+      "notes": "Based on template Superior Drummer 3"
+    }
+  },
+  "rules": [
+    {
+      "src": 0,
+      "action": "delete"
+    },
+    {
+      "src": 1,
+      "action": "delete"
+    },
+    {
+      "src": 2,
+      "action": "delete"
+    },
+    {
+      "src": 3,
+      "action": "delete"
+    },
+    {
+      "src": 4,
+      "action": "delete"
+    },
+    {
+      "src": 5,
+      "action": "delete"
+    },
+    {
+      "src": 6,
+      "action": "delete"
+    },
+    {
+      "src": 7,
+      "action": "delete"
+    },
+    {
+      "src": 8,
+      "action": "delete"
+    },
+    {
+      "src": 9,
+      "action": "delete"
+    },
+    {
+      "src": 10,
+      "action": "delete"
+    },
+    {
+      "src": 11,
+      "action": "delete"
+    },
+    {
+      "src": 12,
+      "action": "delete"
+    },
+    {
+      "src": 13,
+      "action": "delete"
+    },
+    {
+      "src": 14,
+      "action": "delete"
+    },
+    {
+      "src": 15,
+      "action": "delete"
+    },
+    {
+      "src": 16,
+      "action": "delete"
+    },
+    {
+      "src": 17,
+      "action": "delete"
+    },
+    {
+      "src": 18,
+      "action": "delete"
+    },
+    {
+      "src": 19,
+      "action": "delete"
+    },
+    {
+      "src": 20,
+      "action": "delete"
+    },
+    {
+      "src": 21,
+      "action": "delete"
+    },
+    {
+      "src": 22,
+      "action": "delete"
+    },
+    {
+      "src": 23,
+      "action": "delete"
+    },
+    {
+      "src": 24,
+      "action": "delete"
+    },
+    {
+      "src": 25,
+      "action": "delete"
+    },
+    {
+      "src": 26,
+      "action": "delete"
+    },
+    {
+      "src": 27,
+      "action": "delete"
+    },
+    {
+      "src": 28,
+      "action": "delete"
+    },
+    {
+      "src": 29,
+      "action": "delete"
+    },
+    {
+      "src": 30,
+      "action": "delete"
+    },
+    {
+      "src": 31,
+      "action": "delete"
+    },
+    {
+      "src": 32,
+      "action": "delete"
+    },
+    {
+      "src": 33,
+      "action": "delete"
+    },
+    {
+      "src": 34,
+      "action": "delete"
+    },
+    {
+      "src": 35,
+      "action": "map",
+      "dst": 35
+    },
+    {
+      "src": 36,
+      "action": "map",
+      "dst": 36
+    },
+    {
+      "src": 37,
+      "action": "map",
+      "dst": 37
+    },
+    {
+      "src": 38,
+      "action": "map",
+      "dst": 38
+    },
+    {
+      "src": 39,
+      "action": "map",
+      "dst": 40
+    },
+    {
+      "src": 40,
+      "action": "map",
+      "dst": 40
+    },
+    {
+      "src": 41,
+      "action": "map",
+      "dst": 41
+    },
+    {
+      "src": 42,
+      "action": "map",
+      "dst": 42
+    },
+    {
+      "src": 43,
+      "action": "map",
+      "dst": 41
+    },
+    {
+      "src": 44,
+      "action": "map",
+      "dst": 10
+    },
+    {
+      "src": 45,
+      "action": "map",
+      "dst": 43
+    },
+    {
+      "src": 46,
+      "action": "map",
+      "dst": 12
+    },
+    {
+      "src": 47,
+      "action": "map",
+      "dst": 45
+    },
+    {
+      "src": 48,
+      "action": "map",
+      "dst": 47
+    },
+    {
+      "src": 49,
+      "action": "map",
+      "dst": 49
+    },
+    {
+      "src": 50,
+      "action": "map",
+      "dst": 48
+    },
+    {
+      "src": 51,
+      "action": "map",
+      "dst": 116
+    },
+    {
+      "src": 52,
+      "action": "map",
+      "dst": 52
+    },
+    {
+      "src": 53,
+      "action": "map",
+      "dst": 117
+    },
+    {
+      "src": 54,
+      "action": "delete"
+    },
+    {
+      "src": 55,
+      "action": "map",
+      "dst": 55
+    },
+    {
+      "src": 56,
+      "action": "delete"
+    },
+    {
+      "src": 57,
+      "action": "map",
+      "dst": 57
+    },
+    {
+      "src": 58,
+      "action": "delete"
+    },
+    {
+      "src": 59,
+      "action": "map",
+      "dst": 116
+    },
+    {
+      "src": 60,
+      "action": "delete"
+    },
+    {
+      "src": 61,
+      "action": "delete"
+    },
+    {
+      "src": 62,
+      "action": "delete"
+    },
+    {
+      "src": 63,
+      "action": "delete"
+    },
+    {
+      "src": 64,
+      "action": "delete"
+    },
+    {
+      "src": 65,
+      "action": "delete"
+    },
+    {
+      "src": 66,
+      "action": "delete"
+    },
+    {
+      "src": 67,
+      "action": "delete"
+    },
+    {
+      "src": 68,
+      "action": "delete"
+    },
+    {
+      "src": 69,
+      "action": "delete"
+    },
+    {
+      "src": 70,
+      "action": "delete"
+    },
+    {
+      "src": 71,
+      "action": "delete"
+    },
+    {
+      "src": 72,
+      "action": "delete"
+    },
+    {
+      "src": 73,
+      "action": "delete"
+    },
+    {
+      "src": 74,
+      "action": "delete"
+    },
+    {
+      "src": 75,
+      "action": "delete"
+    },
+    {
+      "src": 76,
+      "action": "delete"
+    },
+    {
+      "src": 77,
+      "action": "delete"
+    },
+    {
+      "src": 78,
+      "action": "delete"
+    },
+    {
+      "src": 79,
+      "action": "delete"
+    },
+    {
+      "src": 80,
+      "action": "delete"
+    },
+    {
+      "src": 81,
+      "action": "delete"
+    },
+    {
+      "src": 82,
+      "action": "delete"
+    },
+    {
+      "src": 83,
+      "action": "delete"
+    },
+    {
+      "src": 84,
+      "action": "delete"
+    },
+    {
+      "src": 85,
+      "action": "delete"
+    },
+    {
+      "src": 86,
+      "action": "delete"
+    },
+    {
+      "src": 87,
+      "action": "delete"
+    },
+    {
+      "src": 88,
+      "action": "delete"
+    },
+    {
+      "src": 89,
+      "action": "delete"
+    },
+    {
+      "src": 90,
+      "action": "delete"
+    },
+    {
+      "src": 91,
+      "action": "delete"
+    },
+    {
+      "src": 92,
+      "action": "delete"
+    },
+    {
+      "src": 93,
+      "action": "delete"
+    },
+    {
+      "src": 94,
+      "action": "delete"
+    },
+    {
+      "src": 95,
+      "action": "delete"
+    },
+    {
+      "src": 96,
+      "action": "delete"
+    },
+    {
+      "src": 97,
+      "action": "delete"
+    },
+    {
+      "src": 98,
+      "action": "delete"
+    },
+    {
+      "src": 99,
+      "action": "delete"
+    },
+    {
+      "src": 100,
+      "action": "delete"
+    },
+    {
+      "src": 101,
+      "action": "delete"
+    },
+    {
+      "src": 102,
+      "action": "delete"
+    },
+    {
+      "src": 103,
+      "action": "delete"
+    },
+    {
+      "src": 104,
+      "action": "delete"
+    },
+    {
+      "src": 105,
+      "action": "delete"
+    },
+    {
+      "src": 106,
+      "action": "delete"
+    },
+    {
+      "src": 107,
+      "action": "delete"
+    },
+    {
+      "src": 108,
+      "action": "delete"
+    },
+    {
+      "src": 109,
+      "action": "delete"
+    },
+    {
+      "src": 110,
+      "action": "delete"
+    },
+    {
+      "src": 111,
+      "action": "delete"
+    },
+    {
+      "src": 112,
+      "action": "delete"
+    },
+    {
+      "src": 113,
+      "action": "delete"
+    },
+    {
+      "src": 114,
+      "action": "delete"
+    },
+    {
+      "src": 115,
+      "action": "delete"
+    },
+    {
+      "src": 116,
+      "action": "delete"
+    },
+    {
+      "src": 117,
+      "action": "delete"
+    },
+    {
+      "src": 118,
+      "action": "delete"
+    },
+    {
+      "src": 119,
+      "action": "delete"
+    },
+    {
+      "src": 120,
+      "action": "delete"
+    },
+    {
+      "src": 121,
+      "action": "delete"
+    },
+    {
+      "src": 122,
+      "action": "delete"
+    },
+    {
+      "src": 123,
+      "action": "delete"
+    },
+    {
+      "src": 124,
+      "action": "delete"
+    },
+    {
+      "src": 125,
+      "action": "delete"
+    },
+    {
+      "src": 126,
+      "action": "delete"
+    },
+    {
+      "src": 127,
+      "action": "delete"
+    }
+  ]
+}

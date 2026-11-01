@@ -8,7 +8,7 @@
 сторон видны над колонками. Профиль открывается в →; переключение — не шаг отмены. В ← вид правит профиль work.reversed(): ядро вызывается
 на нём (assign_plan, assign_to_articulation, with_write_to, connect_same_numbers, apply_suggested), результат
 пишется назад — карта цели обратного профиля это КОПИЯ ИСХОДНОЙ карты (туда ложится Write to), его правила —
-обратные правила (_put). Подсказки, свёрнутость вида и «скрыть подсказки» — свои у каждого направления.
+ручные обратные правила (_put). Подсказки, свёрнутость вида и «скрыть подсказки» — свои у каждого направления.
 
 Логики профилей здесь нет — только вызовы remap.core (suggestion_targets, plan_suggestions, apply_suggested,
 assign_plan, assign_to_articulation, connect_same_numbers, with_write_to) и remap.storage. Диалоги вынесены
@@ -21,7 +21,7 @@ assign_plan, assign_to_articulation, connect_same_numbers, with_write_to) и rem
 Открытие существующего профиля панель не показывает. Нота, получившая правило, из подсказок выбывает.
 
 Отмена/повтор (Ctrl+Z / Ctrl+Y) — один стек на оба направления: снимки рабочей копии (профили маленькие, снимок
-хранит и обратные правила) вместе с подсказками обоих направлений и направлением, в котором сделан шаг: каждое
+хранит и ручные обратные правила) вместе с подсказками обоих направлений и направлением, в котором сделан шаг: каждое
 действие, изменившее профиль, кладёт снимок «до» (декоратор _undoable; вложенные вызовы — один шаг). Отмена и
 повтор сначала переключают вид на направление шага (только вид, не шаг) — отменённое всегда видно. Стек
 очищается при открытии другого профиля, Save его не очищает (шаг сохранения тоже отменяется).
@@ -42,7 +42,7 @@ from PySide6.QtWidgets import (
 from ..core.notemap import NoteMap, duplicate_map
 from ..core.profile import (
     FORWARD, REVERSE, RemapProfile, Rule, assign_plan, assign_to_articulation, connect_same_numbers,
-    keep_existing_primary, match_by_number, missing_rules, normalized_reverse, primary_pairs, sync_reverse, with_forward_primary, with_primary_cable, with_write_to,
+    match_by_number, missing_rules, with_reverse_edit, with_write_to,
 )
 from ..core.suggest import apply_suggested, plan_suggestions, suggestion_targets
 from ..storage import Storage, id_taken
@@ -83,37 +83,19 @@ COMBO_CHARS = 30  # ширина комбобокса профилей — в с
 
 
 def _undoable(fn):
-    """Действие страницы над рабочей копией — один шаг отмены (если профиль изменился).
-    Заданные обратные правила следуют за правкой прямых (sync_reverse) в том же шаге — кроме действий, которые
-    сами согласовали обратные правила (_reverse_done, двойной клик). Затем обратные правила, равные выведенным,
-    хранятся как None (normalized_reverse, как при чтении JSON). Правки в ← прямые правила не меняют —
-    синхронизация для них ничего не делает, а отличающиеся от выведенных обратные правила становятся ручными."""
+    """Действие страницы над рабочей копией — один шаг отмены (если профиль изменился)."""
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         if self.work is None or self._in_edit:
             return fn(self, *args, **kwargs)
         before = self._snapshot()
         self._in_edit = True
-        self._reverse_done = False
         try:
             return fn(self, *args, **kwargs)
         finally:
             self._in_edit = False
-            if self.work is not None:
-                if not self._reverse_done:
-                    self.work.reverse_rules = sync_reverse(before[0], self.work)
-                self.work.reverse_rules = normalized_reverse(self.work)
             self._record(before)
     return wrapper
-
-
-def _was(note: int, rule: Rule | None) -> str:
-    """«was 60 → 62» / «was unassigned» / «was deleted» / «was kept» — прежнее правило ноты для статуса."""
-    if rule is None:
-        return "was unassigned"
-    if rule.action == "map":
-        return f"was {note} → {rule.dst}"
-    return "was deleted" if rule.action == "delete" else "was kept"
 
 
 def map_summary(m: NoteMap | None) -> str:
@@ -221,7 +203,6 @@ class ProfilesPage(QWidget):
         self._undo: list[tuple[RemapProfile, dict[str, dict[int, str]], str]] = []
         self._redo: list[tuple[RemapProfile, dict[str, dict[int, str]], str]] = []
         self._in_edit = False
-        self._reverse_done = False  # действие само согласовало обратные правила (sync_reverse не нужен)
         self.direction = FORWARD
         # подсказки по направлениям: нота исходной стороны без правила -> артикуляция стороны цели
         self._suggest: dict[str, dict[int, str]] = {FORWARD: {}, REVERSE: {}}
@@ -285,7 +266,6 @@ class ProfilesPage(QWidget):
         self.cables.disconnect_requested.connect(self.clear_rules)
         self.cables.strike_requested.connect(self.toggle_strike)
         self.cables.write_to_requested.connect(self.set_write_to)
-        self.cables.primary_requested.connect(self.make_primary)
         self.cables.same_number_requested.connect(self.connect_same_number)
         self.cables.note_drop_requested.connect(self.assign_note)
         root.addWidget(self.cables, stretch=1)
@@ -583,7 +563,7 @@ class ProfilesPage(QWidget):
         maps_changed = (w.source_map, w.target_map) != (profile.source_map, profile.target_map)
         w.name, w.source_map, w.target_map, w.rules = profile.name, profile.source_map, profile.target_map, \
             profile.rules
-        w.reverse_rules = profile.reverse_rules
+        w.reverse_overrides = profile.reverse_overrides
         self._changed()
         if maps_changed:
             self.cables.refresh()
@@ -646,11 +626,13 @@ class ProfilesPage(QWidget):
 
     def _put(self, new: RemapProfile) -> None:
         """Результат правки ориентированного профиля — в рабочую копию. В → это карта цели и прямые правила;
-        в ← — карта цели обратного профиля = копия ИСХОДНОЙ карты (Write to ложится в неё) и обратные правила."""
+        в ← — карта цели обратного профиля = копия ИСХОДНОЙ карты (Write to ложится в неё), изменившиеся обратные
+        правила становятся ручными (with_reverse_edit)."""
         if self.direction == FORWARD:
             self.work.target_map, self.work.rules = new.target_map, new.rules
         else:
-            self.work.source_map, self.work.reverse_rules = new.target_map, dict(new.rules)
+            edited = with_reverse_edit(self.work, new.rules, new.target_map)
+            self.work.source_map, self.work.reverse_overrides = edited.source_map, edited.reverse_overrides
 
     def _update_direction(self) -> None:
         """Кнопка направления «⇄»: есть профиль — активна (карты сторон видны над колонками)."""
@@ -829,15 +811,17 @@ class ProfilesPage(QWidget):
                 return False
             m = duplicate_map(m, m.name, from_template=ref.read_only)  # meta копируется, source сохраняется
         what = "source" if side == SOURCE else "target"
-        if self.work.rules and not self.confirm(
+        hand_set = len(self.work.reverse_overrides)
+        if (self.work.rules or hand_set) and not self.confirm(
                 f"Change {what} map", f"The profile has {len(self.work.rules)} rule(s). Change the {what} map?",
-                "The rules are kept. Problems with them are highlighted in the editor."):
+                "The rules are kept. Problems with them are highlighted in the editor."
+                + (f"\n{hand_set} hand-set reverse cable(s) will be lost." if hand_set else "")):
             return False
         if side == SOURCE:
             self.work.source_map = m
         else:
             self.work.target_map = m
-        self.work.reverse_rules = None  # обратные правила по нотам прежней карты не переживают смену — снова выводятся
+        self.work.reverse_overrides = {}  # ручные правки — по нотам прежней карты: смену не переживают
         self._compute_suggestions()
         self._sync_suggestions()
         self.cables.refresh()
@@ -957,39 +941,9 @@ class ProfilesPage(QWidget):
         return True
 
     @_undoable
-    def make_primary(self, src: int, dst: int) -> bool:
-        """Двойной клик по кабелю (src -> dst ориентированного профиля) — сделать его основным.
-        → (a -> b): обратное правило b -> a (with_primary_cable; алиасы-«дублёры» b — туда же).
-        ← (b -> a): прямое правило a -> b вместо прежнего a -> b' (with_forward_primary; обратное правило b'
-        остаётся как было — keep_old_target_reverse, прочие кабели не меняются). Уже основной — ничего.
-        Один шаг отмены."""
-        if self.work is None:
-            return False
-        a, b = (src, dst) if self.direction == FORWARD else (dst, src)
-        if (a, b) in primary_pairs(self.work):
-            return False
-        try:
-            if self.direction == FORWARD:
-                old = self.work.effective_reverse().get(b)
-                new = with_primary_cable(self.work, a, b)
-                status = f"Reverse: {b} → {a} ({_was(b, old)})"
-            else:
-                old = self.work.rules.get(a)
-                new = with_forward_primary(self.work, a, b)
-                status = f"Forward: {a} → {b} ({_was(a, old)})"
-        except ValueError:
-            return False
-        self.work.rules, self.work.reverse_rules = new.rules, new.reverse_rules
-        self._reverse_done = True  # обратные правила уже согласованы ядром (постусловие — основной кабель)
-        self._changed()
-        self.set_status(status)
-        return True
-
-    @_undoable
     def connect_same_number(self, notes: list[int]) -> int:
         """Двойной клик по строке Unassigned: каждая нота — n -> n на тот же номер другой карты, если он там есть
-        (core connect_same_numbers); остальные остаются в пуле. Номер уже занят — новый кабель НЕОСНОВНОЙ
-        (_put_same_numbers). Один шаг отмены; сцена прокручивается к строке."""
+        (core connect_same_numbers); остальные остаются в пуле. Один шаг отмены; сцена прокручивается к строке."""
         if self.work is None or not notes:
             return 0
         q = self._oriented()
@@ -1002,7 +956,8 @@ class ProfilesPage(QWidget):
             self.set_status(f"No note{'' if len(missing) == 1 else 's'} {', '.join(map(str, missing))} "
                             f"in the {side} map")
             return 0
-        self._put_same_numbers(new, done)
+        self._put(new)
+        self._changed()
         self.cables.reveal(done[0])
         text = f"{len(done)} note{'' if len(done) == 1 else 's'} connected to the same number"
         if missing:
@@ -1020,25 +975,13 @@ class ProfilesPage(QWidget):
         if not done:
             self.set_status("No notes match by number")
             return 0
-        self._put_same_numbers(new, done)
+        self._put(new)
+        self._changed()
         self.set_status(f"Matched {len(done)} note{'' if len(done) == 1 else 's'} by number", "ok")
         return len(done)
 
     def _other_side(self) -> str:
         return DIRECTION_SIDES[REVERSE if self.direction == FORWARD else FORWARD]  # карта другой стороны
-
-    def _put_same_numbers(self, new: RemapProfile, done: list[int]) -> None:
-        """Результат n -> n (ориентированного профиля) — в рабочую копию. Номер уже занят — новый кабель
-        НЕОСНОВНОЙ: в → прежние обратные правила номера фиксируются (keep_existing_primary — иначе выведение
-        сделало бы основным n -> n), в ← прямые правила не трогаются — неосновной сам собой."""
-        if self.direction == FORWARD:
-            new.reverse_rules = sync_reverse(self.work, new)
-            keep_existing_primary(self.work, new, done)
-            self.work.rules, self.work.reverse_rules = new.rules, new.reverse_rules
-            self._reverse_done = True
-        else:
-            self._put(new)
-        self._changed()
 
     # --- действия со списком ---
 
