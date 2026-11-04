@@ -166,29 +166,25 @@ def preview_path(a: QPointF, b: QPointF) -> QPainterPath:
 
 class _Row(QGraphicsItem):
     """Строка: фон со скруглением, номер, высота ноты, имя, бейдж «+N» и маркер справа; точка кабеля слева
-    или справа. Строка цели с несколькими номерами — одна плашка от первого номера до последнего; слот строки
-    (rect, зона попадания) выше плашки, если напротив строк больше, чем номеров.
+    или справа. Одна строка — одна плашка с одним номером; rect — слот (зона попадания), плашка внутри.
 
     role — POOL / SOURCE / TARGET; model — SourceRow или TargetRow из раскладки. pill — текст бейджа («+N» —
     ещё N нот: алиасы источника или скрытые ноты артикуляции цели); badge — бейдж кликабелен (меню Write to).
-    port — сторона точек кабеля ("left" / "right"; точка — на каждом номере из lines); dim — имя приглушено
-    (нет имени, нота зачёркнута).
+    port — сторона точки кабеля ("left" / "right"); dim — имя приглушено (нет имени, нота зачёркнута).
 
-    Раскрытая строка цели (TargetRow.expanded) — как раскрытые алиасы слева: плашка-заголовок с именем (и бейджем) на
-    строке 0 и под ней по плашке на номер, только номер (уже на INDENT справа); кабели приходят на плашки номеров.
+    Цель группой (TargetRow.expanded: напротив больше одной строки) — как раскрытые алиасы слева: плашка-заголовок с
+    именем (и бейджем) на строке 0 и под ней по плашке на каждый номер, даже если номер один (только номер, уже на
+    INDENT справа); кабели приходят на плашки номеров.
     Состояние у каждой плашки своё: выбрана — номер, куда идёт кабель выбранной строки (lit), drop и кабель под
     курсором — тоже по номеру. Подсказка — у плашки под курсором (part_tips)."""
 
     def __init__(self, rect: QRectF, role: str, model: SourceRow | TargetRow, number: str, name: str,
                  *, dim=False, strike=False, italic=False, marker="", pill="", chevron: str | None = None,
                  badge=False, port: str | None = None, dashed=False, warn=False, tooltip="",
-                 lines: list[tuple[int, str]] | None = None, metrics: RowMetrics = POOL_ROWS) -> None:
+                 metrics: RowMetrics = POOL_ROWS) -> None:
         super().__init__()
         self.rect, self.role, self.model, self.metrics = rect, role, model, metrics  # rect — слот, плашка внутри
-        self.number, self.name = number, name
-        # номера по строкам блока: (смещение, номер); по умолчанию — один, на первой строке. Высота ноты (C#1) для
-        # барабанов смысла не несёт — только в подсказке (note_tip)
-        self.lines = lines if lines is not None else [(0, number)]
+        self.number, self.name = number, name  # высота ноты (C#1) для барабанов смысла не несёт — только в подсказке
         self.dim, self.strike, self.italic, self.marker = dim, strike, italic, marker
         self.pill, self.chevron, self.badge = pill, chevron, badge  # chevron: collapsed / expanded / fixed
         self.port, self.dashed, self.warn = port, dashed, warn
@@ -221,7 +217,7 @@ class _Row(QGraphicsItem):
         return QRectF(self.rect.left(), self.rect.top() + off * self.metrics.pitch, width, self.metrics.pitch)
 
     def head_rect(self) -> QRectF:
-        """Плашка-заголовок раскрытой цели (строка 0)."""
+        """Плашка на строке 0: строка целиком или заголовок цели группой."""
         m = self.metrics
         return QRectF(self.rect.left(), self.rect.top() + m.inset, self.rect.width(), m.plate)
 
@@ -359,10 +355,11 @@ class _Row(QGraphicsItem):
         return "suggested" if self.dashed else "normal"
 
     def plate_rect(self) -> QRectF:
-        """Плашка в слоте: от первого номера до последнего (остальной слот — только зона drop)."""
-        m = self.metrics
-        last = max(off for off, _ in self.lines)
-        return QRectF(self.rect.left(), self.rect.top() + m.inset, self.rect.width(), last * m.pitch + m.plate)
+        """Плашка в слоте (остальной слот — только зона drop); у цели группой — от заголовка до последнего номера."""
+        if self.expanded:
+            last = max(off for off, _ in self.model.numbers)
+            return self.head_rect().united(self.child_rect(last))
+        return self.head_rect()
 
     def _paint_expanded(self, p: QPainter) -> None:
         m = self.metrics
@@ -386,16 +383,14 @@ class _Row(QGraphicsItem):
         m = self.metrics
         r = self.plate_rect()
         zone = self.drop_zone[0] if self.drop_zone else None
-        line_h = m.plate  # первая строка блока
-        plates.paint_plate(p, r, self.state(), numbers=[(off * m.pitch, number) for off, number in self.lines],
-                           name=self.name, name_room=self.name_room(), italic=self.italic, text_deleted=self.strike,
-                           dim_name=self.dim, line_h=line_h)
+        plates.paint_plate(p, r, self.state(), numbers=[(0, self.number)], name=self.name, name_room=self.name_room(),
+                           italic=self.italic, text_deleted=self.strike, dim_name=self.dim, line_h=m.plate)
         if zone == "line":  # drop ровно на ноту: обведён только номер этой строки (уже обводки строки)
             p.setPen(QPen(theme.qcolor(theme.ACCENT), 1.2))
             p.setBrush(Qt.BrushStyle.NoBrush)
             p.drawRoundedRect(self.number_rect(self.drop_zone[1]).adjusted(1.5, m.inset + 1, -1.5, -m.inset - 1),
                               RADIUS - 1, RADIUS - 1)
-        line = QRectF(r.left(), r.top(), r.width(), line_h)
+        line = r
         if self.pill:
             pill = QRectF(self._pill_right() - BADGE_W, line.center().y() - theme.BADGE_HEIGHT / 2, BADGE_W - 6,
                           theme.BADGE_HEIGHT)
@@ -406,11 +401,10 @@ class _Row(QGraphicsItem):
         if self.chevron:
             plates.paint_chevron(p, r.right() - CHEVRON_W + 2, line.center().y(), self.chevron == "collapsed",
                                  self.chevron == "fixed")
-        if self.port:  # точка на каждом номере (у цели — куда приходят кабели), со своей стороны
+        if self.port:  # точка кабеля, со своей стороны
             color = plates.cable_color(self.selected, self.highlighted)
             x = r.left() if self.port == "left" else r.right()
-            for off, *_ in self.lines:
-                plates.paint_port(p, QPointF(x, self.line_center(off)), PORT, color, self.dashed)
+            plates.paint_port(p, QPointF(x, self.line_center()), PORT, color, self.dashed)
 
 
 class _HeaderItem(QGraphicsItem):
@@ -1706,18 +1700,19 @@ class CableEditor(QWidget):
             side = f"{self.sides[1]} map"
             text = tip_lines(note_tip(t.notes), [f"Not in the {side}" if self.shown.target_map is not None
                                                  else f"No {side}"])
-            return _Row(r, TARGET, t, str(t.notes[0]), "—", dim=True,
+            item = _Row(r, TARGET, t, "" if t.expanded else str(t.notes[0]), "—", dim=True,
                         italic=True, port=port, dashed=dashed, tooltip=text, metrics=SCENE_ROWS)
+            item.part_tips = {"head": text, t.notes[0]: text}
+            return item
         many = len(t.notes) > 1
-        lines = [(off, str(n)) for off, n in t.numbers]
         pill = (f"+{t.hidden}" if t.hidden else "…") if many else ""
         details = []
         if many:
             wt = WRITE_TO_TIP.format(n=t.write_to) if t.write_to is not None else NO_WRITE_TO_TIP
             details = [f"{wt} · {BADGE_HINT.format(pill=pill)}"]
         text = tip_lines(note_tip(t.notes), details)
-        item = _Row(r, TARGET, t, "" if t.expanded else lines[0][1], t.label, pill=pill, badge=many, port=port,
-                    dashed=dashed, tooltip=text, lines=lines, metrics=SCENE_ROWS)
+        item = _Row(r, TARGET, t, "" if t.expanded else str(t.numbers[0][1]), t.label, pill=pill, badge=many,
+                    port=port, dashed=dashed, tooltip=text, metrics=SCENE_ROWS)
         if t.expanded:  # плашки номеров: номер, высота и имя (на плашке имени нет)
             item.part_tips = {"head": text}
             for _off, n in t.numbers:

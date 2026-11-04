@@ -503,7 +503,7 @@ def test_rows_show_number_without_pitch_pitch_in_tooltip(window):
     page.assign_note([37], 37)
     assert note_tip([37]) == "Note 37 · C#1" and note_tip([37, 76]) == "Notes 37 · C#1, 76 · E4"
     alias = ed.pool_items[38]  # «Snare: Center» на нескольких нотах — высоты всех в подсказке
-    assert alias.number == "38" and not hasattr(alias, "pitch") and alias.lines == [(0, "38")]
+    assert alias.number == "38" and not hasattr(alias, "pitch")
     assert note_tip(alias.notes) in alias.tip_text and "38 · D1, 39 · D#1" in alias.tip_text
     single = next(i for i in ed.pool_rows if len(i.notes) == 1)
     # первая строка (или вторая — после полного имени)
@@ -511,7 +511,7 @@ def test_rows_show_number_without_pitch_pitch_in_tooltip(window):
     src = ed.source_items[37]
     assert any(line.startswith("Note 37 · C#1  →  37") for line in src.tip_text.splitlines()[:2])
     tgt = next(t for t in ed.target_items.values() if 37 in t.notes)
-    assert all(len(line) == 2 for line in tgt.lines) and "37 · C#1" in tgt.tip_text
+    assert tgt.number == "37" and "37 · C#1" in tgt.tip_text
     assert all(i.toolTip().startswith("<") for i in [alias, src, tgt])  # через tip()
 
 
@@ -1236,7 +1236,7 @@ def test_drop_same_numbers_need_no_question(window, app):
         if c.cable.target.slot == "a:" + key:
             assert c.cable.dst_y == c.cable.src_y
     item = ed.target_items["a:" + key]
-    assert [line[1] for line in item.lines] == [str(n) for _, n in t.lines]
+    assert item.expanded and item.number == "" and item.model.numbers == t.lines  # плашка на каждый номер
     assert item.pill == f"+{len(notes) - 2}"
 
 
@@ -1248,7 +1248,7 @@ def test_drop_single_match_becomes_write_to_silently(window, app):
     assert page.work.rules == {other: Rule.map_to(notes[1]), notes[1]: Rule.map_to(notes[1])}
     assert page.work.target_map.primary & set(notes) == {notes[1]} and page.answers["asked"] == []
     item = ed.target_items["a:" + key]
-    assert [line[1] for line in item.lines] == [str(notes[1])]
+    assert item.expanded and [n for _, n in item.model.numbers] == [notes[1]]  # две строки — группа, один номер
     assert f"Write to: {notes[1]}" in item.tip_text  # Write to — в подсказке (и галочкой в меню «+N»)
 
 
@@ -1701,27 +1701,29 @@ def test_profiles_geometry_matches_mockup(window, app):
     assert top(ed.pool, rows[3], rows[3].plate_rect()) == 368
     assert rows[0].plate_rect().height() == 28
 
-    # сцена: заголовок на обе колонки с линией 1 px, плашки 30 с шагом 36, следующая группа
+    # сцена: заголовок на обе колонки с линией 1 px, плашки 30 с шагом 36, следующая группа (ниже макета на строку:
+    # три строки на один номер — цель группой, напротив её заголовка пусто)
     kick, snare = (ed.scene_headers[k] for k in ("target/kick", "target/snare"))
-    assert top(ed.view, kick) == 161 and top(ed.view, snare) == 315
-    for head, line in ((kick, 190), (snare, 344)):
+    assert top(ed.view, kick) == 161 and top(ed.view, snare) == 351
+    for head, line in ((kick, 190), (snare, 380)):
         assert win(ed.view, head.rect.left(), head.rect.bottom() - 1) == (325, line)
         assert win(ed.view, head.rect.right(), head.rect.bottom() - 1)[0] == 847
     from_rows = sorted(ed.scene_rows, key=lambda i: i.rect.top())
-    assert [top(ed.view, r, r.plate_rect()) for r in from_rows] == [203, 239, 275, 357]
+    assert [top(ed.view, r, r.plate_rect()) for r in from_rows] == [239, 275, 311, 393]
     assert all(r.plate_rect().size().toTuple() == (200, 30) for r in from_rows)
 
-    # три строки на один номер: плашка цели одна, 30 px; рамки вокруг них нет
+    # три строки на один номер: цель группой — заголовок 30 px и под ним плашка номера 30 px, в рамке
     hit = ed.target_items["a:kick: hit"]
-    assert top(ed.view, hit, hit.plate_rect()) == 203 and hit.plate_rect().height() == 30
-    assert hit.rect.height() == 3 * 36  # зона drop — на все строки напротив
-    assert not [i for i in ed.view.scene().items() if isinstance(i, _Bundle)]
+    assert hit.expanded and top(ed.view, hit, hit.head_rect()) == 203 and hit.head_rect().height() == 30
+    assert top(ed.view, hit, hit.child_rect(1)) == 239 and hit.child_rect(1).height() == 30
+    assert hit.rect.height() == 4 * 36  # зона drop — заголовок и все строки напротив
+    assert len([i for i in ed.view.scene().items() if isinstance(i, _Bundle)]) == 1
 
     # кабель n → n и точки на краях плашек
     cable = next(c for c in ed.cable_items if c.cable.notes == (35,))
     path = cable.path()
-    assert win(ed.view, *path.pointAtPercent(0).toTuple()) == (525, 218)
-    assert win(ed.view, *path.pointAtPercent(1).toTuple()) == (647, 218)
+    assert win(ed.view, *path.pointAtPercent(0).toTuple()) == (525, 254)
+    assert win(ed.view, *path.pointAtPercent(1).toTuple()) == (647, 254)
     assert path.elementAt(1).x - path.elementAt(0).x == 60
     assert cable.pen().widthF() == 1.5 and cable_view.PORT == 2.6
     ed.set_selection({35})

@@ -76,7 +76,7 @@ def test_dst_outside_target_map_and_no_target_map():
     assert row is not None and not row.in_map and row.notes == (99,)
     assert lay.header(TARGET_PREFIX + "\0missing").label == "Not in the target map"
     lay = build_layout(profile({36: Rule.map_to(99), 38: Rule.map_to(99)}, tgt=None), no_collapse())
-    assert [r.slot for r in lay.scene.target_rows] == ["n:99"] and lay.scene.target_rows[0].height == 2
+    assert [r.slot for r in lay.scene.target_rows] == ["n:99"] and lay.scene.target_rows[0].height == 3
     assert lay.scene.target_headers == [] and len(lay.scene.cables) == 2
 
 
@@ -106,12 +106,12 @@ def test_many_into_one_tall_target_row():
     rules = {n: Rule.map_to(36) for n in range(60, 70)}
     lay = build_layout(profile(rules, src=src), no_collapse())
     kick = lay.target_row("a:kick: hit")
-    assert kick.height == 10
-    assert sorted(rows_by_note(lay)[n].y for n in range(60, 70)) == list(range(kick.y, kick.y + 10))
+    assert kick.expanded and kick.height == 11  # заголовок цели + десять строк под ним
+    assert sorted(rows_by_note(lay)[n].y for n in range(60, 70)) == list(range(kick.y + 1, kick.y + 11))
     assert len(lay.scene.cables) == 10 and all(c.target == kick for c in lay.scene.cables)
     # следующая строка цели — сразу под высокой
     nxt = min((r for r in lay.scene.target_rows + lay.scene.target_headers if r.y > kick.y), key=lambda r: r.y)
-    assert nxt.y == kick.y + 10
+    assert nxt.y == kick.y + 11
 
 
 def test_without_source_map_rows_are_rules():
@@ -151,7 +151,7 @@ def test_nothing_collapsed_by_default():
 def test_removed_cable_row_returns_to_its_pool_group_immediately():
     p = profile({38: Rule.map_to(38), 40: Rule.map_to(38)})
     first = build_layout(p, no_collapse())
-    assert first.target_row("a:snare: center").height == 2
+    assert first.target_row("a:snare: center").height == 3
     p.rules[40] = Rule.delete()
     lay = build_layout(p, no_collapse())
     row = rows_by_note(lay)[40]
@@ -272,7 +272,7 @@ def test_target_groups_connected_only_by_default():
     assert hat.collapsed and hat.count == 2 and hat.shown == 1
     assert [r.slot for r in lay.scene.target_rows] == ["a:hat: closed"]
     assert heads["Kick"].collapsed and heads["Kick"].shown == 0
-    assert lay.scene.height == len(heads) + 2  # заголовки + высокая строка Hat: Closed (две строки напротив)
+    assert lay.scene.height == len(heads) + 3  # заголовки + Hat: Closed группой (заголовок + две строки напротив)
     # «все» — только для выбранной группы
     lay = build_layout(p, no_collapse(), show_all={TARGET_PREFIX + "hat"})
     hat = lay.header(TARGET_PREFIX + "hat")
@@ -398,8 +398,8 @@ def test_target_numbers_shared_dst_and_fallback():
     rules = {38: Rule.map_to(60), 40: Rule.map_to(60)}
     lay = build_layout(profile(rules, src=SNARES, tgt=MULTI), no_collapse())
     t = lay.target_row("a:snare: center")
-    assert t.lines == ((0, 60),) and t.hidden == 3
-    assert {c.dst_y for c in lay.scene.cables} == {t.y}  # оба кабеля — на 60 (первая строка)
+    assert t.expanded and t.lines == ((1, 60),) and t.hidden == 3
+    assert {c.dst_y for c in lay.scene.cables} == {t.y + 1}  # оба кабеля — на плашку 60 под заголовком
     # без кабелей — Write to (или первая нота) на первой строке
     lay = build_layout(profile(src=SNARES, tgt=MULTI), no_collapse(), show_all=show_all(profile(tgt=MULTI)))
     t = lay.target_row("a:snare: center")
@@ -425,7 +425,7 @@ def test_suggestions_placed_opposite_target_with_dashed_cables():
     cables = {c.src: c for c in lay.scene.cables}
     assert all(c.suggested for c in cables.values())
     assert (cables[36].dst, cables[38].dst, cables[40].dst) == (36, 38, 38)  # 40 — на Write to (38)
-    assert lay.target_row("a:snare: center").lines == ((0, 38),)
+    assert lay.target_row("a:snare: center").lines == ((1, 38),)  # 38 и 40 напротив — цель группой
     # подсказки скрыли — строки сразу в пуле
     hidden = build_layout(p, no_collapse())
     assert not hidden.scene.cables and rows_by_note(hidden)[36].block == UNASSIGNED
@@ -514,10 +514,23 @@ def test_expanded_target_header_faces_an_alias_header_without_a_shift():
     assert [c.y - t.y for c in children] == [1, 2] and t.lines == ((1, 34), (2, 36)) and t.height == 3
 
 
-def test_target_with_one_number_stays_one_line():
-    rules = {38: Rule.map_to(60), 40: Rule.map_to(60)}
-    t = build_layout(profile(rules, src=SNARES, tgt=MULTI), no_collapse()).target_row("a:snare: center")
-    assert not t.expanded and t.lines == ((0, 60),) and t.height == 2
+def test_target_with_one_number_and_several_rows_is_a_group():
+    rules = {38: Rule.map_to(60), 40: Rule.map_to(60), 53: Rule.map_to(60)}
+    lay = build_layout(profile(rules, src=SNARES, tgt=MULTI), no_collapse())
+    t = lay.target_row("a:snare: center")
+    assert t.expanded and t.lines == ((1, 60),) and t.height == 4  # заголовок + плашка 60, строки слева — со сдвигом
+    assert {c.dst_y for c in lay.scene.cables} == {t.y + 1}
+    # одна строка напротив — одна плашка, без заголовка
+    t = build_layout(profile({38: Rule.map_to(60)}, src=SNARES, tgt=MULTI), no_collapse()).target_row("a:snare: center")
+    assert not t.expanded and t.lines == ((0, 60),) and t.height == 1
+
+
+def test_group_of_suggestions_needing_write_to_gets_a_number_plate():
+    p = profile(tgt=NoteMap("T", {38: "Snare: Center", 39: "Snare: Center"}))
+    lay = build_layout(p, no_collapse(), suggested={38: "snare: center", 40: "snare: center"})
+    t = lay.target_row("a:snare: center")
+    assert t.expanded and all(off >= 1 for off, _ in t.lines)
+    assert all(c.dst_y > t.y for c in lay.scene.cables)  # ни один кабель — не на заголовок
 
 
 def test_bundle_order_as_in_the_mockup_and_independent_of_the_reverse_scheme():

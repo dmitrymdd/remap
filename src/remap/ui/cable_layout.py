@@ -6,13 +6,13 @@
 - СЦЕНА (SceneLayout, общая прокрутка колонок 2 и 3, начинается сверху): подключённые исходные ноты (правило map)
   напротив своей цели и целевая карта — по строке на артикуляцию (имена сравниваются через normalize_name), под
   заголовками групп instrument_group. map на неосновную ноту артикуляции — кабель к той же строке. Высота строки
-  цели = max(1, число строк напротив неё): связка 10-в-1 — одна высокая строка цели и десять строк напротив.
+  цели = max(1, число строк напротив неё): связка 10-в-1 — блок цели и десять строк напротив.
   Строка цели показывает номера, на которые реально идут правила (TargetRow.lines): каждый номер — на уровне
   первой строки напротив, чей кабель идёт на него, и кабель приходит на свой номер (53 — 53 читается сразу).
-  Неиспользуемые ноты артикуляции — за «+N» (TargetRow.hidden). Кабели идут на несколько номеров — строка цели
-  раскрыта (TargetRow.expanded), как раскрытые алиасы слева: строка 0 блока — заголовок с именем, номера — строками под
-  ним, кабель никогда не приходит на заголовок. Если напротив строки 0 стоит строка с кабелем, строки слева сдвигаются
-  на одну вниз (напротив заголовка цели — пусто). Свернуть такую строку нельзя: кабели идут на разные номера.
+  Неиспользуемые ноты артикуляции — за «+N» (TargetRow.hidden). Напротив цели больше одной строки — цель группой
+  (TargetRow.expanded), как раскрытые алиасы слева: строка 0 блока — заголовок с именем, номера — отдельными строками
+  под ним (даже если номер один), кабель никогда не приходит на заголовок. Если напротив строки 0 стоит строка с
+  кабелем, строки слева сдвигаются на одну вниз (напротив заголовка цели — пусто). Свернуть группу цели нельзя.
 
 Координаты — в строках (y, height) каждой раскладки отдельно; в пиксели их переводит Ruler (шаг зависит от соседей:
 строка или заголовок), рисует виджет (cable_view.py).
@@ -128,7 +128,7 @@ class TargetRow:
     y: int
     height: int
     lines: tuple[tuple[int, int], ...] = ()  # (смещение строки внутри блока, номер): номера, на которые идут кабели
-    expanded: bool = False  # кабели идут на несколько номеров: строка 0 — заголовок (имя), номера — строками под ним
+    expanded: bool = False  # группой (напротив больше одной строки): строка 0 — заголовок (имя), номера — строками под ним
 
     @property
     def numbers(self) -> tuple[tuple[int, int], ...]:
@@ -475,7 +475,7 @@ def _pool_layout(ctx: _Ctx, order: Placement, collapsed: set[str], expanded: set
 def _target_block(ctx: _Ctx, order: Placement, r: TargetRow, y: int,
                   expanded: set[str]) -> tuple[TargetRow, list[SourceRow], list[Cable]]:
     """Строка цели с y, строки напротив неё и их кабели. Номер — на уровне первой строки, чей кабель идёт на него;
-    номеров несколько — строка раскрыта: строка 0 — заголовок (при нужде строки слева сдвигаются на одну)."""
+    напротив больше одной строки — цель группой: строка 0 — заголовок (при нужде строки слева сдвигаются на одну)."""
 
     def place(top: int) -> tuple[list[SourceRow], list[SourceRow], dict[int, int]]:
         units = _unit_rows(ctx, order.slots.get(r.slot, ()), top, None, r.slot, expanded)
@@ -488,13 +488,15 @@ def _target_block(ctx: _Ctx, order: Placement, r: TargetRow, y: int,
         return units, cabled, first
 
     units, cabled, first = place(y)
-    many = len(first) > 1
-    if many and 0 in first.values():  # строка с кабелем напротив заголовка — сдвинуть строки слева
+    group = len(units) > 1
+    if group and any(row.y == y for row in cabled):  # строка с кабелем напротив заголовка — сдвинуть строки слева
         units, cabled, first = place(y + 1)
     lines = tuple(sorted((off, dst) for dst, off in first.items()))
+    if group and not lines:  # кабели ждут выбора Write to: номер — плашкой под заголовком, на уровне первого кабеля
+        lines = ((cabled[0].y - y if cabled else 1, r.write_to if r.write_to is not None else r.notes[0]),)
     height = max(1, len(units) + (units[0].y - y if units else 0))
-    placed = TargetRow(r.slot, r.label, r.notes, r.write_to, r.in_map, y, height, lines, expanded=many)
-    fallback = lines[0][0] if many else 0  # подсказке без номера (нужен выбор Write to) — первый номер, не заголовок
+    placed = TargetRow(r.slot, r.label, r.notes, r.write_to, r.in_map, y, height, lines, expanded=group)
+    fallback = lines[0][0] if group else 0  # подсказке без номера (нужен выбор Write to) — первый номер, не заголовок
     cables = [Cable(row.notes, ctx.dst(row.shown), row.y, placed, y + first.get(ctx.dst(row.shown), fallback),
                     row.suggested) for row in cabled]
     return placed, units, cables
