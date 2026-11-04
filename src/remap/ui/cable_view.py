@@ -261,10 +261,10 @@ class _Row(QGraphicsItem):
         self.update()
 
     def state(self) -> str:
-        """Состояние плашки: выбрана, с замечанием, цель перетаскивания или кабель под курсором (рамка акцентом), наведение,
+        """Состояние плашки: выбрана (у цели — в неё идёт кабель выбранной строки), с замечанием, цель перетаскивания или кабель под курсором (рамка акцентом), наведение,
         зачёркнута, подсказка."""
         zone = self.drop_zone[0] if self.drop_zone else None
-        if self.selected:
+        if self.selected and not (self.role == TARGET and (self.highlighted or zone)):  # у цели отклик drop важнее
             return "selected"
         if self.warn:
             return "warn"
@@ -317,9 +317,10 @@ class _HeaderItem(QGraphicsItem):
     """Заголовок группы: шеврон, имя, число; клик — свернуть или развернуть (у цели — сменить режим)."""
 
     def __init__(self, rect: QRectF, header: Header, on_toggle: Callable[[str], None], tooltip: str,
-                 variant: str = "pool") -> None:
+                 variant: str = "pool", zone: QRectF | None = None) -> None:
         super().__init__()
         self.rect, self.header, self.variant = rect, header, variant
+        self.zone = rect.united(zone) if zone is not None else QRectF(rect)  # клик и drop: с зазорами до соседних плашек
         self._on_toggle = on_toggle
         self._hover = False
         self.highlighted = False
@@ -334,7 +335,7 @@ class _HeaderItem(QGraphicsItem):
             self.update()
 
     def boundingRect(self) -> QRectF:
-        return QRectF(self.rect)
+        return QRectF(self.zone)
 
     def line_center(self) -> float:
         return self.rect.center().y()
@@ -370,7 +371,7 @@ class _HeaderItem(QGraphicsItem):
         h = self.header
         count = f"{h.shown} / {h.count}" if h.shown else str(h.count)  # цель: подключённые / все артикуляции
         state = "lit" if self.highlighted else "hover" if self._hover else "normal"
-        plates.paint_group_header(p, self.rect, h.label, count, h.collapsed, variant=self.variant, state=state,
+        plates.paint_group_header(p, self.rect, h.label, count, not h.open, variant=self.variant, state=state,
                                   label_room=self.label_room(),
                                   twin_x=theme.COL_FROM + theme.COL_GAP if self.variant == "scene" else None)
 
@@ -837,6 +838,10 @@ class CableEditor(QWidget):
         self.selection = set(notes)
         for item in self.pool_rows + self.scene_rows:
             item.set_selected(bool(self.selection) and set(item.notes) <= self.selection)
+        # строка цели выбрана, если в неё идёт кабель выбранной строки (как в макете: многие-в-одну — цель белая)
+        lit = {id(c.dst) for c in self.cable_items if c.src.selected}
+        for item in self.target_items.values():
+            item.set_selected(id(item) in lit)
         for cable in self.cable_items + self.suggestion_items:
             cable.set_style(cable._hovered)  # кабель выбранной строки — белый
 
@@ -1444,7 +1449,9 @@ class CableEditor(QWidget):
             if h.notes:
                 tip += f"\n{TARGET_GROUP_HINT}"
             head_rect = QRectF(lx, PAD + ruler.top(h.y), rx + col3 - lx, m.head)
-            item = _HeaderItem(head_rect, h, self.toggle_target, tip, "scene")
+            top, bottom = ruler.head_zone(h.y)
+            zone = QRectF(lx, PAD + top, head_rect.width(), bottom - top)
+            item = _HeaderItem(head_rect, h, self.toggle_target, tip, "scene", zone)
             self._full_label(item, self.view)
             self.scene_headers[h.key] = item
             scene.addItem(item)

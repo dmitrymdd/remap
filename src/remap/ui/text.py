@@ -44,9 +44,10 @@ def label(px: float, weight: QFont.Weight = QFont.Weight.DemiBold, spacing: floa
 
 
 @cache
-def _base_font(kind: str, family: str, weight: QFont.Weight, spacing: float, wdth: float, italic: bool,
-               strike: bool) -> QFont:
-    """Шрифт размером BASE_PX; `family` — часть ключа кэша: имена семейств выставляет `theme.load_fonts()`."""
+def _base_font(kind: str, family: str, generation: int, weight: QFont.Weight, spacing: float, wdth: float,
+               italic: bool, strike: bool) -> QFont:
+    """Шрифт размером BASE_PX; `family` и `generation` — часть ключа кэша: имена семейств выставляет
+    `theme.load_fonts()`, и до неё под тем же именем — запасной шрифт (`theme.FONT_GENERATION`)."""
     if kind == "label":
         font = theme.label_font(BASE_PX, weight, spacing)
     else:
@@ -58,9 +59,9 @@ def _base_font(kind: str, family: str, weight: QFont.Weight, spacing: float, wdt
 
 
 def _key(spec: TextSpec) -> tuple:
-    """Ключ кэшей: семейство берётся из темы (имена выставляет `load_fonts()`), поэтому оно — часть ключа."""
+    """Ключ кэшей: семейство и поколение шрифтов берутся из темы (их меняет `load_fonts()`), поэтому они — часть ключа."""
     family = theme.LABEL_FAMILY if spec.kind == "label" else theme.MONO_FAMILY
-    return spec.kind, family, spec.weight, spec.spacing, spec.wdth, spec.italic, spec.strike
+    return spec.kind, family, theme.FONT_GENERATION, spec.weight, spec.spacing, spec.wdth, spec.italic, spec.strike
 
 
 def base_font(spec: TextSpec) -> QFont:

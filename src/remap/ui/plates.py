@@ -133,7 +133,7 @@ def paint_plate(p: QPainter, rect: QRectF, state: str = "normal", *, numbers: li
         return name_x
     dpr = p.device().devicePixelRatioF()
     key = (state, int(w), int(h), tuple(numbers), name, name_room, italic, text_deleted, dim_name, line_h, dpr,
-           theme.MONO_FAMILY)
+           theme.MONO_FAMILY, theme.FONT_GENERATION)
     pm = _PLATES.get(key)
     if pm is None:
         if len(_PLATES) >= _PLATES_MAX:

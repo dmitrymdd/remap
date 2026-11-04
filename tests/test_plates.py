@@ -11,7 +11,7 @@ pytestmark = pytest.mark.ui
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter
 
-from remap.ui import plates, theme
+from remap.ui import plates, text, theme
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "remap" / "ui"
 BG = "#0D1C15"
@@ -185,6 +185,21 @@ def test_plate_is_rasterised_once_per_parameters_and_dpr():
     assert len(plates._PLATES) == 4
 
 
+def test_plate_and_text_caches_follow_the_font_generation(monkeypatch):
+    """Растры и метрики, посчитанные до `load_fonts()` (запасной шрифт под тем же именем семейства), после регистрации
+    шрифта не используются: поколение шрифтов — часть ключей. Повторный `load_fonts()` поколение не меняет."""
+    generation = theme.FONT_GENERATION
+    theme.load_fonts()
+    assert generation == theme.FONT_GENERATION  # файлы уже зарегистрированы
+    plates._PLATES.clear()
+    drawn("normal", numbers=[(0, "36")], name="Kick: Hit")
+    key = text._key(plates.number_spec())
+    monkeypatch.setattr(theme, "FONT_GENERATION", generation + 1)
+    assert text._key(plates.number_spec()) != key
+    drawn("normal", numbers=[(0, "36")], name="Kick: Hit")
+    assert len(plates._PLATES) == 2
+
+
 def test_cached_plate_looks_like_the_direct_one():
     cached = drawn("normal", numbers=[(0, "36")], name="Kick: Hit")
     direct, p = canvas()
@@ -226,6 +241,17 @@ def test_header_label_is_uppercase_accent_and_count_dim_on_one_baseline():
     assert label[2] - label[0] == pytest.approx(plates.header_label_width("snare") - 1.3, abs=3.0)
 
 
+def caret_direction(img: QImage) -> str:
+    """Куда смотрит треугольник заголовка (первые 10 px слева): центр тяжести смещён от середины к основанию."""
+    pts = [(x, y) for x in range(10) for y in range(img.height()) if px(img, x, y) != rgb(BG)]
+    xs, ys = [x for x, _ in pts], [y for _, y in pts]
+    dx = sum(xs) / len(xs) - (min(xs) + max(xs)) / 2
+    dy = sum(ys) / len(ys) - (min(ys) + max(ys)) / 2
+    if abs(dy) > abs(dx):
+        return "down" if dy < 0 else "up"
+    return "right" if dx < 0 else "left"
+
+
 def test_header_caret_rotates_when_collapsed():
     open_img, p = canvas(h=40)
     plates.paint_group_header(p, QRectF(0, 0, 200, 30), "kick", collapsed=False)
@@ -234,6 +260,7 @@ def test_header_caret_rotates_when_collapsed():
     plates.paint_group_header(q, QRectF(0, 0, 200, 30), "kick", collapsed=True)
     q.end()
     assert any(open_img.pixelColor(x, y) != shut_img.pixelColor(x, y) for x in range(10) for y in range(10, 26))
+    assert caret_direction(open_img) == "down" and caret_direction(shut_img) == "right"
     assert plates.header_label_x("pool") == 17 and plates.header_label_x("scene") == 15 and plates.header_label_x("scene", 4) == 19
 
 

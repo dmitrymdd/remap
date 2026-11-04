@@ -86,6 +86,12 @@ class Header:
     notes: tuple[int, ...] = ()  # пул: ноты группы; цель: ноты артикуляций группы (drop на группу)
     shown: int | None = None     # цель: артикуляций, напротив которых есть строки
 
+    @property
+    def open(self) -> bool:
+        """Треугольник вниз: под заголовком есть строки. Пул — группа не свёрнута; цель — режим «все» или есть
+        подключённые артикуляции (режим «только подключённые» с кабелями — тоже вниз, как в макете)."""
+        return not self.collapsed or bool(self.shown)
+
 
 @dataclass(frozen=True)
 class SourceRow:
@@ -231,6 +237,17 @@ class Ruler:
         """Низ плашки или заголовка последней из rows строк, начиная с y."""
         last = y + rows - 1
         return self._tops[last] + (self.metrics.head if last in self._heads else self.metrics.plate)
+
+    def head_zone(self, y: int) -> tuple[int, int]:
+        """Зона мыши заголовка y (верх, низ): с зазорами до слотов соседних строк, чтобы вокруг заголовка не было мёртвых
+        полос для клика и drop. Зазор между двумя заголовками достаётся верхнему; над первой строкой колонки — ничего."""
+        m = self.metrics
+        top = self._tops[y] if y == 0 or y - 1 in self._heads else self.bottom(y - 1) + m.inset
+        if y + 1 >= len(self._tops):
+            bottom = self.bottom(y)
+        else:
+            bottom = self._tops[y + 1] - (0 if y + 1 in self._heads else m.inset)
+        return top, bottom
 
     @property
     def total(self) -> int:

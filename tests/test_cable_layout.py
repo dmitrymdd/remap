@@ -2,6 +2,7 @@
 import os
 import subprocess
 import sys
+from itertools import pairwise
 from pathlib import Path
 
 from remap.core.notemap import NoteMap, articulations, normalize_name
@@ -572,3 +573,31 @@ def test_ruler_step_depends_on_neighbours():
 
 def test_ruler_empty():
     assert Ruler(0, (), RowMetrics(28, 32, 29, 4, 4)).total == 0
+
+
+def test_ruler_head_zones_and_row_slots_tile_the_column():
+    """Зона заголовка забирает зазоры до соседних слотов: мёртвых полос для мыши между строками и заголовками нет."""
+    m = RowMetrics(plate=30, pitch=36, head=30, below_head=12, above_head=10)
+    heads = {0, 3, 4}
+    ruler = Ruler(7, heads, m)
+    assert ruler.head_zone(0) == (0, 39) and ruler.head_zone(3) == (111, 160) and ruler.head_zone(4) == (160, 199)
+    spans = sorted(ruler.head_zone(y) if y in heads else (ruler.top(y) - m.inset, ruler.bottom(y) + m.inset)
+                   for y in range(7))
+    assert all(a[1] == b[0] for a, b in pairwise(spans))
+    assert spans[-1][1] == ruler.total
+    # заголовок последней строкой колонки (пустая группа в конце) — до своего низа
+    tail = Ruler(3, {0, 2}, m)
+    assert tail.head_zone(2) == (tail.bottom(1) + m.inset, tail.bottom(2))
+
+
+def test_target_header_open_when_it_shows_rows():
+    """Треугольник заголовка цели вниз, если под ним есть строки: режим «все» или есть подключённые; вправо — пусто."""
+    p = profile({42: Rule.map_to(42)})
+    lay = build_layout(p, no_collapse())
+    hat, kick = lay.header(TARGET_PREFIX + "hat"), lay.header(TARGET_PREFIX + "kick")
+    assert hat.collapsed and hat.open          # «только подключённые», но строка есть — вниз (как в макете)
+    assert kick.collapsed and not kick.open    # ни одной строки — вправо
+    lay = build_layout(p, no_collapse(), show_all={TARGET_PREFIX + "kick"})
+    assert lay.header(TARGET_PREFIX + "kick").open
+    pool = build_layout(profile(), {POOL_PREFIX + "Kick"})
+    assert [h.open for h in pool.pool.headers] == [not h.collapsed for h in pool.pool.headers]

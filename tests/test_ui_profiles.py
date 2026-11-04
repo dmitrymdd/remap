@@ -8,6 +8,7 @@ pytest.importorskip("PySide6")
 pytestmark = pytest.mark.ui
 
 from PySide6.QtCore import QPoint, QPointF, Qt
+from PySide6.QtGui import QImage, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -1717,6 +1718,71 @@ def test_profiles_geometry_matches_mockup(window, app):
     assert cable.pen().widthF() == 1.5 and cable_view.PORT == 2.6
     ed.set_selection({35})
     assert cable.pen().widthF() == 1.6
+
+
+def mockup_editor(window, app, direction="forward"):
+    """Kick: три строки в одну (35, 34, 36 → 35), Snare: 38 → 38; Hi-Hat цели без кабелей."""
+    src = NoteMap("From", {35: "Kick: Hit", 34: "Kick: Open", 36: "Kick: Side", 38: "Snare: Center",
+                           42: "Hi-Hat: Closed"})
+    tgt = NoteMap("To", {35: "Kick: Hit", 38: "Snare: Center", 37: "Snare: Stick", 42: "Hi-Hat: Closed"})
+    rules = {35: Rule.map_to(35), 34: Rule.map_to(35), 36: Rule.map_to(35), 38: Rule.map_to(38)}
+    window.resize(900, 800)
+    window.show()
+    ed = window.profiles_page.cables
+    ed.set_profile(RemapProfile("Mockup", src, tgt, rules), direction=direction)
+    app.processEvents()
+    return ed
+
+
+def test_scene_header_caret_down_when_rows_shown(window, app, monkeypatch):
+    """Как в макете: «Kick 1 / 1» в режиме «только подключённые» — ▾; группа без строк — ▸."""
+    ed = mockup_editor(window, app)
+    seen = {}
+
+    def spy(p, rect, label, count="", collapsed=False, **kw):
+        seen[label] = collapsed
+    monkeypatch.setattr(cable_view.plates, "paint_group_header", spy)
+    img = QImage(10, 10, QImage.Format.Format_ARGB32_Premultiplied)
+    p = QPainter(img)
+    for item in ed.scene_headers.values():
+        item.paint(p, None)
+    p.end()
+    assert seen == {"Kick": False, "Snare": False, "Hi-Hat": True}
+    assert "target/snare" not in ed.show_all  # Snare — «только подключённые» (Snare: Stick скрыта), но ▾
+
+
+def test_scene_header_zone_has_no_dead_gaps(window, app):
+    """Зазоры над и под заголовком сцены — его зона клика и drop; рисуется заголовок по-прежнему в своём rect."""
+    ed = mockup_editor(window, app)
+    kick, snare = ed.scene_headers["target/kick"], ed.scene_headers["target/snare"]
+    hit = ed.target_items["a:kick: hit"]
+    assert kick.zone.bottom() == hit.rect.top() and snare.zone.top() == hit.rect.bottom()  # вплотную к слотам строк
+    assert snare.zone.top() < snare.rect.top() and snare.zone.bottom() > snare.rect.bottom()
+    scene = ed.view.scene()
+    for y in (snare.zone.top() + 0.5, snare.rect.top() - 0.5, snare.rect.bottom() + 0.5, snare.zone.bottom() - 0.5):
+        for x in (snare.rect.left() + 20, snare.rect.right() - 20):  # обе колонки
+            assert snare in scene.items(QPointF(x, y))
+    # и drop: точка в зазоре над заголовком — цель «группа Snare»
+    pt = ed.view.viewport().mapTo(ed, ed.view.mapFromScene(QPointF(snare.rect.right() - 20, snare.rect.top() - 2)))
+    assert ed._drop_target_at(QPointF(pt)) is snare
+
+
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_selected_sources_light_their_target_plates(window, app, direction):
+    """Выбранные строки «from» — их цели в состоянии selected (Profiles.png: 37 Snare: Sidestick); без перестройки."""
+    ed = mockup_editor(window, app, direction)
+    items = dict(ed.target_items)
+    many = max(ed.cable_items, key=lambda c: sum(o.dst is c.dst for o in ed.cable_items))
+    others = [t for t in ed.target_items.values() if t is not many.dst]
+    assert many.dst.state() == "normal"
+    ed.set_selection(set(many.src.notes))
+    assert ed.target_items == items  # те же элементы: раскладка не перестраивалась
+    assert many.dst.state() == "selected" and all(t.state() != "selected" for t in others)
+    many.dst.set_drop_zone(("row",))
+    assert many.dst.state() == "drop"  # отклик drop у цели важнее выделения
+    many.dst.set_drop_zone(None)
+    ed.set_selection(set())
+    assert many.dst.state() == "normal"
 
 
 def test_target_plate_spans_first_to_last_number(window, app):

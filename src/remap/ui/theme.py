@@ -261,16 +261,27 @@ def qcolor(c: str | RGBA, alpha: float | None = None) -> QColor:
     return out
 
 
+_FONT_IDS: dict[str, int] = {}  # файл шрифта -> id в QFontDatabase (каждый файл регистрируется один раз)
+# Растёт, когда регистрируется новый файл шрифта. Часть ключей кэшей текста и плашек: до `load_fonts()` под тем же именем
+# семейства Qt подставляет запасной шрифт, и метрики и растры, посчитанные с ним, после загрузки уже неверны.
+FONT_GENERATION = 0
+
+
 def load_fonts() -> dict[str, str]:
     """Регистрирует шрифты из assets/fonts; возвращает {"mono": семейство, "label": семейство}.
     Нет файла — предупреждение в лог, остаётся запасное имя семейства (шрифт подменит система)."""
-    global MONO_FAMILY, LABEL_FAMILY
+    global MONO_FAMILY, LABEL_FAMILY, FONT_GENERATION
     fonts = ASSETS / "fonts"
     found: dict[str, str] = {}
     for kind, files in (("mono", (MONO_FILE,)), ("label", LABEL_FILES)):
         for name in files:
             path = Path(str(fonts / name))
-            fid = QFontDatabase.addApplicationFont(str(path)) if path.is_file() else -1
+            fid = _FONT_IDS.get(str(path), -1)
+            if fid < 0 and path.is_file():
+                fid = QFontDatabase.addApplicationFont(str(path))
+                if fid >= 0:
+                    _FONT_IDS[str(path)] = fid
+                    FONT_GENERATION += 1
             families = QFontDatabase.applicationFontFamilies(fid) if fid >= 0 else []
             if not families:
                 log.warning("font not loaded: %s", path)
