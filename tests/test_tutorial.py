@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QApplication
 
 from remap.core.profile import FORWARD
 from remap.ui import text, theme
-from remap.ui.main_window import NO_TUTORIAL_ENV, PAGE_CONVERT, PAGE_PROFILES, TUTORIAL_KEY, MainWindow
+from remap.ui.main_window import NO_TUTORIAL_ENV, PAGE_CONVERT, PAGE_MAPS, PAGE_PROFILES, TUTORIAL_KEY, MainWindow
 from remap.ui.tutorial import STEPS, Step
 from test_ui_profiles import EZD3, SD3, new_profile, stub_dialogs
 
@@ -165,9 +165,11 @@ def test_scene_scroll_is_restored_after_the_tutorial(window):
 
 
 def test_help_key_only_on_profiles(window):
-    assert window.help_btn.isEnabled() and "Show the tutorial" in window.help_btn.toolTip()
+    assert not window.help_btn.isHidden() and "Show the tutorial" in window.help_btn.toolTip()
     window.show_page(PAGE_CONVERT)
-    assert not window.help_btn.isEnabled()
+    assert window.help_btn.isHidden()
+    window.show_page(PAGE_MAPS)
+    assert window.help_btn.isHidden()
     window.start_tutorial()
     assert not window.tutorial.isVisible()
     window.show_page(PAGE_PROFILES)

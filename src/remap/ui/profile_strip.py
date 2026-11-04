@@ -15,8 +15,9 @@ class MapCombo(ComboBox):
     """Поле «подпись + карта ▾»: лицо и текст рисует `ComboBox`, а вместо списка открывается меню выбора карты
     (кнопка с меню прежней страницы: `setMenu()` / `menu()` / `setText()` / `text()`)."""
 
-    def __init__(self, caption: str, parent: QWidget | None = None) -> None:
-        super().__init__(parent, caption=caption)
+    def __init__(self, caption: str, parent: QWidget | None = None, **font) -> None:
+        """font — `value_px` / `value_weight` / `wdth` поля (`ComboBox`)."""
+        super().__init__(parent, caption=caption, **font)
         self.addItem("")
         self._menu: QMenu | None = None
 

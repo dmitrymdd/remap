@@ -249,8 +249,12 @@ def test_convert_several_files_to_output_folder_and_reset(window, tmp_path):
     other = _files(tmp_path, "solo.mid")[0]
     out = tmp_path / "results"
     window.ask_output_folder = lambda start: str(out)
-    window.choose_output_folder()
-    assert window.output_dir == out and not window.folder_reset_btn.isHidden()
+    convert = window.convert_page
+    assert [a.text() for a in convert.output_menu.actions()] == ["Next to source files", "Choose folder…"]
+    assert convert.output_btn.text() == "Next to source files" and convert.output_next_action.isChecked()
+    convert.output_choose_action.trigger()
+    assert window.output_dir == out and convert.output_btn.text() == str(out)
+    assert not convert.output_next_action.isChecked() and str(out) in convert.output_btn.toolTip()
     window._accept_files([a, b, other])
     assert window.out_card.folder.text() == str(out)
     window.convert()
@@ -260,8 +264,9 @@ def test_convert_several_files_to_output_folder_and_reset(window, tmp_path):
     assert "collides" in rows[1].result.text()
     assert sorted(p.name for p in out.iterdir()) == ["groove_remapped.mid", "solo_remapped.mid"]
     assert not (d1 / "groove_remapped.mid").exists()
-    window.folder_reset_btn.click()
-    assert window.output_dir is None and window.folder_reset_btn.isHidden() and window.outputs == []
+    convert.output_next_action.trigger()
+    assert window.output_dir is None and convert.output_next_action.isChecked() and window.outputs == []
+    assert convert.output_btn.text() == "Next to source files"
     window.convert()
     assert (d1 / "groove_remapped.mid").is_file() and (d2 / "groove_remapped.mid").is_file()
     assert window.status.text() == "3 files converted"

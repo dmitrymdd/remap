@@ -94,30 +94,29 @@ def test_legacy_profile_seeded_once(app, storage):
     storage.delete_profile(LEGACY_ID)
     w2 = MainWindow(storage)  # папка уже есть — удалённый профиль не возвращается
     assert storage.list_profiles()[0] == []
-    assert w2.profile_combo.count() == 0
-    assert w2.profile_stack.currentIndex() == 1 and not w2.convert_btn.isEnabled()
-    assert "No remap profiles yet" in w2.empty_label.text()
+    combo = w2.profile_combo
+    assert combo.count() == 0 and combo.placeholderText() == "NO PROFILES" and not combo.isEnabled()
+    assert not w2.convert_btn.isEnabled()
+    assert "Profiles tab" in combo.toolTip() and "Profiles tab" in w2.convert_btn.toolTip()
     w2.convert()
     assert w2.status.property("state") == "error"
     w2.close()
 
 
-def test_summary_line_and_edit_jumps_to_profiles(window, storage):
+def test_convert_strip_shows_maps_of_the_profile(window, storage):
     page = window.profiles_page
     pid = new_profile(page, "Kit")
     page.save()
     window.show_page(PAGE_CONVERT)
-    combo = window.profile_combo
+    convert = window.convert_page
+    combo = convert.profile_combo
     assert [combo.itemData(i) for i in range(combo.count())] == sorted([LEGACY_ID, pid], key=str.casefold)
     combo.setCurrentIndex(combo.findData(LEGACY_ID))
-    assert window.profile_summary.text() == "no maps"  # на Convert — без числа правил
+    assert (convert.source_field.value, convert.target_field.value) == ("no map", "no map")
     combo.setCurrentIndex(combo.findData(pid))
-    assert window.profile_summary.text() == "EZdrummer 3 → Superior Drummer 3"
-    window.show_page(PAGE_PROFILES)
-    page.select(LEGACY_ID)
-    window.show_page(PAGE_CONVERT)
-    window.edit_selected_profile()
-    assert window.pages.currentIndex() == PAGE_PROFILES and page.current == pid
+    assert (convert.source_field.value, convert.target_field.value) == ("EZdrummer 3", "Superior Drummer 3")
+    assert "Kit" in combo.toolTip() and "Superior Drummer 3" in convert.target_field.toolTip()
+    assert not hasattr(convert, "edit_profile_btn") and not hasattr(convert, "profile_summary")
 
 
 def test_profile_list_refreshes_on_changes(window, storage):
@@ -534,7 +533,7 @@ def test_write_to_choice_shows_numbers_only(window, monkeypatch):
 def test_hotkeys_in_tooltips_and_short_status(window, tmp_path):
     from remap.ui.maps_page import COL_NAME
     window.show_page(PAGE_CONVERT)
-    assert window.convert_btn.toolTip() == "Convert (Enter)"
+    assert "Convert (Enter)" in window.convert_btn.toolTip()
     assert window.copy_btn.toolTip() == "Copy file (Ctrl+C)"
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
@@ -1543,12 +1542,12 @@ def test_convert_direction_toggle(app, storage, tmp_path):
     assert page.save()
     w.show_page(PAGE_CONVERT)
     w.profile_combo.setCurrentIndex(w.profile_combo.findData(pid))
-    assert w.direction_btn.text() == "⇄" and w.direction_btn.toolTip() == "Swap source and target"
-    assert w.direction_btn.property("dir") == FORWARD
-    assert w.profile_summary.text() == "EZdrummer 3 → Superior Drummer 3"
+    convert = w.convert_page
+    assert "Swap source and target" in w.direction_btn.toolTip() and w.direction_btn.property("dir") == FORWARD
+    assert (convert.source_field.value, convert.target_field.value) == ("EZdrummer 3", "Superior Drummer 3")
     w.direction_btn.click()
-    assert w.direction == REVERSE and w.direction_btn.text() == "⇄" and w.direction_btn.property("dir") == REVERSE
-    assert w.profile_summary.text() == "Superior Drummer 3 → EZdrummer 3"
+    assert w.direction == REVERSE and w.direction_btn.property("dir") == REVERSE
+    assert (convert.source_field.value, convert.target_field.value) == ("Superior Drummer 3", "EZdrummer 3")
     assert w.settings.value(DIRECTION_KEY) == REVERSE
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)

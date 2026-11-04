@@ -47,11 +47,10 @@ class _ToConvertPage:  # TEMP: removed in 5.5
 
 _CONVERT_PROXIES = (  # TEMP: removed in 5.5 — состояние и действия Convert живут в `convert_page`, тесты переедут туда
     "sources", "outputs", "results", "output_dir", "source", "output", "drop", "out_card", "status", "profile_combo",
-    "profile_summary", "convert_btn", "copy_btn", "folder_reset_btn", "_convert_shortcuts", "load", "convert",
+    "convert_btn", "copy_btn", "_convert_shortcuts", "load", "convert",
     "copy_output", "paste_file", "remove_source", "_accept_files", "choose_file", "choose_output_folder",
-    "ask_output_folder", "set_output_dir", "details_dialog", "selected_profile", "edit_selected_profile",
-    "reveal_in_explorer", "show_error", "reload_profiles", "set_status", "profile_stack", "direction", "direction_btn",
-    "empty_label",
+    "ask_output_folder", "set_output_dir", "details_dialog", "selected_profile", "reveal_in_explorer", "show_error",
+    "reload_profiles", "set_status", "direction", "direction_btn",
 )
 
 
@@ -104,7 +103,10 @@ class MainWindow(QMainWindow):
         self.help_btn = Key("?", spec=HELP)
         self.help_btn.setToolTip(tip("Show the tutorial"))
         self.help_btn.clicked.connect(self.start_tutorial)
-        self.help_btn.setEnabled(False)  # открыта Convert
+        policy = self.help_btn.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)  # скрытая «?» не сдвигает шапку
+        self.help_btn.setSizePolicy(policy)
+        self.help_btn.setVisible(False)  # открыта Convert
         head.addWidget(FaceSlot(self.help_btn, theme.HEADER_H - theme.RECESS_EDGE_TOP))
         head.addSpacing(theme.HELP_GAP - key_margins(HELP).right() - key_margins(TAB).left() - head.spacing())
         self.nav_group = QButtonGroup(self)  # клавиши лежат в разных контейнерах: взаимное исключение — через группу
@@ -121,8 +123,6 @@ class MainWindow(QMainWindow):
         self.pages = QStackedWidget()
         root.addWidget(self.pages, stretch=1)
         self.convert_page = ConvertPage(self.storage, self.settings)
-        self.convert_page.profiles_requested.connect(lambda: self.show_page(PAGE_PROFILES))
-        self.convert_page.edit_requested.connect(self.edit_profile)
         self.pages.addWidget(self.convert_page)
         self.profiles_page = ProfilesPage(self.storage)
         self.profiles_page.profiles_changed.connect(self.convert_page.reload_profiles)
@@ -141,7 +141,7 @@ class MainWindow(QMainWindow):
         self.pages.setCurrentIndex(page)
         (self.nav_convert, self.nav_profiles, self.nav_maps)[page].setChecked(True)
         self.convert_page.set_shortcuts_enabled(page == PAGE_CONVERT)
-        self.help_btn.setEnabled(page == PAGE_PROFILES)  # обучение пока есть только у Profiles
+        self.help_btn.setVisible(page == PAGE_PROFILES)  # обучение есть только у Profiles: на других вкладках «?» нет
         if (page == PAGE_PROFILES and self.isVisible() and not os.environ.get(NO_TUTORIAL_ENV)
                 and not self.settings.value(TUTORIAL_KEY, False, type=bool)):
             QTimer.singleShot(0, self.start_tutorial)  # первый заход на вкладку: после раскладки страницы
@@ -169,12 +169,6 @@ class MainWindow(QMainWindow):
                     return
         super().closeEvent(event)
 
-
-    def edit_profile(self, profile_id) -> None:
-        """Открыть профиль на вкладке Profiles (кнопка «Edit» на Convert)."""
-        self.show_page(PAGE_PROFILES)
-        if profile_id is not None:
-            self.profiles_page.select(profile_id)
 
     # --- DnD внутрь окна: файлы принимает Convert с любой вкладки ---
 

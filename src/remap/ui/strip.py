@@ -16,11 +16,12 @@ SLOT_H = theme.STRIP_H - 2 * theme.RECESS_PAD  # высота панели: по
 class StripSeparator(QWidget):
     """Вертикальная прорезь панели: тёмная линия 1 px и светлая справа от неё; сверху и снизу по 10 px."""
 
-    def __init__(self, before: int, after: int, parent: QWidget | None = None) -> None:
-        """before / after — поля соседних виджетов под тень и обод: прорезь занимает 54 px между ЛИЦАМИ."""
+    def __init__(self, before: int, after: int, parent: QWidget | None = None, *, width: int = theme.STRIP_SEP_W) -> None:
+        """before / after — поля соседних виджетов под тень и обод: прорезь занимает `width` px между ЛИЦАМИ, линия —
+        посередине."""
         super().__init__(parent)
-        self._before = before
-        self.setFixedWidth(theme.STRIP_SEP_W - before - after)
+        self._before, self._span = before, width
+        self.setFixedWidth(width - before - after)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
 
     def sizeHint(self) -> QSize:
@@ -28,7 +29,7 @@ class StripSeparator(QWidget):
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
-        x, top, height = (theme.STRIP_SEP_W - 1) // 2 - self._before, 10, self.height() - 20
+        x, top, height = (self._span - 1) // 2 - self._before, 10, self.height() - 20
         p.fillRect(QRectF(x + 1, top, 1, height), qcolor(theme.STRIP_SEP))
         p.fillRect(QRectF(x, top, 1, height), qcolor(theme.STRIP_SEP_DARK))
 

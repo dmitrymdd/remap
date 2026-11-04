@@ -207,6 +207,9 @@ BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # панель подсказок и ста�
 STRIP_PAD_X = 15  # поля панели в полосе
 STRIP_LEFT_W, STRIP_SEP_W, STRIP_RIGHT_W = 218, 54, 522
 STRIP_GAP_KEYS = 8
+# полоса Convert (лица): профиль | прорезь | SOURCE ⇄ TARGET в левой части 514 | прорезь 54 | OUTPUT
+CONVERT_LEFT_W, CONVERT_PROFILE_W, CONVERT_MAP_W, CONVERT_OUTPUT_W = 514, 148, 146, 226
+CONVERT_PROFILE_FONT = 13  # однострочное комбо профиля, вес Medium (у Profiles — 12/400)
 STRIP_SEP: RGBA = (255, 255, 255, 0.06)
 STRIP_SEP_DARK = "#0A0B0C"
 # колонки: плашка, шаг строк, заголовок группы, зазоры под и над заголовком (cable_layout.RowMetrics)

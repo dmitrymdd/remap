@@ -275,3 +275,8 @@ class ComboBox(QComboBox):
     def _popup_closed(self) -> None:
         self._open = False
         self.update()
+
+
+def profile_combo(parent: QWidget | None = None) -> ComboBox:
+    """Однострочное комбо профиля на Convert: значение 13/500 (`theme.CONVERT_PROFILE_FONT`)."""
+    return ComboBox(parent, value_px=theme.CONVERT_PROFILE_FONT, value_weight=QFont.Weight.Medium)

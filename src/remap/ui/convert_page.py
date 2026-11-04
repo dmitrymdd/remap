@@ -10,23 +10,28 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl, Signal
+from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QDrag, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
-    QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
+    QMenu, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..core import FileResult, RemapProfile, convert_batch, output_path_for
 from ..core.profile import FORWARD, REVERSE
 from ..storage import Storage
 from . import theme
-from .combo import ComboBox
+from .convert_strip import ConvertStrip
 from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details, result_line
-from .profiles_page import SWAP_TEXT, SWAP_TIP, profile_summary
+from .profiles_page import SWAP_TIP, map_summary
 from .theme import repolish as _repolish
+from .tips import tip
 
 DIRECTION_KEY = "convert/direction"  # ui.ini: направление конвертации, общее для всех профилей
+NO_PROFILES = "NO PROFILES"
+CREATE_PROFILE = "No remap profiles yet: create one on the Profiles tab"
+NEXT_TO_SOURCES = "Next to source files"
+NO_VALUE = "—"  # поле SOURCE / TARGET без профиля
 
 
 def midi_paths_from_mime(mime: QMimeData) -> list[Path]:
@@ -320,11 +325,8 @@ class ReportDialog(QDialog):
 
 class ConvertPage(QWidget):
     """Вкладка Convert. Состояние: `sources` (исходные файлы), `outputs` (готовые результаты), `results` (итог по
-    исходному файлу), `output_dir` (None — рядом с исходниками), `direction` (ui.ini). Переход на другие вкладки —
-    сигналами: `profiles_requested` (нет профилей), `edit_requested(id или None)` — открыть профиль на Profiles."""
-
-    profiles_requested = Signal()
-    edit_requested = Signal(object)
+    исходному файлу), `output_dir` (None — рядом с исходниками), `direction` (ui.ini). Сверху — полоса `strip`
+    (профиль, карты направления, «⇄», папка результатов)."""
 
     def __init__(self, storage: Storage, settings) -> None:
         super().__init__()
@@ -355,75 +357,35 @@ class ConvertPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(theme.PAGE_MARGIN, 10, theme.PAGE_MARGIN, 16)
+        root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 16)
         root.setSpacing(8)
+
+        self.strip = ConvertStrip()
+        self.profile_combo = self.strip.combo
+        self.profile_combo.currentIndexChanged.connect(self._on_profile_changed)
+        self.source_field, self.target_field = self.strip.source_field, self.strip.target_field
+        self.direction_btn = self.strip.direction_btn
+        self.direction_btn.setToolTip(tip(SWAP_TIP))
+        self.direction_btn.clicked.connect(lambda _=False: self.toggle_direction())
+        self._show_direction()
+        self.output_btn = self.strip.output_btn
+        self.output_menu = QMenu(self)
+        self.output_next_action = self.output_menu.addAction(NEXT_TO_SOURCES, lambda: self.set_output_dir(None))
+        self.output_next_action.setCheckable(True)
+        self.output_choose_action = self.output_menu.addAction("Choose folder…", self.choose_output_folder)
+        self.output_btn.setMenu(self.output_menu)
+        root.addWidget(self.strip)
+        root.addSpacing(theme.STRIP_GAP - root.spacing())
 
         self.drop = SourceZone(self.choose_file, self.remove_source, self.clear, self.show_details)
         root.addWidget(self.drop)
         root.addSpacing(6)
-
-        root.addWidget(self._section("REMAP PROFILE"))
-        self.profile_stack = QStackedWidget()
-        self.profile_stack.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        chooser = QWidget()
-        self.profile_combo = ComboBox()
-        self.profile_combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        self.profile_combo.currentIndexChanged.connect(self._on_profile_changed)
-        self.direction_btn = QPushButton()
-        self.direction_btn.setObjectName("direction")
-        self.direction_btn.setFixedWidth(44)
-        self.direction_btn.clicked.connect(self.toggle_direction)
-        self._show_direction()
-        self.edit_profile_btn = QPushButton("Edit")
-        self.edit_profile_btn.setToolTip("Open this profile in the Profiles tab")
-        self.edit_profile_btn.clicked.connect(self.edit_selected_profile)
-        prow = QHBoxLayout()
-        prow.setContentsMargins(0, 0, 0, 0)
-        prow.addWidget(self.profile_combo, stretch=1)
-        prow.addWidget(self.direction_btn)
-        prow.addWidget(self.edit_profile_btn)
-        self.profile_summary = _label("", "muted")
-        chooser_box = QVBoxLayout(chooser)
-        chooser_box.setContentsMargins(0, 0, 0, 0)
-        chooser_box.setSpacing(4)
-        chooser_box.addLayout(prow)
-        chooser_box.addWidget(self.profile_summary)
-        empty = QWidget()
-        self.empty_label = _label("No remap profiles yet — create one in the Profiles tab", "muted")
-        go = QPushButton("Go to Profiles")
-        go.clicked.connect(self.profiles_requested)
-        erow = QHBoxLayout(empty)
-        erow.setContentsMargins(0, 0, 0, 0)
-        erow.addWidget(self.empty_label, stretch=1)
-        erow.addWidget(go)
-        self.profile_stack.addWidget(chooser)
-        self.profile_stack.addWidget(empty)
-        root.addWidget(self.profile_stack)
-        root.addSpacing(6)
-
-        self.folder_btn = QPushButton("Output folder…")
-        self.folder_btn.setObjectName("link")
-        self.folder_btn.setToolTip("Write all results into one folder")
-        self.folder_btn.clicked.connect(self.choose_output_folder)
-        self.folder_reset_btn = QPushButton("Next to sources")
-        self.folder_reset_btn.setObjectName("link")
-        self.folder_reset_btn.setToolTip("Write each result next to its source file")
-        self.folder_reset_btn.clicked.connect(lambda: self.set_output_dir(None))
-        self.folder_reset_btn.setVisible(False)
-        out_head = QHBoxLayout()
-        out_head.setContentsMargins(0, 0, 0, 0)
-        out_head.addWidget(self._section("OUTPUT"))
-        out_head.addStretch(1)
-        out_head.addWidget(self.folder_reset_btn)
-        out_head.addWidget(self.folder_btn)
-        root.addLayout(out_head)
         self.out_card = OutputCard(self.open_folder)
         root.addWidget(self.out_card)
         root.addSpacing(6)
 
         self.convert_btn = QPushButton("Convert  →")
         self.convert_btn.setObjectName("primary")
-        self.convert_btn.setToolTip("Convert (Enter)")
         self.convert_btn.clicked.connect(self.convert)
         self.copy_btn = QPushButton()
         self.copy_btn.clicked.connect(self.copy_output)
@@ -441,10 +403,7 @@ class ConvertPage(QWidget):
         self.status.setObjectName("status")
         self.status.setWordWrap(True)
         root.addWidget(self.status)
-
-    @staticmethod
-    def _section(text: str) -> QLabel:
-        return _label(text, "section")
+        self._show_output_dir()
 
     def _bind_shortcuts(self) -> None:
         # горячие клавиши экрана Convert на всё окно; на других вкладках выключены (там Enter/Ctrl+C нужны редакторам)
@@ -461,7 +420,8 @@ class ConvertPage(QWidget):
             sc.setEnabled(enabled)
 
     def reload_profiles(self) -> None:
-        """Список профилей из хранилища (вызывается и при изменениях на вкладке Profiles)."""
+        """Список профилей из хранилища (вызывается и при изменениях на вкладке Profiles). Профилей нет — в комбо
+        «NO PROFILES», конвертация недоступна, подсказки ведут на вкладку Profiles."""
         current = self.profile_combo.currentData()
         self.profile_combo.blockSignals(True)
         self.profile_combo.clear()
@@ -476,29 +436,34 @@ class ConvertPage(QWidget):
                                            Qt.ItemDataRole.ToolTipRole)
         index = self.profile_combo.findData(current) if current is not None else -1
         self.profile_combo.setCurrentIndex(max(index, 0) if entries else -1)
+        self.profile_combo.setPlaceholderText("" if entries else NO_PROFILES)
+        self.profile_combo.setEnabled(bool(entries))
         self.profile_combo.blockSignals(False)
-        self.profile_stack.setCurrentIndex(0 if entries else 1)
         self.convert_btn.setEnabled(bool(entries))
+        self.convert_btn.setToolTip(tip("Convert (Enter)") if entries else tip(CREATE_PROFILE))
         self._on_profile_changed()
         if issues:
             names = ", ".join(i.path.name for i in issues)
             self.set_status(f"Skipped unreadable profiles ({len(issues)}): {names}", "error")
 
     def _on_profile_changed(self, *_) -> None:
+        """Подсказка комбо — полное имя профиля; SOURCE / TARGET — карты профиля в текущем направлении."""
         profile_id = self.profile_combo.currentData()
-        if profile_id is None:
-            self.profile_summary.setText("")
-            return
-        try:
-            text = profile_summary(self.storage.load_profile(profile_id), self.direction)
-        except (OSError, ValueError) as e:
-            text = f"Cannot read the profile: {e}"
-        self.profile_summary.setText(text)
+        self.profile_combo.setToolTip(tip(self.profile_combo.currentText()) if profile_id is not None
+                                      else tip(CREATE_PROFILE))
+        source = target = NO_VALUE
+        if profile_id is not None:
+            try:
+                profile = self.storage.load_profile(profile_id).oriented(self.direction)
+                source, target = map_summary(profile.source_map), map_summary(profile.target_map)
+            except (OSError, ValueError) as e:
+                self.set_status(f"Cannot read the profile: {e}", "error")
+        for field, value in ((self.source_field, source), (self.target_field, target)):
+            field.set_texts(value)
+            field.setToolTip(tip(value) if value != NO_VALUE else "")
 
     def _show_direction(self) -> None:
-        self.direction_btn.setText(SWAP_TEXT)  # как на Profiles; карты направления — в строке под профилем
-        self.direction_btn.setToolTip(SWAP_TIP)
-        _repolish(self.direction_btn, "dir", self.direction)  # в ← — тот же вид
+        self.direction_btn.setProperty("dir", self.direction)  # в ← — тот же вид; карты меняются местами в полях
 
     def toggle_direction(self) -> None:
         """«⇄»: прямое или обратное направление конвертации (запоминается в ui.ini)."""
@@ -512,10 +477,6 @@ class ConvertPage(QWidget):
         if profile_id is None:
             raise ValueError("no remap profile selected: create one in the Profiles tab")
         return self.storage.load_profile(profile_id)
-
-    def edit_selected_profile(self) -> None:
-        """«Edit»: открыть выбранный профиль на вкладке Profiles (переход делает окно)."""
-        self.edit_requested.emit(self.profile_combo.currentData())
 
     # --- файлы ---
 
@@ -541,6 +502,14 @@ class ConvertPage(QWidget):
 
     def _where(self) -> str:
         return str(self.output_dir) if self.output_dir is not None else "Next to the source files"
+
+    def _show_output_dir(self) -> None:
+        """Поле OUTPUT: папка результатов (или «рядом с исходниками»), подсказка — она же целиком."""
+        folder = self.output_dir
+        self.output_btn.setText(str(folder) if folder is not None else NEXT_TO_SOURCES)
+        self.output_btn.setToolTip(tip(f"Results go to {folder}" if folder is not None
+                                       else "Each result is written next to its source file"))
+        self.output_next_action.setChecked(folder is None)
 
     def _show_planned_outputs(self) -> None:
         """Карточка результата до конвертации: куда лягут файлы."""
@@ -608,7 +577,7 @@ class ConvertPage(QWidget):
         self.output_dir = folder
         self.outputs, self.results = [], {}
         self.drop.set_files(self.sources)
-        self.folder_reset_btn.setVisible(folder is not None)
+        self._show_output_dir()
         self._show_planned_outputs()
         self._show_copy()
         self.set_status(f"Results go to {folder}" if folder is not None
