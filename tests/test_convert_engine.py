@@ -233,9 +233,11 @@ def warnings_for(tmp_path, notes, p, overrides=None):
     return report.warnings
 
 
-def test_missing_target_map_single_warning(tmp_path):
-    w = warnings_for(tmp_path, [36, 38, 60], profile({36: Rule.map_to(99)}))
-    assert len(w) == 1 and 'no target map' in w[0]
+def test_missing_target_map_is_a_profile_note_not_a_warning(tmp_path):
+    events = [(i * 10, on(n)) for i, n in enumerate([36, 38, 60])]
+    report, _ = run(tmp_path, events, profile({36: Rule.map_to(99)}))
+    assert report.warnings == []  # к файлу претензий нет
+    assert len(report.profile_notes) == 1 and 'no target map' in report.profile_notes[0]
 
 
 def test_keep_onto_differently_named_note_warns(tmp_path):

@@ -50,8 +50,9 @@ def test_screen_and_cards_follow_the_mockup(window, tmp_path):
     assert (pos.x(), pos.y(), first.width(), first.height()) == (621, 199, 226, 54)
     assert second.mapTo(window, QPoint(0, 0)).y() - pos.y() == 62  # карточка 54 + зазор 8
     assert first.text_x() == 43  # значок 22 с полем 10 и зазор 10
-    go = window.convert_page.convert_btn.mapTo(window, QPoint(0, 0))
-    assert (go.y(), window.convert_page.convert_btn.height()) == (700, 68)  # место клавиши CONVERT
+    key = window.convert_page.convert_btn
+    face = key.face_rect().translated(key.mapTo(window, QPoint(0, 0)).toPointF())
+    assert (face.y(), face.height()) == (700, 68)  # лицо CONVERT — в 12 px под лицом OUTPUT
     assert screen.footer.text == "DRAG INTO YOUR DAW"
 
 
@@ -59,9 +60,17 @@ def test_planned_cards_and_failed_files(window, tmp_path):
     screen = converted(window, tmp_path, "a.mid", bad=("b.mid",))
     assert [(c.path.name, c.ready) for c in screen.cards()] == [("a_remapped.mid", True)]  # у ошибки карточки нет
     shutil.copy(SAMPLE, tmp_path / "c.mid")
-    window.convert_page._accept_files([tmp_path / "c.mid"])  # добавление сбрасывает результаты: все — будущие
-    assert [(c.path.name, c.ready) for c in screen.cards()] == [
-        ("a_remapped.mid", False), ("b_remapped.mid", False), ("c_remapped.mid", False)]
+    window.convert_page._accept_files([tmp_path / "c.mid"])  # добавление результаты не сбрасывает
+    assert [(c.path.name, c.ready) for c in screen.cards()] == [("a_remapped.mid", True), ("c_remapped.mid", False)]
+
+
+def test_folder_line_is_elided_in_the_middle(window, tmp_path):
+    deep = tmp_path / "a_very_long_folder_name_for_the_card" / "and_another_long_one" / "Song"
+    deep.mkdir(parents=True)
+    screen = converted(window, deep, "a.mid")
+    (card,) = screen.cards()
+    shown = card.folder_label()
+    assert "…" in shown and shown.endswith("Song") and shown[:2] == str(deep)[:2]  # видны диск и сама папка
 
 
 def test_drag_takes_selected_or_only_the_card(window, tmp_path, monkeypatch):
@@ -95,3 +104,48 @@ def test_ctrl_a_goes_to_the_last_clicked_screen_and_delete_stays_on_input(window
     assert len(screen.selection) == 2 and len(page.input.selection) == 0
     QTest.keyClick(window, Qt.Key.Key_Delete)  # Delete убирает только строки INPUT — там ничего не выделено
     assert len(page.sources) == 2
+
+
+def test_convert_key_follows_the_mockup_and_needs_profile_and_files(window, tmp_path):
+    page = window.convert_page
+    key = page.convert_btn
+    face = key.face_rect().translated(key.mapTo(window, QPoint(0, 0)).toPointF())
+    assert face.toRect() == QRect(600, 700, 268, 68) and key.lit and key.text() == "Convert"
+    assert key.icon_name == "go-arrow" and not key.isEnabled() and "Add .mid files" in key.toolTip()
+    shutil.copy(SAMPLE, tmp_path / "a.mid")
+    page._accept_files([tmp_path / "a.mid"])
+    assert key.isEnabled() and "Convert (Enter)" in key.toolTip()
+    window.activateWindow()  # горячие клавиши окна — у активного окна
+    QApplication.processEvents()
+    QTest.keyClick(window, Qt.Key.Key_Return)  # Enter = CONVERT
+    assert page.output_screen.cards()[0].ready
+
+
+def test_profile_without_target_map_gives_ok_rows(window, tmp_path):
+    """Встроенный профиль без карт: «нет целевой карты» — про профиль (Details и подсказка TARGET), строки — ok."""
+    page = window.convert_page
+    converted(window, tmp_path, "a.mid", "b.mid")
+    assert [r.state for r in page.input.rows()] == ["ok", "ok"]
+    assert page.input.totals.text == "2 CONVERTED"
+    res = page.results[(tmp_path / "a.mid").resolve()]
+    assert res.report.warnings == [] and "no target map" in res.report.profile_notes[0]
+    assert "Notes:" in page.details_dialog(res.src).view.toPlainText()
+    assert "target notes are not checked" in page.target_field.toolTip()
+
+
+def test_results_reset_only_on_profile_direction_or_folder_change(window, tmp_path):
+    page = window.convert_page
+    converted(window, tmp_path, "a.mid")
+    shutil.copy(SAMPLE, tmp_path / "b.mid")
+    page._accept_files([tmp_path / "b.mid"])
+    assert len(page.results) == 1  # добавление — не сброс
+    page.toggle_direction()
+    assert page.results == {}  # направление сменилось
+    page.toggle_direction()
+    page.convert()
+    page.set_output_dir(tmp_path / "out")
+    assert page.results == {}  # папка сменилась
+    page.set_output_dir(None)
+    page.convert()
+    page.reload_profiles()  # тот же профиль (сохранили другой профиль на Profiles) — результаты остаются
+    assert len(page.results) == 2

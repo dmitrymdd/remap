@@ -279,9 +279,9 @@ def test_export_full_map(window, storage, tmp_path):
 
 
 def test_maps_tab_disables_convert_shortcuts(window):
-    assert not any(sc.isEnabled() for sc in window._convert_shortcuts)
+    assert not any(sc.isEnabled() for sc in window.convert_page._convert_shortcuts)
     window.show_page(0)
-    assert all(sc.isEnabled() for sc in window._convert_shortcuts)
+    assert all(sc.isEnabled() for sc in window.convert_page._convert_shortcuts)
 
 
 def test_columns_without_write_to(window, storage):

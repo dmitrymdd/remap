@@ -285,7 +285,6 @@ LOGO_PNG = Path(str(ASSETS / "logo.png"))  # 2170×725 RGBA, используе�
 LEGACY = {
     "bg": RECESS_BOTTOM,
     "surface": KEY_TOP,
-    "surface_hover": KEY_HOVER_TOP,
     "border": TOOLTIP_BORDER,
     "text": SCREEN_TEXT,
     "text_muted": SILK_TEXT,
@@ -293,7 +292,6 @@ LEGACY = {
     "accent": ACCENT,
     "accent_hover": ACCENT_HOVER,
     "on_accent": SCREEN_GLASS_OUTER,
-    "success": OK_LED,
     "selection": SCREEN_BORDER,
     "accent_muted": CHIP_BORDER,
 }
@@ -396,19 +394,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QToolTip {{ background: {TOOLTIP_BG}; color: {TOOLTIP_TEXT}; border: 1px solid {TOOLTIP_BORDER};
                 padding: {TOOLTIP_PAD_Y}px {TOOLTIP_PAD_X}px; font-family: {mono}; font-size: {TOOLTIP_PX}px; }}
     QLabel#muted {{ color: {t['text_muted']}; }}
-    QLabel#section {{ color: {t['text_muted']}; font-family: {label}; font-size: 10pt; font-weight: 600; }}
-    QLabel#hint {{ color: {t['text_faint']}; font-size: 8pt; }}
-    QFrame#card, QFrame#drop {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 8px; }}
-    QFrame#drop {{ border: 2px dashed {t['border']}; }}
-    QFrame#drop[loaded="true"] {{ border-style: solid; }}
-    QFrame#drop:hover {{ background: {t['surface_hover']}; }}
-    QFrame#drop[active="true"] {{ border-color: {t['accent']}; }}
-    QFrame#card[state="ok"] {{ border-color: {t['success']}; }}
-    QFrame#card[state="ok"]:hover {{ background: {t['surface_hover']}; }}
-    QFrame#card * , QFrame#drop * {{ background: transparent; border: none; }}
-    QFrame#card[state="off"] QLabel {{ color: {t['text_faint']}; }}
-    QLabel#icon {{ color: {t['accent']}; font-size: 16pt; }}
-    QLabel#cardName {{ font-weight: 600; }}
     QPushButton {{ background: {key}; color: {KEY_LABEL}; border: 1px solid {KEY_BORDER};
                    border-radius: {KEY_RADIUS}px; padding: 7px 14px; }}
     QPushButton:hover {{ background: {key_hover}; }}
@@ -463,8 +448,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
                                                                      background: {t['surface']}; }}
     QCheckBox::indicator:checked:disabled, QTableView::indicator:checked:disabled {{
         background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
-    QPushButton#direction {{ color: {t['accent']}; font-size: 13pt; padding: 0 6px; }}
-    QPushButton#direction:disabled {{ color: {t['text_faint']}; }}
     QPushButton#iconButton {{ font-size: 14pt; padding: 1px 12px; color: {t['text_muted']}; }}
     QPushButton#iconButton:hover {{ color: {t['text']}; }}
     QPushButton#iconButton::menu-indicator {{ image: none; width: 0; }}
@@ -474,8 +457,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
                         font-weight: 600; }}
     QPushButton#link:hover {{ color: {t['accent_hover']}; }}
     QPushButton#link:disabled {{ color: {t['text_faint']}; }}
-    QPushButton#remove {{ background: transparent; border: none; padding: 0; color: {t['text_faint']}; }}
-    QPushButton#remove:hover {{ color: {t['accent']}; }}
     QLabel#mapTitle {{ font-size: 14pt; font-weight: 600; }}
     QLabel#chip {{ border: 1px solid {CHIP_BORDER}; border-radius: 9px; padding: 1px 8px; font-size: 8pt;
                    font-weight: 700; color: {t['text_muted']}; }}

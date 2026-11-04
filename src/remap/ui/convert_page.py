@@ -10,11 +10,11 @@ import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, Qt, QUrl
+from PySide6.QtCore import QEvent, QMimeData, QPoint, QRect, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
-    QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QMenu, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..core import FileResult, RemapProfile, convert_batch, output_path_for
@@ -25,6 +25,7 @@ from .convert_input import InputScreen
 from .convert_output import OutputScreen, file_mime
 from .convert_strip import ConvertStrip
 from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details
+from .keys import GO, Key
 from .profiles_page import SWAP_TIP, map_summary
 from .theme import repolish as _repolish
 from .tips import tip
@@ -34,6 +35,9 @@ NO_PROFILES = "NO PROFILES"
 CREATE_PROFILE = "No remap profiles yet: create one on the Profiles tab"
 NEXT_TO_SOURCES = "Next to source files"
 NO_VALUE = "—"  # поле SOURCE / TARGET без профиля
+NO_TARGET_TIP = "Without a target map, target notes are not checked."
+ADD_FILES = "Add .mid files to convert: drop them on the window, click the drop zone or press Ctrl+V"
+CONVERT_TIP = "Convert (Enter)"
 
 
 def midi_paths_from_mime(mime: QMimeData) -> list[Path]:
@@ -82,6 +86,7 @@ class ConvertPage(QWidget):
         self.results: dict[Path, FileResult] = {}  # результаты последней конвертации по исходному файлу
         self.report_head = ""             # «Profile: … » — заголовок окна Details
         self.output_dir: Path | None = None  # None — результаты рядом с исходниками
+        self._converted_with: tuple | None = None  # (профиль, направление, папка) последней конвертации
         saved = self.settings.value(DIRECTION_KEY)
         self.direction = saved if saved in (FORWARD, REVERSE) else FORWARD
         self._build_ui()
@@ -133,11 +138,13 @@ class ConvertPage(QWidget):
         self._active = self.input  # куда идёт Ctrl+A: экран, по которому щёлкнули последним
         self.input.activated = lambda: self._activate(self.input)
         self.output_screen.activated = lambda: self._activate(self.output_screen)
-        # TEMP: until 5.5 — старая кнопка Convert на месте клавиши GO
-        self.convert_btn = QPushButton("Convert  →")
-        self.convert_btn.setObjectName("primary")
-        self.convert_btn.setFixedHeight(theme.CONVERT_GO_SLOT_H)
-        self.convert_btn.clicked.connect(self.convert)
+        # CONVERT: в layout — пустое место размером с лицо клавиши; сама клавиша (с полями под тень, которые выходят за
+        # колонку и на нижнюю полосу) лежит поверх него и ставится по его геометрии (`_place_go`)
+        self.go_slot = QWidget()
+        self.go_slot.setFixedHeight(theme.CONVERT_GO_SLOT_H)
+        self.convert_btn = Key("Convert", "go-arrow", spec=GO, parent=self)
+        self.convert_btn.lit = True
+        self.convert_btn.clicked.connect(lambda _=False: self.convert())
         right = QWidget()
         right.setFixedWidth(theme.CONVERT_RIGHT_W)
         rbox = QVBoxLayout(right)
@@ -145,7 +152,9 @@ class ConvertPage(QWidget):
         rbox.setSpacing(0)
         rbox.addWidget(self.output_screen, stretch=1)
         rbox.addSpacing(theme.CONVERT_GO_GAP - theme.RECESS_EDGE_BOTTOM)
-        rbox.addWidget(self.convert_btn)
+        rbox.addWidget(self.go_slot)
+        for w in (self.go_slot, right):
+            w.installEventFilter(self)
         screens = QHBoxLayout()
         screens.setContentsMargins(0, 0, 0, 0)
         screens.setSpacing(theme.SCREEN_GAP)
@@ -164,6 +173,18 @@ class ConvertPage(QWidget):
         band_box.addWidget(self.status, stretch=1)
         root.addWidget(band)
         self._show_output_dir()
+
+    def eventFilter(self, obj, event) -> bool:
+        if event.type() in (QEvent.Type.Move, QEvent.Type.Resize, QEvent.Type.Show):
+            self._place_go()
+        return super().eventFilter(obj, event)
+
+    def _place_go(self) -> None:
+        """Лицо клавиши CONVERT — ровно на месте `go_slot`, поля под тень — вокруг."""
+        face = QRect(self.go_slot.mapTo(self, QPoint(0, 0)), self.go_slot.size())
+        m = self.convert_btn.margins()
+        self.convert_btn.setGeometry(face.adjusted(-m.left(), -m.top(), m.right(), m.bottom()))
+        self.convert_btn.raise_()
 
     def _bind_shortcuts(self) -> None:
         # горячие клавиши экрана Convert на всё окно; на других вкладках выключены (там Enter/Ctrl+C нужны редакторам)
@@ -213,8 +234,6 @@ class ConvertPage(QWidget):
         self.profile_combo.setPlaceholderText("" if entries else NO_PROFILES)
         self.profile_combo.setEnabled(bool(entries))
         self.profile_combo.blockSignals(False)
-        self.convert_btn.setEnabled(bool(entries))
-        self.convert_btn.setToolTip(tip("Convert (Enter)") if entries else tip(CREATE_PROFILE))
         self._on_profile_changed()
         if issues:
             names = ", ".join(i.path.name for i in issues)
@@ -226,15 +245,21 @@ class ConvertPage(QWidget):
         self.profile_combo.setToolTip(tip(self.profile_combo.currentText()) if profile_id is not None
                                       else tip(CREATE_PROFILE))
         source = target = NO_VALUE
+        no_target = False
         if profile_id is not None:
             try:
                 profile = self.storage.load_profile(profile_id).oriented(self.direction)
                 source, target = map_summary(profile.source_map), map_summary(profile.target_map)
+                no_target = profile.target_map is None
             except (OSError, ValueError) as e:
                 self.set_status(f"Cannot read the profile: {e}", "error")
         for field, value in ((self.source_field, source), (self.target_field, target)):
             field.set_texts(value)
             field.setToolTip(tip(value) if value != NO_VALUE else "")
+        if no_target:  # про профиль, а не про файл: говорим здесь один раз, строки файлов не желтеют
+            self.target_field.setToolTip(tip(NO_TARGET_TIP, target))
+        self._reset_results_if_stale()
+        self._update_go()
 
     def _show_direction(self) -> None:
         self.direction_btn.setProperty("dir", self.direction)  # в ← — тот же вид; карты меняются местами в полях
@@ -254,17 +279,34 @@ class ConvertPage(QWidget):
 
     # --- файлы ---
 
-    def set_sources(self, paths: list[Path], keep_results: bool = False) -> None:
-        """Заменить список исходных файлов (повторы убираются, порядок сохраняется). Результаты сбрасываются, а с
-        `keep_results` (файлы убрали из списка) остаются у оставшихся файлов. Drop, диалог и Ctrl+V добавляют к списку,
-        load() и «Clear all» — заменяют."""
+    def _results_key(self) -> tuple:
+        """От чего зависят результаты: профиль, направление и папка."""
+        return self.profile_combo.currentData(), self.direction, self.output_dir
+
+    def _reset_results_if_stale(self) -> None:
+        """Сменились профиль, направление или папка — прежние результаты больше не про текущие настройки."""
+        if self.results and self._results_key() != self._converted_with:
+            self.results = {}
+            self._show_files()
+
+    def _update_go(self) -> None:
+        """CONVERT доступна, когда есть профиль и файлы; подсказка — что сделать, если нет."""
+        has_profile = self.profile_combo.currentData() is not None
+        self.convert_btn.setEnabled(has_profile and bool(self.sources))
+        self.convert_btn.setToolTip(tip(CREATE_PROFILE) if not has_profile else tip(ADD_FILES) if not self.sources
+                                    else tip(CONVERT_TIP))
+
+    def set_sources(self, paths: list[Path]) -> None:
+        """Заменить список исходных файлов (повторы убираются, порядок сохраняется). Результаты остаются у файлов,
+        которые остались в списке (сбрасываются только сменой профиля, направления или папки). Drop, диалог и Ctrl+V
+        добавляют к списку, load() и «Clear all» — заменяют."""
         files: list[Path] = []
         for path in paths:
             path = Path(path).resolve()
             if path not in files:
                 files.append(path)
         self.sources = files
-        self.results = {p: r for p, r in self.results.items() if p in files} if keep_results else {}
+        self.results = {p: r for p, r in self.results.items() if p in files}
         self._show_files()
 
     def _show_files(self) -> None:
@@ -279,6 +321,7 @@ class ConvertPage(QWidget):
             elif res.ok:
                 cards.append((res.dst, True))
         self.output_screen.set_cards(cards)
+        self._update_go()
 
     def _show_output_dir(self) -> None:
         """Поле OUTPUT: папка результатов (или «рядом с исходниками»), подсказка — она же целиком."""
@@ -305,7 +348,7 @@ class ConvertPage(QWidget):
     def remove_sources(self, paths: list[Path]) -> None:
         """«×» и Delete: убрать файлы из списка."""
         gone = set(paths)
-        self.set_sources([p for p in self.sources if p not in gone], keep_results=True)
+        self.set_sources([p for p in self.sources if p not in gone])
         if not self.sources:
             self.set_status("Cleared.")
         else:
@@ -360,8 +403,8 @@ class ConvertPage(QWidget):
     def set_output_dir(self, folder: Path | None) -> None:
         """Папка для всех результатов; None — каждый рядом со своим исходником."""
         self.output_dir = folder
-        self.results = {}
-        self._show_files()
+        self._reset_results_if_stale()
+        self._show_files()  # будущие результаты — в новой папке
         self._show_output_dir()
         self.set_status(f"Results go to {folder}" if folder is not None
                         else "Each result is written next to its source file.")
@@ -438,6 +481,7 @@ class ConvertPage(QWidget):
             return
         result = convert_batch(self.sources, profile, self.direction, self.output_dir)
         self.results = {f.src: f for f in result.files}
+        self._converted_with = self._results_key()
         self.report_head = f"Profile: {profile.name}{' (reverse)' if self.direction == REVERSE else ''}\n\n"
         self._show_files()  # итог — в строке каждого файла, готовые результаты — карточками
         if len(result.files) == 1:

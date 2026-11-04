@@ -32,28 +32,6 @@ TUTORIAL_KEY = "tutorial/profiles"  # ui.ini: обучение Profiles уже �
 NO_TUTORIAL_ENV = "REMAP_NO_TUTORIAL"  # не показывать обучение само (тесты)
 
 
-class _ToConvertPage:  # TEMP: removed in 5.5
-    """Атрибут окна, который читается и пишется в `convert_page` (старые тесты обращаются к окну)."""
-
-    def __init__(self, name: str) -> None:
-        self.name = name
-
-    def __get__(self, obj, owner=None):
-        return self if obj is None else getattr(obj.convert_page, self.name)
-
-    def __set__(self, obj, value) -> None:
-        setattr(obj.convert_page, self.name, value)
-
-
-_CONVERT_PROXIES = (  # TEMP: removed in 5.5 — состояние и действия Convert живут в `convert_page`, тесты переедут туда
-    "sources", "outputs", "results", "output_dir", "source", "output", "status", "profile_combo",
-    "convert_btn", "_convert_shortcuts", "load", "convert",
-    "copy_output", "paste_file", "remove_source", "_accept_files", "choose_file", "choose_output_folder",
-    "ask_output_folder", "set_output_dir", "details_dialog", "selected_profile", "reveal_in_explorer", "show_error",
-    "reload_profiles", "set_status", "direction", "direction_btn",
-)
-
-
 class MainWindow(QMainWindow):
     def __init__(self, storage: Storage | None = None) -> None:
         super().__init__()
@@ -181,10 +159,6 @@ class MainWindow(QMainWindow):
     def dropEvent(self, event) -> None:
         if self.convert_page.drop_files(event):
             self.show_page(PAGE_CONVERT)
-
-
-for _name in _CONVERT_PROXIES:  # TEMP: removed in 5.5
-    setattr(MainWindow, _name, _ToConvertPage(_name))
 
 
 def main() -> int:

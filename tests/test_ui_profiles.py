@@ -88,18 +88,19 @@ def test_legacy_profile_seeded_once(app, storage):
     assert [e.id for e in storage.list_profiles()[0]] == [LEGACY_ID]
     p = storage.load_profile(LEGACY_ID)
     assert p.rules == legacy_profile().rules and p.source_map is None and p.target_map is None
-    assert w.profile_combo.count() == 1 and w.convert_btn.isEnabled()
+    assert w.convert_page.profile_combo.count() == 1 and w.convert_page.profile_combo.isEnabled()
+    assert not w.convert_page.convert_btn.isEnabled() and "Add .mid files" in w.convert_page.convert_btn.toolTip()
     w.close()
 
     storage.delete_profile(LEGACY_ID)
     w2 = MainWindow(storage)  # папка уже есть — удалённый профиль не возвращается
     assert storage.list_profiles()[0] == []
-    combo = w2.profile_combo
+    combo = w2.convert_page.profile_combo
     assert combo.count() == 0 and combo.placeholderText() == "NO PROFILES" and not combo.isEnabled()
-    assert not w2.convert_btn.isEnabled()
-    assert "Profiles tab" in combo.toolTip() and "Profiles tab" in w2.convert_btn.toolTip()
-    w2.convert()
-    assert w2.status.property("state") == "error"
+    assert not w2.convert_page.convert_btn.isEnabled()
+    assert "Profiles tab" in combo.toolTip() and "Profiles tab" in w2.convert_page.convert_btn.toolTip()
+    w2.convert_page.convert()
+    assert w2.convert_page.status.property("state") == "error"
     w2.close()
 
 
@@ -122,12 +123,12 @@ def test_convert_strip_shows_maps_of_the_profile(window, storage):
 def test_profile_list_refreshes_on_changes(window, storage):
     page = window.profiles_page
     pid = new_profile(page, "Fresh", None, None)
-    assert window.profile_combo.findData(pid) >= 0  # без кнопки Refresh
+    assert window.convert_page.profile_combo.findData(pid) >= 0  # без кнопки Refresh
     page.answers["text"] = ["Renamed"]
     page.rename()
-    assert window.profile_combo.findData(pid) < 0 and window.profile_combo.findData("Renamed") >= 0
+    assert window.convert_page.profile_combo.findData(pid) < 0 and window.convert_page.profile_combo.findData("Renamed") >= 0
     page.delete()
-    assert window.profile_combo.findData("Renamed") < 0
+    assert window.convert_page.profile_combo.findData("Renamed") < 0
 
 
 def test_source_zone_and_output_card(window, tmp_path):
@@ -136,7 +137,7 @@ def test_source_zone_and_output_card(window, tmp_path):
     assert window.convert_page.input.rows() == []
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
-    window.load(src)
+    window.convert_page.load(src)
     assert [r.path.name for r in window.convert_page.input.rows()] == ["groove.mid"]
     assert "Click or drop to add files" in zone.toolTip()
     assert zone.cursor().shape() == Qt.CursorShape.PointingHandCursor
@@ -144,16 +145,16 @@ def test_source_zone_and_output_card(window, tmp_path):
     (card,) = output.cards()
     assert card.path.name == "groove_remapped.mid" and not card.ready  # будущий результат — приглушён
     revealed = []
-    window.reveal_in_explorer = lambda path: revealed.append(path) or True
+    window.convert_page.reveal_in_explorer = lambda path: revealed.append(path) or True
     QTest.mouseDClick(card, Qt.MouseButton.LeftButton)
     assert revealed == []  # результата ещё нет
-    window.convert()
+    window.convert_page.convert()
     (card,) = output.cards()
     assert card.ready and card.cursor().shape() == Qt.CursorShape.OpenHandCursor
     QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
     assert revealed == [] and output.selection.selected == [card.path]  # одиночный клик только выделяет
     QTest.mouseDClick(card, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
-    assert revealed == [window.output]
+    assert revealed == [window.convert_page.output]
 
 
 # --- редактор профилей ---
@@ -419,7 +420,7 @@ def test_unsaved_edits_prompts(window, storage):
 
 
 def test_profiles_tab_disables_convert_shortcuts(window):
-    assert not any(sc.isEnabled() for sc in window._convert_shortcuts)
+    assert not any(sc.isEnabled() for sc in window.convert_page._convert_shortcuts)
     nav = [window.nav_convert.text(), window.nav_profiles.text(), window.nav_maps.text()]
     assert nav == ["Convert", "Profiles", "Maps"]
     keys = (window.nav_convert, window.nav_profiles, window.nav_maps)
@@ -537,15 +538,16 @@ def test_write_to_choice_shows_numbers_only(window, monkeypatch):
 def test_hotkeys_in_tooltips_and_short_status(window, tmp_path):
     from remap.ui.maps_page import COL_NAME
     window.show_page(PAGE_CONVERT)
-    assert "Convert (Enter)" in window.convert_btn.toolTip()
+    assert "Add .mid files" in window.convert_page.convert_btn.toolTip()  # файлов нет — подсказка, что сделать
     assert "Ctrl+C" in window.convert_page.output_screen.copy_btn.toolTip()
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
-    window.load(src)
+    window.convert_page.load(src)
+    assert "Convert (Enter)" in window.convert_page.convert_btn.toolTip()
     assert "Esc" in window.convert_page.input.drop_zone.toolTip()
     assert "Esc" in window.convert_page.input.clear_btn.toolTip()
-    window.convert()
-    assert window.status.text() == "Converted: groove_remapped.mid"
+    window.convert_page.convert()
+    assert window.convert_page.status.text() == "Converted: groove_remapped.mid"
     # Maps: инструкция по правке — в подсказке заголовка NAME, только у редактируемой карты
     page = window.maps_page
     page.select(MapRef(TEMPLATE, "General MIDI"))
@@ -1546,27 +1548,27 @@ def test_convert_direction_toggle(app, storage, tmp_path):
     page.apply_suggestions()
     assert page.save()
     w.show_page(PAGE_CONVERT)
-    w.profile_combo.setCurrentIndex(w.profile_combo.findData(pid))
+    w.convert_page.profile_combo.setCurrentIndex(w.convert_page.profile_combo.findData(pid))
     convert = w.convert_page
-    assert "Swap source and target" in w.direction_btn.toolTip() and w.direction_btn.property("dir") == FORWARD
+    assert "Swap source and target" in w.convert_page.direction_btn.toolTip() and w.convert_page.direction_btn.property("dir") == FORWARD
     assert (convert.source_field.value, convert.target_field.value) == ("EZdrummer 3", "Superior Drummer 3")
-    w.direction_btn.click()
-    assert w.direction == REVERSE and w.direction_btn.property("dir") == REVERSE
+    w.convert_page.direction_btn.click()
+    assert w.convert_page.direction == REVERSE and w.convert_page.direction_btn.property("dir") == REVERSE
     assert (convert.source_field.value, convert.target_field.value) == ("Superior Drummer 3", "EZdrummer 3")
     assert w.settings.value(DIRECTION_KEY) == REVERSE
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
-    w.load(src)
-    w.convert()
-    assert w.status.text() == "Converted: groove_remapped.mid"
-    assert w.details_dialog(src.resolve()).view.toPlainText().startswith("Profile: Kit (reverse)")
+    w.convert_page.load(src)
+    w.convert_page.convert()
+    assert w.convert_page.status.text() == "Converted: groove_remapped.mid"
+    assert w.convert_page.details_dialog(src.resolve()).view.toPlainText().startswith("Profile: Kit (reverse)")
     assert " hits · " in w.convert_page.input.rows()[0].line  # итог — под именем файла, полный — в Details
     w.close()
     w2 = MainWindow(storage)  # направление — между запусками
-    assert w2.direction == REVERSE and w2.direction_btn.property("dir") == REVERSE
-    w2.direction_btn.click()
+    assert w2.convert_page.direction == REVERSE and w2.convert_page.direction_btn.property("dir") == REVERSE
+    w2.convert_page.direction_btn.click()
     w2.close()
-    assert MainWindow(storage).direction_btn.property("dir") == FORWARD
+    assert MainWindow(storage).convert_page.direction_btn.property("dir") == FORWARD
 
 
 # --- обратное направление в редакторе ---
@@ -2193,7 +2195,7 @@ def test_direction_button_centered_between_map_buttons(window, app):
 def test_comboboxes_draw_own_arrow_and_style_popup(window, app):
     from remap.ui.combo import ComboBox
     page = window.profiles_page
-    assert isinstance(page.combo, ComboBox) and isinstance(window.profile_combo, ComboBox)
+    assert isinstance(page.combo, ComboBox) and isinstance(window.convert_page.profile_combo, ComboBox)
     assert "QComboBox::drop-down" in window.styleSheet() and "border: none" in window.styleSheet()
     window.show()
     page.combo.showPopup()

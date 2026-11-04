@@ -9,8 +9,8 @@ from remap.ui import theme
 
 UI_DIR = Path(theme.__file__).parent
 OLD_PALETTE = ["#E18147", "#EA9564", "#6B4632", "#4D3628", "#3A3224", "#4FB0C6", "#74C4D6"]
-LEGACY_KEYS = ["bg", "surface", "surface_hover", "border", "text", "text_muted", "text_faint", "accent",
-               "accent_hover", "on_accent", "success", "selection", "accent_muted"]
+LEGACY_KEYS = ["bg", "surface", "border", "text", "text_muted", "text_faint", "accent",
+               "accent_hover", "on_accent", "selection", "accent_muted"]
 
 
 def _constants():
@@ -36,7 +36,8 @@ def test_legacy_layer_maps_every_old_key():
     assert theme.TOKENS is theme.LEGACY
     assert list(theme.LEGACY) == LEGACY_KEYS
     assert all(QColor(v).isValid() for v in theme.LEGACY.values())
-    assert not {"error", "warning", "warning_bg", "reverse", "reverse_hover"} & set(theme.LEGACY)  # мёртвые убраны
+    dead = {"error", "warning", "warning_bg", "reverse", "reverse_hover", "surface_hover", "success"}
+    assert not dead & set(theme.LEGACY)  # мёртвые убраны
 
 
 def test_no_old_palette_left_in_ui():

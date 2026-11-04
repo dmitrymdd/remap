@@ -24,7 +24,8 @@ STATES = ("normal", "hover", "pressed")
 @dataclass(frozen=True)
 class KeySpec:
     """Вид клавиши: размер лица с рамкой (`w=None` — по тексту и полям `pad`), радиус, шрифт подписи (`font_px=None` —
-    только значок), зазор значок–подпись и поле по бокам. `go` — большая клавиша с другими градиентом и тенями."""
+    только значок), зазор значок–подпись и поле по бокам. `go` — большая клавиша с другими градиентом и тенями;
+    `icon_after` — значок после подписи (CONVERT →)."""
 
     w: int | None
     h: int
@@ -34,6 +35,7 @@ class KeySpec:
     gap: int = 0
     pad: int = 0
     go: bool = False
+    icon_after: bool = False
 
     @property
     def shadow(self) -> dict:
@@ -50,7 +52,7 @@ CLOSE = KeySpec(*theme.KEY_CLOSE_SIZE)
 TUT = KeySpec(None, theme.KEY_TUT_HEIGHT, font_px=theme.KEY_TUT_FONT, spacing=theme.KEY_TUT_SPACING,
               pad=theme.KEY_TUT_PAD)
 GO = KeySpec(*theme.KEY_GO_SIZE, radius=theme.KEY_GO_RADIUS, font_px=theme.KEY_GO_FONT, spacing=theme.KEY_GO_SPACING,
-             gap=theme.KEY_GO_GAP, go=True)
+             gap=theme.KEY_GO_GAP, go=True, icon_after=True)
 PRESETS = {"tab": TAB, "help": HELP, "square": SQUARE, "swap": SWAP, "map": MAP, "close": CLOSE, "tut": TUT, "go": GO}
 
 
@@ -241,6 +243,11 @@ class Key(QAbstractButton):
         color = self._content_color()
         total = self._content_width()
         x = face.center().x() - total / 2
+        spec = self._text_spec()
+        has_text = bool(spec and self.text())
+        if has_text and self.spec.icon_after:
+            text.draw_text(p, QRectF(x, face.top(), self._text_width(), face.height()), self.text(), spec, color)
+            x += self._text_width() + (self.spec.gap if self._icon else 0)
         if self._icon:
             icon = ICONS[self._icon]
             ix = round(x * dpr) / dpr  # значок — как replaced-элемент браузера, по сетке устройства
@@ -248,8 +255,7 @@ class Key(QAbstractButton):
             fixed = icon.fixed is not None and self.isEnabled()
             draw_icon(p, self._icon, QRectF(ix, iy, icon.w, icon.h), None if fixed else color, self._icon_stroke)
             x += icon.w + (self.spec.gap if self.text() else 0)
-        spec = self._text_spec()
-        if spec and self.text():
+        if has_text and not self.spec.icon_after:
             text.draw_text(p, QRectF(x, face.top(), self._text_width(), face.height()), self.text(), spec, color)
 
     def _paint_focus(self, p: QPainter) -> None:

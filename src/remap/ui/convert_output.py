@@ -58,6 +58,14 @@ class OutputCard(QWidget):
     def text_x(self) -> float:
         return 1 + theme.OUT_CARD_PAD + ICONS["output-din"].w + theme.OUT_CARD_GAP_X
 
+    def text_room(self) -> float:
+        return self.width() - 1 - theme.OUT_CARD_PAD - self.text_x()
+
+    def folder_label(self) -> str:
+        """Папка с «…» посередине: видны и диск, и сама папка файла."""
+        return text.elide(str(self.path.parent), text.mono(theme.OUT_FOLDER_FONT), self.text_room(),
+                          Qt.TextElideMode.ElideMiddle)
+
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         if not self.ready:
@@ -69,12 +77,11 @@ class OutputCard(QWidget):
         name, folder = text.mono(theme.OUT_NAME_FONT), text.mono(theme.OUT_FOLDER_FONT)
         name_h, folder_h = text.line_height(name), text.line_height(folder)
         y = (self.height() - name_h - theme.OUT_CARD_LINE_GAP - folder_h) / 2
-        x = self.text_x()
-        room = self.width() - 1 - theme.OUT_CARD_PAD - x
+        x, room = self.text_x(), self.text_room()
         text.draw_text(p, QRectF(x, y, room, name_h), self.path.name, name, theme.SCREEN_TEXT, LEFT_MID,
                        Qt.TextElideMode.ElideRight)
-        text.draw_text(p, QRectF(x, y + name_h + theme.OUT_CARD_LINE_GAP, room, folder_h), str(self.path.parent),
-                       folder, theme.SCREEN_TEXT_3, LEFT_MID, Qt.TextElideMode.ElideRight)
+        text.draw_text(p, QRectF(x, y + name_h + theme.OUT_CARD_LINE_GAP, room + 1, folder_h), self.folder_label(),
+                       folder, theme.SCREEN_TEXT_3, LEFT_MID)
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:

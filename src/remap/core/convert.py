@@ -81,7 +81,9 @@ class ConversionReport:
     unresolved_kept: list[int] = field(default_factory=list)  # ноты без правила, оставленные на месте
     # события: нотные записаны / удалены (правилом или слиянием), прочие записаны
     stats: dict[str, int] = field(default_factory=lambda: {'mapped': 0, 'removed': 0, 'other': 0})
-    warnings: list[str] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)  # про файл: в UI — жёлтая строка
+    # про профиль, а не про файл (например, нет целевой карты — номера цели не проверялись): только в Details
+    profile_notes: list[str] = field(default_factory=list)
 
     def totals(self) -> ReportTotals:
         """Итоги по категориям moved / unchanged / deleted (hits и notes)."""
@@ -220,6 +222,14 @@ def _rebuild(track: mido.MidiTrack, out: list, stats: dict[str, int]) -> mido.Mi
     return new_track
 
 
+NO_TARGET_MAP_NOTE = "The profile has no target map, so target notes were not checked."
+
+
+def _profile_notes(profile: RemapProfile) -> list[str]:
+    """Замечания о профиле, одинаковые для любого файла."""
+    return [NO_TARGET_MAP_NOTE] if profile.target_map is None else []
+
+
 def _warnings(profile: RemapProfile, scan: Analysis, notes: dict[int, NoteResult]) -> list[str]:
     warnings: list[str] = []
     if scan.multi_location:
@@ -228,8 +238,7 @@ def _warnings(profile: RemapProfile, scan: Analysis, notes: dict[int, NoteResult
         warnings.append(f"Notes found in several tracks/channels (tracks: {tracks}; channels: {channels}); "
                         "all of them are remapped with the same profile.")
     tm, sm = profile.target_map, profile.source_map
-    if tm is None:
-        warnings.append("The profile has no target map, so target notes were not checked.")
+    if tm is None:  # проверять номера цели не по чему; это свойство профиля — в profile_notes
         return warnings
     for n, r in notes.items():
         if r.action == 'keep':
@@ -287,6 +296,7 @@ def convert(src: str | Path, dst: str | Path, profile: RemapProfile,
     for track in midi.tracks:
         out.tracks.append(_convert_track(track, rules.__getitem__, report, merge_window_ticks))
     report.warnings = _warnings(profile, scan, report.notes)
+    report.profile_notes = _profile_notes(profile)
     out.save(str(dst))
     return report
 

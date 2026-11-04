@@ -53,6 +53,10 @@ def format_report(report: ConversionReport) -> str:
         lines.append("")
         lines.append("Warnings:")
         lines.extend(f"  ⚠ {w}" for w in report.warnings)
+    if report.profile_notes:
+        lines.append("")
+        lines.append("Notes:")
+        lines.extend(f"  {n}" for n in report.profile_notes)
     if report.notes:
         lines.append("")
         lines.append("Per note (source → result, hits):")
