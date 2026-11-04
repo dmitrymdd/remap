@@ -1534,7 +1534,7 @@ def test_map_change_resets_reverse_rules_in_one_undo_step(window, app):
 
 def test_convert_direction_toggle(app, storage, tmp_path):
     from remap.core.profile import FORWARD, REVERSE
-    from remap.ui.main_window import DIRECTION_KEY
+    from remap.ui.convert_page import DIRECTION_KEY
     w = MainWindow(storage)
     page = w.profiles_page
     stub_dialogs(page)

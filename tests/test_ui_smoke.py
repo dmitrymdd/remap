@@ -12,9 +12,9 @@ from PySide6.QtWidgets import QApplication
 
 from remap.core import RemapProfile, Rule, convert, legacy_profile
 from remap.storage import Storage
-from remap.ui.main_window import (
-    MainWindow, batch_summary, format_report, midi_paths_from_mime, report_summary,
-)
+from remap.ui.convert_page import midi_paths_from_mime
+from remap.ui.convert_text import batch_summary, format_report, report_summary
+from remap.ui.main_window import MainWindow
 
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "midi" / "Groove 01.mid"
 
@@ -195,7 +195,7 @@ def test_copy_button_says_files_for_several_outputs(window, tmp_path):
 
 def test_failed_file_shows_first_error_line_under_its_name(window, tmp_path):
     from remap.core import FileResult
-    from remap.ui.main_window import result_details, result_line
+    from remap.ui.convert_text import result_details, result_line
     res = FileResult(tmp_path / "x.mid", tmp_path / "x_remapped.mid", error="Bad header\nat byte 14\nchunk MThd")
     assert result_line(res) == "✗ Bad header" and result_details(res) == res.error
     a, b = _files(tmp_path, "a.mid", "b.mid")
