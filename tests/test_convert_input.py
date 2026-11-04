@@ -119,7 +119,7 @@ def test_delete_and_remove_button_act_on_selection(window, tmp_path):
     assert page.sources == [] and page.status.text() == "Cleared."
 
 
-def test_details_acts_on_its_own_row_and_esc_clears_the_list(window, tmp_path):
+def test_details_acts_on_its_own_row_and_esc_only_clears_selection(window, tmp_path):
     _a, b = add_files(window, tmp_path, "a.mid", "b.mid")
     page = window.convert_page
     page.convert()
@@ -130,5 +130,7 @@ def test_details_acts_on_its_own_row_and_esc_clears_the_list(window, tmp_path):
     click(rows[1], pos=rows[1].details_rect().center().toPoint())
     assert shown == [b] and selected(window) == ["a.mid"]  # DETAILS не трогает выделение
     assert not page.input.totals.isHidden()
-    QTest.keyClick(window, Qt.Key.Key_Escape)
-    assert page.sources == [] and page.input.totals.isHidden()
+    page.output_screen.card_pressed(page.output_screen.cards()[0].path, Qt.KeyboardModifier.NoModifier)
+    QTest.keyClick(window, Qt.Key.Key_Escape)  # Esc снимает выделение в обоих экранах, список остаётся
+    assert len(page.sources) == 2 and selected(window) == [] and page.output_screen.selection.selected == []
+    assert not page.input.totals.isHidden()

@@ -231,6 +231,10 @@ DROP_DASH = (3, 3)  # штрих и пробел рамки dashed 1 px
 DROP_TITLE_FONT, DROP_TITLE_SPACING, DROP_SUB_FONT = 11, 0.08, 10
 DROP_MIN_H = 120  # меньше зона drop не сжимается, дальше список прокручивается; в макете не задано
 TOTALS_H, TOTALS_FONT, TOTALS_SPACING, TOTALS_GAP = 26, 10, 0.06, 14
+OUT_CARD_H, OUT_CARD_PAD, OUT_CARD_GAP_X, OUT_CARD_LINE_GAP = 54, 10, 10, 3  # карточка результата
+OUT_NAME_FONT, OUT_FOLDER_FONT = 12, 9.5
+OUT_PLANNED_OPACITY = 0.45  # будущий результат (до конвертации) — приглушён; в макете не задано
+CONVERT_GO_SLOT_H, CONVERT_GO_GAP = 68, 12  # место под CONVERT под экраном OUTPUT (лица: 688 → 700)
 STRIP_SEP: RGBA = (255, 255, 255, 0.06)
 STRIP_SEP_DARK = "#0A0B0C"
 # колонки: плашка, шаг строк, заголовок группы, зазоры под и над заголовком (cable_layout.RowMetrics)

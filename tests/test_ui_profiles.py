@@ -138,18 +138,21 @@ def test_source_zone_and_output_card(window, tmp_path):
     shutil.copy(SAMPLE, src)
     window.load(src)
     assert [r.path.name for r in window.convert_page.input.rows()] == ["groove.mid"]
-    assert "Click or drop to add files" in zone.toolTip() and not hasattr(window.out_card, "hint")
+    assert "Click or drop to add files" in zone.toolTip()
     assert zone.cursor().shape() == Qt.CursorShape.PointingHandCursor
-    assert window.out_card.property("state") == "off"
+    output = window.convert_page.output_screen
+    (card,) = output.cards()
+    assert card.path.name == "groove_remapped.mid" and not card.ready  # будущий результат — приглушён
     revealed = []
     window.reveal_in_explorer = lambda path: revealed.append(path) or True
-    QTest.mouseClick(window.out_card, Qt.MouseButton.LeftButton)
+    QTest.mouseDClick(card, Qt.MouseButton.LeftButton)
     assert revealed == []  # результата ещё нет
     window.convert()
-    assert window.out_card.property("state") == "ok"
-    assert "Click to show in folder" in window.out_card.toolTip()
-    assert window.out_card.cursor().shape() == Qt.CursorShape.PointingHandCursor
-    QTest.mouseClick(window.out_card, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+    (card,) = output.cards()
+    assert card.ready and card.cursor().shape() == Qt.CursorShape.OpenHandCursor
+    QTest.mouseClick(card, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
+    assert revealed == [] and output.selection.selected == [card.path]  # одиночный клик только выделяет
+    QTest.mouseDClick(card, Qt.MouseButton.LeftButton, pos=QPoint(10, 10))
     assert revealed == [window.output]
 
 
@@ -535,7 +538,7 @@ def test_hotkeys_in_tooltips_and_short_status(window, tmp_path):
     from remap.ui.maps_page import COL_NAME
     window.show_page(PAGE_CONVERT)
     assert "Convert (Enter)" in window.convert_btn.toolTip()
-    assert window.copy_btn.toolTip() == "Copy file (Ctrl+C)"
+    assert "Ctrl+C" in window.convert_page.output_screen.copy_btn.toolTip()
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
     window.load(src)

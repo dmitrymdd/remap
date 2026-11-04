@@ -64,11 +64,15 @@ def format_report(report: ConversionReport) -> str:
 
 
 def report_summary(report: ConversionReport) -> str:
-    """Итог одной строкой в той же терминологии, что и format_report; предупреждения — только если есть."""
+    """Итог одной строкой в той же терминологии, что и format_report: hits всегда, остальные части — только ненулевые
+    (как в строке итогов экрана)."""
     t = report.totals()
-    w = len(report.warnings)
-    text = f"{_plural(t.hits, 'hit')} · {t.moved.hits} moved · {t.unchanged.hits} unchanged · {t.deleted.hits} deleted"
-    return text + (f" · {_plural(w, 'warning')}" if w else "")
+    parts = [_plural(t.hits, "hit")]
+    parts += [f"{n} {word}" for n, word in ((t.moved.hits, "moved"), (t.unchanged.hits, "unchanged"),
+                                            (t.deleted.hits, "deleted")) if n]
+    if report.warnings:
+        parts.append(_plural(len(report.warnings), "warning"))
+    return " · ".join(parts)
 
 
 def result_line(res: FileResult) -> str:

@@ -271,19 +271,20 @@ class DropZone(QWidget):
             self._on_click()
 
 
-class _Header(QWidget):
-    """INPUT акцентом, «N FILES», CLEAR ALL справа, линия под ними (высота 30 вместе с линией)."""
+class ScreenHeader(QWidget):
+    """Заголовок экрана Convert: название акцентом, счётчик («N FILES»), кнопка справа, линия под ними (высота 30
+    вместе с линией)."""
 
-    def __init__(self, clear_btn: ScreenButton) -> None:
+    def __init__(self, title: str, button: ScreenButton) -> None:
         super().__init__()
-        self.count = ""
+        self.title, self.count = title, ""
         self._title = text.mono(theme.POOL_HEAD_FONT, QFont.Weight.DemiBold, theme.POOL_HEAD_SPACING)
         self._count = text.mono(theme.INPUT_COUNT_FONT)
         self.setFixedHeight(theme.INPUT_HEAD_H)
         box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, theme.INPUT_HEAD_BELOW + 1)
         box.addStretch(1)
-        box.addWidget(clear_btn, 0, Qt.AlignmentFlag.AlignVCenter)
+        box.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
 
     def set_count(self, count: str) -> None:
         self.count = count
@@ -292,15 +293,16 @@ class _Header(QWidget):
     def paintEvent(self, _event) -> None:
         p = QPainter(self)
         body = QRectF(0, 0, self.width(), self.height() - theme.INPUT_HEAD_BELOW - 1)
-        text.draw_text(p, body, "INPUT", self._title, theme.ACCENT)
+        text.draw_text(p, body, self.title, self._title, theme.ACCENT)
         if self.count:
-            x = text.text_width("INPUT", self._title) + theme.FILE_ROW_GAP_X
+            x = text.text_width(self.title, self._title) + theme.FILE_ROW_GAP_X
             text.draw_text(p, body.adjusted(x, 0, 0, 0), self.count, self._count, theme.SCREEN_TEXT_3)
         p.fillRect(QRectF(0, self.height() - 1, self.width(), 1), qcolor(theme.SCREEN_DIVIDER))
 
 
-class _Totals(QWidget):
-    """Строка итогов: линия сверху, части по нижнему краю, каждая своим цветом, зазор 14."""
+class ScreenFooter(QWidget):
+    """Нижняя строка экрана (итоги INPUT, «DRAG INTO YOUR DAW» у OUTPUT): линия сверху, части по нижнему краю, каждая
+    своим цветом, зазор 14."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -328,10 +330,10 @@ class _Totals(QWidget):
             x += w + theme.TOTALS_GAP
 
 
-class _ListBody(QWidget):
-    """Содержимое прокрутки: строки и зона drop; клик по пустому месту снимает выделение."""
+class ListBody(QWidget):
+    """Содержимое прокрутки экрана: строки (и зона drop); клик по пустому месту снимает выделение (`owner.empty_pressed`)."""
 
-    def __init__(self, owner: InputScreen) -> None:
+    def __init__(self, owner) -> None:
         super().__init__()
         self._owner = owner
         self.box = QVBoxLayout(self)
@@ -344,6 +346,17 @@ class _ListBody(QWidget):
         super().mousePressEvent(event)
 
 
+def screen_list(body: QWidget) -> QScrollArea:
+    """Прокрутка содержимого экрана: без рамки и штатных полос (полосу экрана подключает `Screen.attach`)."""
+    area = QScrollArea()
+    area.setFrameShape(QFrame.Shape.NoFrame)
+    area.setWidgetResizable(True)
+    area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+    area.setWidget(body)
+    return area
+
+
 class InputScreen(RecessedBlock):
     """Блок с экраном INPUT. Колбэки: `on_remove(paths)`, `on_details(path)`, `on_browse()`, `on_clear()`;
     `selection` — выделенные строки (ключи — пути)."""
@@ -353,22 +366,18 @@ class InputScreen(RecessedBlock):
         super().__init__()
         self._on_remove, self._on_details = on_remove, on_details
         self.selection = Selection()
+        self.activated: Callable[[], None] | None = None  # клик по экрану: страница запоминает, куда идёт Ctrl+A
         self.setFixedWidth(theme.CONVERT_INPUT_W)
         self.screen = Screen()
         self.body.addWidget(self.screen)
         self.clear_btn = ScreenButton("Clear all")
         self.clear_btn.setToolTip(tip(CLEAR_TIP))
         self.clear_btn.clicked.connect(lambda _=False: on_clear())
-        self.header = _Header(self.clear_btn)
-        self.list = QScrollArea()
-        self.list.setFrameShape(QFrame.Shape.NoFrame)
-        self.list.setWidgetResizable(True)
-        self.list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self._body = _ListBody(self)
-        self.list.setWidget(self._body)
+        self.header = ScreenHeader("INPUT", self.clear_btn)
+        self._body = ListBody(self)
+        self.list = screen_list(self._body)
         self.drop_zone = DropZone(on_browse)
-        self.totals = _Totals()
+        self.totals = ScreenFooter()
         self.screen.body.setSpacing(theme.INPUT_GAP)
         self.screen.body.addWidget(self.header)
         self.screen.body.addWidget(self.list, stretch=1)
@@ -418,18 +427,28 @@ class InputScreen(RecessedBlock):
         self.drop_zone.set_active(active)
 
     # --- события строк ---
+    def _activate(self) -> None:
+        if self.activated is not None:
+            self.activated()
+
     def row_pressed(self, path: Path, modifiers) -> None:
+        self._activate()
         self.selection.press(path, ctrl=bool(modifiers & Qt.KeyboardModifier.ControlModifier),
                              shift=bool(modifiers & Qt.KeyboardModifier.ShiftModifier))
         self.refresh_selection()
 
     def empty_pressed(self, modifiers) -> None:
+        self._activate()
         if not modifiers & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
             self.selection.clear()
             self.refresh_selection()
 
     def select_all(self) -> None:
         self.selection.select_all()
+        self.refresh_selection()
+
+    def clear_selection(self) -> None:
+        self.selection.clear()
         self.refresh_selection()
 
     def remove_clicked(self, path: Path) -> None:

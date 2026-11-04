@@ -7,7 +7,7 @@ import pytest
 pytest.importorskip("PySide6")
 pytestmark = pytest.mark.ui
 
-from PySide6.QtCore import QMimeData, QUrl
+from PySide6.QtCore import QMimeData, Qt, QUrl
 from PySide6.QtWidgets import QApplication
 
 from remap.core import RemapProfile, Rule, convert, legacy_profile
@@ -98,9 +98,10 @@ def test_format_report_and_summary_use_one_vocabulary(tmp_path):
     assert f"Unchanged: {t.unchanged.hits} hits ({t.unchanged.notes} notes)" in text
     assert f"Deleted: {t.deleted.hits} hit" in text
     w = len(report.warnings)
-    tail = (f" · {w} warning" + ("" if w == 1 else "s")) if w else ""  # нет предупреждений — не пишется
-    assert report_summary(report) == (f"{t.hits} hits · {t.moved.hits} moved · {t.unchanged.hits} unchanged"
-                                      f" · {t.deleted.hits} deleted{tail}")
+    parts = [f"{t.hits} hits"] + [f"{n} {word}" for n, word in (
+        (t.moved.hits, "moved"), (t.unchanged.hits, "unchanged"), (t.deleted.hits, "deleted")) if n]
+    parts += [f"{w} warning" + ("" if w == 1 else "s")] if w else []  # нули (кроме hits) не пишутся
+    assert report_summary(report) == " · ".join(parts)
     assert t.moved.hits + t.unchanged.hits + t.deleted.hits == t.hits
     assert "notes converted" not in report_summary(report)  # «notes» — не про hits
 
@@ -153,7 +154,9 @@ def test_several_files_list_remove_and_clear(window, tmp_path):
     window._accept_files([a, b, c, a])  # повтор не добавляется
     assert window.sources == [a.resolve(), b.resolve(), c.resolve()]
     assert [r.path.name for r in rows(window)] == ["a.mid", "b.mid", "c.mid"] and screen.header.count == "3 FILES"
-    assert window.out_card.name.text() == "3 files" and window.out_card.folder.text() == "Next to the source files"
+    assert [(c.path.name, c.ready) for c in cards(window)] == [
+        ("a_remapped.mid", False), ("b_remapped.mid", False), ("c_remapped.mid", False)]
+    assert cards(window)[0].path.parent == a.resolve().parent  # будущие — рядом с исходниками
     window.remove_source(b.resolve())
     assert window.sources == [a.resolve(), c.resolve()] and screen.header.count == "2 FILES"
     window.remove_source(a.resolve())
@@ -187,15 +190,26 @@ def test_drop_dialog_and_paste_add_to_the_list(window, tmp_path, app, monkeypatc
     assert window.sources == [a.resolve()]
 
 
-def test_copy_button_says_files_for_several_outputs(window, tmp_path):
-    a, b = _files(tmp_path, "a.mid", "b.mid")
-    assert window.copy_btn.text() == "Copy file  ⧉" and window.copy_btn.toolTip() == "Copy file (Ctrl+C)"
-    window._accept_files([a, b])
-    assert window.copy_btn.text() == "Copy files  ⧉" and window.copy_btn.toolTip() == "Copy files (Ctrl+C)"
+def cards(window):
+    return window.convert_page.output_screen.cards()
+
+
+def test_copy_takes_selected_cards_or_all(window, tmp_path, app):
+    output = window.convert_page.output_screen
+    copy = output.copy_btn
+    assert not copy.isEnabled() and "Copy all files (Ctrl+C)" in copy.toolTip()
+    a, b, c = _files(tmp_path, "a.mid", "b.mid", "c.mid")
+    window._accept_files([a, b, c])
+    assert not copy.isEnabled()  # будущие результаты не копируются
     window.convert()
-    assert len(window.outputs) == 2 and window.copy_btn.text() == "Copy files  ⧉"
-    window.remove_source(b.resolve())
-    assert window.copy_btn.text() == "Copy file  ⧉"
+    assert copy.isEnabled() and len(window.outputs) == 3
+    copy.click()  # ничего не выделено — все
+    assert [Path(u.toLocalFile()).name for u in app.clipboard().mimeData().urls()] == [
+        "a_remapped.mid", "b_remapped.mid", "c_remapped.mid"]
+    output.card_pressed(cards(window)[1].path, Qt.KeyboardModifier.NoModifier)
+    assert "Copy the selected files (Ctrl+C)" in copy.toolTip()
+    window.copy_output()  # Ctrl+C — то же, что COPY: выделенные
+    assert [Path(u.toLocalFile()).name for u in app.clipboard().mimeData().urls()] == ["b_remapped.mid"]
 
 
 def test_failed_file_shows_first_error_line_under_its_name(window, tmp_path):
@@ -222,7 +236,7 @@ def test_single_file_row_before_conversion(window, tmp_path):
     assert row.path.name == "a.mid" and row.line == "Ready" and row.state == "ready"
     assert str(a.resolve()) in row.tooltip_at(row.rect().center())  # полный путь — в подсказке строки
     assert window.convert_page.input.totals.isHidden()  # до конвертации итогов нет
-    assert window.out_card.name.text() == "a_remapped.mid"
+    assert [(c.path.name, c.ready) for c in cards(window)] == [("a_remapped.mid", False)]
 
 
 def test_convert_several_files_with_one_failure(window, tmp_path):
@@ -246,7 +260,10 @@ def test_convert_several_files_with_one_failure(window, tmp_path):
     dlg.copy()
     assert QApplication.clipboard().text() == dlg.view.toPlainText()  # Copy — весь текст
     assert window.details_dialog(bad.resolve()).view.toPlainText() == NOT_MIDI_DETAILS
-    assert window.out_card.property("state") == "ok" and window.out_card.name.text() == "2 files"
+    assert [(c.path.name, c.ready) for c in cards(window)] == [("a_remapped.mid", True), ("c_remapped.mid", True)]
+    window.remove_source(c.resolve())  # убрали файл — пропали только его результат и карточка
+    assert list(window.results) == [a.resolve(), bad.resolve()] and window.outputs == [tmp_path / "a_remapped.mid"]
+    assert [r.state for r in rows(window)][1] == "error" and [c.path.name for c in cards(window)] == ["a_remapped.mid"]
     # новая загрузка сбрасывает результаты
     window._accept_files([_files(tmp_path, "d.mid")[0]])
     assert window.results == {} and all(r.line == "Ready" for r in rows(window))
@@ -268,7 +285,7 @@ def test_convert_several_files_to_output_folder_and_reset(window, tmp_path):
     assert window.output_dir == out and convert.output_btn.text() == str(out)
     assert not convert.output_next_action.isChecked() and str(out) in convert.output_btn.toolTip()
     window._accept_files([a, b, other])
-    assert window.out_card.folder.text() == str(out)
+    assert {c.path.parent for c in cards(window)} == {out}
     window.convert()
     # одинаковые имена в общей папке — ошибка, а не молчаливая перезапись
     assert window.status.text() == "2 files converted, 1 failed"
@@ -288,7 +305,7 @@ def test_output_folder_applies_to_single_file(window, tmp_path):
     out = tmp_path / "res"
     window.set_output_dir(out)
     window.load(a)
-    assert window.out_card.path == out / "a_remapped.mid"
+    assert cards(window)[0].path == out / "a_remapped.mid"
     window.convert()
     assert (out / "a_remapped.mid").is_file() and not (tmp_path / "a_remapped.mid").exists()
     assert window.status.text() == "Converted: a_remapped.mid"
@@ -329,3 +346,11 @@ def test_copy_several_outputs_as_file_urls(window, tmp_path, app):
     urls = app.clipboard().mimeData().urls()
     assert [Path(u.toLocalFile()) for u in urls] == [tmp_path / "a_remapped.mid", tmp_path / "b_remapped.mid"]
     assert window.status.text().startswith("2 output files copied")
+
+
+def test_report_summary_hides_zero_parts_except_hits():
+    from remap.core.convert import ConversionReport, NoteResult
+    empty = ConversionReport()
+    assert report_summary(empty) == "0 hits"
+    moved = ConversionReport(notes={36: NoteResult(src=36, count=52, action="map", dst=35, origin="profile")})
+    assert report_summary(moved) == "52 hits · 52 moved"
