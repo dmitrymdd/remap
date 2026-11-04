@@ -1734,21 +1734,38 @@ def mockup_editor(window, app, direction="forward"):
     return ed
 
 
-def test_scene_header_caret_down_when_rows_shown(window, app, monkeypatch):
-    """Как в макете: «Kick 1 / 1» в режиме «только подключённые» — ▾; группа без строк — ▸."""
-    ed = mockup_editor(window, app)
-    seen = {}
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_header_caret_shows_group_mode(window, app, monkeypatch, direction):
+    """Треугольник — режим группы, а не видимость строк (сознательно не как «▾ KICK 1/2» макета): ▸ — свёрнутый режим,
+    даже если строки видны; ▾ — только режим «показать всё». Одинаково в сцене и пуле."""
+    ed = mockup_editor(window, app, direction)
 
-    def spy(p, rect, label, count="", collapsed=False, **kw):
-        seen[label] = collapsed
-    monkeypatch.setattr(cable_view.plates, "paint_group_header", spy)
-    img = QImage(10, 10, QImage.Format.Format_ARGB32_Premultiplied)
-    p = QPainter(img)
-    for item in ed.scene_headers.values():
-        item.paint(p, None)
-    p.end()
-    assert seen == {"Kick": False, "Snare": False, "Hi-Hat": True}
-    assert "target/snare" not in ed.show_all  # Snare — «только подключённые» (Snare: Stick скрыта), но ▾
+    def carets(items) -> dict[str, bool]:
+        seen = {}
+
+        def spy(p, rect, label, count="", collapsed=False, **kw):
+            seen[label] = collapsed
+        monkeypatch.setattr(cable_view.plates, "paint_group_header", spy)
+        img = QImage(10, 10, QImage.Format.Format_ARGB32_Premultiplied)
+        p = QPainter(img)
+        for item in items:
+            item.paint(p, None)
+        p.end()
+        monkeypatch.undo()
+        return seen
+
+    # → Snare 1/2 и ← Kick 1/3: строки видны, но часть скрыта — ▸; Hi-Hat без строк — ▸; → Kick 1/1 показывает всё — ▾
+    expected = {"Kick": False, "Snare": True} if direction == "forward" else {"Kick": True, "Snare": False}
+    assert carets(ed.scene_headers.values()) == {**expected, "Hi-Hat": True}
+    key = next(k for k, h in ed.scene_headers.items() if h.header.shown and h.header.collapsed)
+    ed.toggle_target(key)
+    app.processEvents()
+    assert carets([ed.scene_headers[key]]) == {ed.scene_headers[key].header.label: False}  # «показать всё» — ▾
+    pool_key = next(iter(ed.pool_headers))
+    assert set(carets(ed.pool_headers.values()).values()) == {False}
+    ed.toggle_pool(pool_key)
+    app.processEvents()
+    assert carets([ed.pool_headers[pool_key]]) == {ed.pool_headers[pool_key].header.label: True}
 
 
 def test_scene_header_zone_has_no_dead_gaps(window, app):

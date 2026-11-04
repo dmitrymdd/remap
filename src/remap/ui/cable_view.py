@@ -371,7 +371,8 @@ class _HeaderItem(QGraphicsItem):
         h = self.header
         count = f"{h.shown} / {h.count}" if h.shown else str(h.count)  # цель: подключённые / все артикуляции
         state = "lit" if self.highlighted else "hover" if self._hover else "normal"
-        plates.paint_group_header(p, self.rect, h.label, count, not h.open, variant=self.variant, state=state,
+        # треугольник — режим группы, а не видимость строк: ▸ — группа что-то скрывает, ▾ — показывает всё
+        plates.paint_group_header(p, self.rect, h.label, count, h.collapsed, variant=self.variant, state=state,
                                   label_room=self.label_room(),
                                   twin_x=theme.COL_FROM + theme.COL_GAP if self.variant == "scene" else None)
 

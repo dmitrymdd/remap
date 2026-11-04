@@ -86,12 +86,6 @@ class Header:
     notes: tuple[int, ...] = ()  # пул: ноты группы; цель: ноты артикуляций группы (drop на группу)
     shown: int | None = None     # цель: артикуляций, напротив которых есть строки
 
-    @property
-    def open(self) -> bool:
-        """Треугольник вниз: под заголовком есть строки. Пул — группа не свёрнута; цель — режим «все» или есть
-        подключённые артикуляции (режим «только подключённые» с кабелями — тоже вниз, как в макете)."""
-        return not self.collapsed or bool(self.shown)
-
 
 @dataclass(frozen=True)
 class SourceRow:

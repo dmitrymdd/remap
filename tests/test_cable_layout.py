@@ -590,14 +590,12 @@ def test_ruler_head_zones_and_row_slots_tile_the_column():
     assert tail.head_zone(2) == (tail.bottom(1) + m.inset, tail.bottom(2))
 
 
-def test_target_header_open_when_it_shows_rows():
-    """Треугольник заголовка цели вниз, если под ним есть строки: режим «все» или есть подключённые; вправо — пусто."""
+def test_target_header_collapsed_is_the_group_mode():
+    """`collapsed` заголовка цели — режим группы («только подключённые»), а не видимость строк."""
     p = profile({42: Rule.map_to(42)})
     lay = build_layout(p, no_collapse())
     hat, kick = lay.header(TARGET_PREFIX + "hat"), lay.header(TARGET_PREFIX + "kick")
-    assert hat.collapsed and hat.open          # «только подключённые», но строка есть — вниз (как в макете)
-    assert kick.collapsed and not kick.open    # ни одной строки — вправо
+    assert hat.collapsed and hat.shown         # «только подключённые», строка видна — всё равно свёрнута
+    assert kick.collapsed and not kick.shown   # ни одной строки
     lay = build_layout(p, no_collapse(), show_all={TARGET_PREFIX + "kick"})
-    assert lay.header(TARGET_PREFIX + "kick").open
-    pool = build_layout(profile(), {POOL_PREFIX + "Kick"})
-    assert [h.open for h in pool.pool.headers] == [not h.collapsed for h in pool.pool.headers]
+    assert not lay.header(TARGET_PREFIX + "kick").collapsed
