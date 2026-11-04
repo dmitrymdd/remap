@@ -97,6 +97,10 @@ CABLE_PORT_RADIUS, CABLE_TANGENT = 2.6, 60  # точка кабеля; плеч�
 OK_LED, OK_TEXT, OK_BORDER = "#62D69A", "#8FC7A3", "#477A5C"
 WARN_LED, WARN_TEXT, WARN_BORDER, WARN_BG = "#E3D36B", "#E6DA8E", "#6F7748", (227, 211, 107, 0.06)
 ERR_LED, ERR_TEXT, ERR_BORDER, ERR_BG = "#F0646E", "#F2939A", "#7C4248", (240, 100, 110, 0.07)
+OK_BG: RGBA = (110, 190, 140, 0.07)
+LED_SIZE, LED_GLOW_BLUR = 6, 6  # светодиод 6 px: кольцо 0 0 0 1px rgba(0,0,0,.5) и свечение 0 0 6px своим цветом
+LED_RING: RGBA = (0, 0, 0, 0.5)
+LED_OFF = "#24412F"  # погашен (до конвертации); в макете не задано
 
 # --- Поля ввода: «рамка» (зелёное поле, вставленное в металл, с чёрным ободом) и плоское на экране ---
 FIELD_TOP, FIELD_BOTTOM, FIELD_BORDER, FIELD_RADIUS = "#11251B", "#0D1C15", "#2A4C38", 6
@@ -210,6 +214,23 @@ STRIP_GAP_KEYS = 8
 # полоса Convert (лица): профиль | прорезь | SOURCE ⇄ TARGET в левой части 514 | прорезь 54 | OUTPUT
 CONVERT_LEFT_W, CONVERT_PROFILE_W, CONVERT_MAP_W, CONVERT_OUTPUT_W = 514, 148, 146, 226
 CONVERT_PROFILE_FONT = 13  # однострочное комбо профиля, вес Medium (у Profiles — 12/400)
+CONVERT_INPUT_W, CONVERT_RIGHT_W = 556, 268  # блок INPUT и правая колонка (OUTPUT, CONVERT); зазор — SCREEN_GAP
+INPUT_HEAD_H, INPUT_HEAD_BELOW = 30, 6  # заголовок экрана: высота с линией, padding-bottom
+INPUT_GAP, DROP_TOP_EXTRA = 8, 4  # gap колонки экрана; у зоны drop ещё margin-top 4
+INPUT_COUNT_FONT = 10.5  # «3 FILES»
+FILE_ROW_H, FILE_ROW_PAD_L, FILE_ROW_PAD_R, FILE_ROW_LINE_GAP = 60, 12, 10, 6
+FILE_ROW_GAP_X = 10  # зазор между значком, именем и кнопкой; во второй строке — между LED, текстом и DETAILS
+FILE_ROW_INDENT = 24  # вторая строка: padding-left (LED — на 14 px левее, margin-right −2)
+FILE_NAME_FONT, FILE_RESULT_FONT = 12.5, 10.5
+FILE_REMOVE_SIZE, FILE_REMOVE_RADIUS = 22, 4
+FILE_DETAILS_H, FILE_DETAILS_PAD, FILE_DETAILS_RADIUS = 20, 7, 3
+FILE_BTN_FONT, FILE_BTN_SPACING = 9, 0.04
+DROP_BORDER, DROP_RADIUS, DROP_GAP = "#3A6B4F", 6, 10
+DROP_BG: RGBA = (0, 0, 0, 0.16)
+DROP_DASH = (3, 3)  # штрих и пробел рамки dashed 1 px
+DROP_TITLE_FONT, DROP_TITLE_SPACING, DROP_SUB_FONT = 11, 0.08, 10
+DROP_MIN_H = 120  # меньше зона drop не сжимается, дальше список прокручивается; в макете не задано
+TOTALS_H, TOTALS_FONT, TOTALS_SPACING, TOTALS_GAP = 26, 10, 0.06, 14
 STRIP_SEP: RGBA = (255, 255, 255, 0.06)
 STRIP_SEP_DARK = "#0A0B0C"
 # колонки: плашка, шаг строк, заголовок группы, зазоры под и над заголовком (cable_layout.RowMetrics)

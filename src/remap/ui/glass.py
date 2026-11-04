@@ -205,6 +205,11 @@ class Screen(QFrame):
         bar.raise_()
         return bar
 
+    def set_track(self, bar: ScreenScrollBar, top: int, bottom: int) -> None:
+        """Новые отступы дорожки подключённой полосы (у экрана сменилась высота шапки или подвала)."""
+        self._bars = [(b, top, bottom) if b is bar else (b, t, d) for b, t, d in self._bars]
+        self._place(bar, top, bottom)
+
     def _place(self, bar: ScreenScrollBar, top: int, bottom: int) -> None:
         left = self.width() - 1 - theme.SCROLL_RIGHT - theme.SCROLL_WIDTH
         bar.place(left, 1 + top, self.height() - 2 - top - bottom)

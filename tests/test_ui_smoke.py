@@ -56,8 +56,8 @@ def test_load_convert_and_copy(window, tmp_path, app):
     # секции REPORT нет: итог — под именем файла, полный отчёт — в окне Details
     for gone in ("report_view", "report_summary", "details_btn", "batch_area", "batch_box"):
         assert not hasattr(window, gone)
-    assert window.drop.single_result.isVisibleTo(window.drop)
-    assert window.drop.single_result.text().startswith("✓ ") and " hits · " in window.drop.single_result.text()
+    (row,) = rows(window)
+    assert row.state in ("ok", "warn") and " hits · " in row.line and not row.line.startswith("✓")
     dlg = window.details_dialog(src.resolve())
     assert "Moved:" in dlg.view.toPlainText() and dlg.view.isReadOnly()
     dlg.deleteLater()
@@ -142,20 +142,25 @@ def test_midi_paths_from_mime_expands_folder_without_recursion(tmp_path):
     assert midi_paths_from_mime(mime) == [single, folder / "A.MIDI", folder / "b.mid"]
 
 
+def rows(window):
+    return window.convert_page.input.rows()
+
+
 def test_several_files_list_remove_and_clear(window, tmp_path):
+    screen = window.convert_page.input
+    assert screen.header.count == "" and not screen.clear_btn.isEnabled() and rows(window) == []
     a, b, c = _files(tmp_path, "a.mid", "b.mid", "c.mid")
     window._accept_files([a, b, c, a])  # повтор не добавляется
     assert window.sources == [a.resolve(), b.resolve(), c.resolve()]
-    assert not window.drop.files_box.isHidden() and window.drop.name.isHidden()
-    assert window.drop.count.text() == "3 files"
+    assert [r.path.name for r in rows(window)] == ["a.mid", "b.mid", "c.mid"] and screen.header.count == "3 FILES"
     assert window.out_card.name.text() == "3 files" and window.out_card.folder.text() == "Next to the source files"
     window.remove_source(b.resolve())
-    assert window.sources == [a.resolve(), c.resolve()] and window.drop.count.text() == "2 files"
-    window.remove_source(a.resolve())  # остался один — вид как у одного файла
-    assert window.drop.files_box.isHidden() and window.drop.name.text() == "c.mid"
+    assert window.sources == [a.resolve(), c.resolve()] and screen.header.count == "2 FILES"
+    window.remove_source(a.resolve())
+    assert [r.path.name for r in rows(window)] == ["c.mid"] and screen.header.count == "1 FILE"
     window._accept_files([a, b])
-    window.drop.clear_btn.click()
-    assert window.sources == [] and window.drop.name.text() == "Drop a MIDI file here"
+    screen.clear_btn.click()
+    assert window.sources == [] and rows(window) == []
 
 
 def test_drop_dialog_and_paste_add_to_the_list(window, tmp_path, app, monkeypatch):
@@ -174,7 +179,7 @@ def test_drop_dialog_and_paste_add_to_the_list(window, tmp_path, app, monkeypatc
     assert window.sources == [a.resolve(), b.resolve(), c.resolve()]
     window._accept_files([c])
     assert window.status.text() == "Already in the list." and len(window.sources) == 3
-    window.drop.clear_btn.click()  # «Clear all» — заново
+    window.convert_page.input.clear_btn.click()  # «Clear all» — заново
     assert window.sources == []
     window._accept_files([b])
     assert window.sources == [b.resolve()]
@@ -197,22 +202,26 @@ def test_failed_file_shows_first_error_line_under_its_name(window, tmp_path):
     from remap.core import FileResult
     from remap.ui.convert_text import result_details, result_line
     res = FileResult(tmp_path / "x.mid", tmp_path / "x_remapped.mid", error="Bad header\nat byte 14\nchunk MThd")
-    assert result_line(res) == "✗ Bad header" and result_details(res) == res.error
+    assert result_line(res) == "Bad header" and result_details(res) == res.error
     a, b = _files(tmp_path, "a.mid", "b.mid")
     window._accept_files([a, b])
     window.results = {a.resolve(): res}
-    window.drop.set_files(window.sources, window.results)
-    first, second = window.drop.row_widgets()
-    assert first.result.text() == "✗ Bad header" and first.result.property("state") == "error"
-    assert first.result.toolTip() == res.error and not first.details.isHidden()  # видно без раскрытия
-    assert second.result.isHidden() and second.details.isHidden()  # результата нет — строка как раньше
+    window.convert_page.input.set_files(window.sources, window.results)
+    first, second = rows(window)
+    assert first.line == "Bad header" and first.state == "error" and first.details_rect() is not None
+    tooltip = first.tooltip_at(first.line_rect().center())
+    assert "Not converted" in tooltip and "at byte 14" in tooltip  # смысл ошибки — в подсказке строки и LED
+    assert "Not converted" in first.tooltip_at(first.led_rect().center())
+    assert second.line == "Ready" and second.state == "ready" and second.details_rect() is None
 
 
-def test_single_file_zone_looks_as_before(window, tmp_path):
+def test_single_file_row_before_conversion(window, tmp_path):
     (a,) = _files(tmp_path, "a.mid")
     window.load(a)
-    assert window.drop.files_box.isHidden() and window.drop.name.text() == "a.mid"
-    assert window.drop.folder.text() == str(a.resolve().parent)
+    (row,) = rows(window)
+    assert row.path.name == "a.mid" and row.line == "Ready" and row.state == "ready"
+    assert str(a.resolve()) in row.tooltip_at(row.rect().center())  # полный путь — в подсказке строки
+    assert window.convert_page.input.totals.isHidden()  # до конвертации итогов нет
     assert window.out_card.name.text() == "a_remapped.mid"
 
 
@@ -224,11 +233,13 @@ def test_convert_several_files_with_one_failure(window, tmp_path):
     window.convert()
     assert [p.name for p in window.outputs] == ["a_remapped.mid", "c_remapped.mid"]
     assert window.status.text() == "2 files converted, 1 failed" and window.status.property("state") == "error"
-    rows = window.drop.row_widgets()
-    assert [r.name.text() for r in rows] == ["a.mid", "b.mid", "c.mid"]
-    assert rows[0].result.text().startswith("✓ ") and " hits · " in rows[0].result.text()
-    assert rows[1].result.text() == "✗ Not a MIDI file" and rows[1].result.property("state") == "error"
-    assert all(not r.details.isHidden() for r in rows)  # у каждой строки — Details
+    shown = rows(window)
+    assert [r.path.name for r in shown] == ["a.mid", "b.mid", "c.mid"]
+    assert " hits · " in shown[0].line and shown[0].state != "error"
+    assert shown[1].line == "Not a MIDI file" and shown[1].state == "error"
+    assert all(r.details_rect() is not None for r in shown)  # у каждой строки — DETAILS
+    totals = window.convert_page.input.totals
+    assert not totals.isHidden() and totals.text.startswith("2 CONVERTED") and totals.text.endswith("1 FAILED")
     assert not (tmp_path / "b_remapped.mid").exists()
     dlg = window.details_dialog(a.resolve())
     assert dlg.view.toPlainText().startswith("Profile:") and "Moved:" in dlg.view.toPlainText()
@@ -238,7 +249,8 @@ def test_convert_several_files_with_one_failure(window, tmp_path):
     assert window.out_card.property("state") == "ok" and window.out_card.name.text() == "2 files"
     # новая загрузка сбрасывает результаты
     window._accept_files([_files(tmp_path, "d.mid")[0]])
-    assert window.results == {} and all(r.result.isHidden() for r in window.drop.row_widgets())
+    assert window.results == {} and all(r.line == "Ready" for r in rows(window))
+    assert window.convert_page.input.totals.isHidden()
 
 
 def test_convert_several_files_to_output_folder_and_reset(window, tmp_path):
@@ -260,8 +272,7 @@ def test_convert_several_files_to_output_folder_and_reset(window, tmp_path):
     window.convert()
     # одинаковые имена в общей папке — ошибка, а не молчаливая перезапись
     assert window.status.text() == "2 files converted, 1 failed"
-    rows = window.drop.row_widgets()
-    assert "collides" in rows[1].result.text()
+    assert "collides" in rows(window)[1].line
     assert sorted(p.name for p in out.iterdir()) == ["groove_remapped.mid", "solo_remapped.mid"]
     assert not (d1 / "groove_remapped.mid").exists()
     convert.output_next_action.trigger()
@@ -295,7 +306,8 @@ def test_single_file_failure_shows_in_its_row(window, tmp_path):
     window.convert()
     assert shown == [] and window.outputs == []  # как у пакета: без окна ошибки
     assert window.status.text() == "Conversion failed." and window.status.property("state") == "error"
-    assert window.drop.single_result.text() == "✗ Not a MIDI file" and not window.drop.single_details.isHidden()
+    (row,) = rows(window)
+    assert row.line == "Not a MIDI file" and row.state == "error" and row.details_rect() is not None
     assert window.details_dialog(bad.resolve()).view.toPlainText() == NOT_MIDI_DETAILS
 
 
@@ -304,7 +316,7 @@ def test_truncated_file_row_shows_plain_message_details_show_exception(window, t
     src.write_bytes(src.read_bytes()[:40])
     window.load(src)
     window.convert()
-    assert window.drop.single_result.text() == "✗ The file is damaged or truncated"  # не «✗ EOFError»
+    assert rows(window)[0].line == "The file is damaged or truncated"  # не «EOFError»
     assert window.details_dialog(src.resolve()).view.toPlainText() == (
         "The file is damaged or truncated\n\nTechnical details:\nEOFError")
 

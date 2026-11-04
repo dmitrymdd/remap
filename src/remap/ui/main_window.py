@@ -46,7 +46,7 @@ class _ToConvertPage:  # TEMP: removed in 5.5
 
 
 _CONVERT_PROXIES = (  # TEMP: removed in 5.5 — состояние и действия Convert живут в `convert_page`, тесты переедут туда
-    "sources", "outputs", "results", "output_dir", "source", "output", "drop", "out_card", "status", "profile_combo",
+    "sources", "outputs", "results", "output_dir", "source", "output", "out_card", "status", "profile_combo",
     "convert_btn", "copy_btn", "_convert_shortcuts", "load", "convert",
     "copy_output", "paste_file", "remove_source", "_accept_files", "choose_file", "choose_output_folder",
     "ask_output_folder", "set_output_dir", "details_dialog", "selected_profile", "reveal_in_explorer", "show_error",

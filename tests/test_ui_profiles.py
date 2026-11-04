@@ -132,13 +132,14 @@ def test_profile_list_refreshes_on_changes(window, storage):
 
 def test_source_zone_and_output_card(window, tmp_path):
     window.show_page(PAGE_CONVERT)
-    assert window.drop.name.text() == "Drop a MIDI file here"
+    zone = window.convert_page.input.drop_zone
+    assert window.convert_page.input.rows() == []
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
     window.load(src)
-    assert window.drop.name.text() == "groove.mid" and "Click or drop to add files" in window.drop.toolTip()
-    assert not hasattr(window.drop, "hint") and not hasattr(window.out_card, "hint")
-    assert window.drop.cursor().shape() == Qt.CursorShape.PointingHandCursor
+    assert [r.path.name for r in window.convert_page.input.rows()] == ["groove.mid"]
+    assert "Click or drop to add files" in zone.toolTip() and not hasattr(window.out_card, "hint")
+    assert zone.cursor().shape() == Qt.CursorShape.PointingHandCursor
     assert window.out_card.property("state") == "off"
     revealed = []
     window.reveal_in_explorer = lambda path: revealed.append(path) or True
@@ -538,7 +539,8 @@ def test_hotkeys_in_tooltips_and_short_status(window, tmp_path):
     src = tmp_path / "groove.mid"
     shutil.copy(SAMPLE, src)
     window.load(src)
-    assert "Esc" in window.drop.toolTip()
+    assert "Esc" in window.convert_page.input.drop_zone.toolTip()
+    assert "Esc" in window.convert_page.input.clear_btn.toolTip()
     window.convert()
     assert window.status.text() == "Converted: groove_remapped.mid"
     # Maps: инструкция по правке — в подсказке заголовка NAME, только у редактируемой карты
@@ -1555,7 +1557,7 @@ def test_convert_direction_toggle(app, storage, tmp_path):
     w.convert()
     assert w.status.text() == "Converted: groove_remapped.mid"
     assert w.details_dialog(src.resolve()).view.toPlainText().startswith("Profile: Kit (reverse)")
-    assert w.drop.single_result.text().startswith("✓ ")  # итог — под именем файла, полный — в Details
+    assert " hits · " in w.convert_page.input.rows()[0].line  # итог — под именем файла, полный — в Details
     w.close()
     w2 = MainWindow(storage)  # направление — между запусками
     assert w2.direction == REVERSE and w2.direction_btn.property("dir") == REVERSE

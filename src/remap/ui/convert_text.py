@@ -72,11 +72,53 @@ def report_summary(report: ConversionReport) -> str:
 
 
 def result_line(res: FileResult) -> str:
-    """Строка результата под именем файла: «✓ 52 hits · …» или «✗ <первая строка ошибки>»."""
+    """Строка результата под именем файла: «52 hits · …» или первая строка ошибки (состояние показывает LED)."""
     if res.ok:
-        return f"✓ {report_summary(res.report)}"
+        return report_summary(res.report)
     error = (res.error or "").strip()
-    return f"✗ {error.splitlines()[0] if error else 'Failed'}"
+    return error.splitlines()[0] if error else "Failed"
+
+
+READY, OK, WARN, ERROR = "ready", "ok", "warn", "error"
+READY_LINE = "Ready"
+
+
+def file_state(res: FileResult | None) -> str:
+    """ready — ещё не конвертировали; error — не сконвертирован; warn — есть предупреждения отчёта; иначе ok."""
+    if res is None:
+        return READY
+    if not res.ok:
+        return ERROR
+    return WARN if res.report.warnings else OK
+
+
+def state_tip(res: FileResult | None) -> tuple[str, str] | None:
+    """Подсказка LED и строки результата: (заголовок, текст) — что значит состояние; до конвертации — нет."""
+    state = file_state(res)
+    if state == READY:
+        return None
+    if state == ERROR:
+        return "Not converted", (res.error or "Failed").strip()
+    if state == WARN:
+        return "Converted with warnings", "\n".join(res.report.warnings) + "\nDETAILS shows the full report."
+    return "Converted", "DETAILS shows the full report."
+
+
+def totals(results) -> tuple[int, int, int]:
+    """(сконвертировано — вместе с предупреждениями, из них с предупреждениями, не сконвертировано)."""
+    states = [file_state(r) for r in results]
+    return (sum(s in (OK, WARN) for s in states), states.count(WARN), states.count(ERROR))
+
+
+def totals_parts(results) -> list[tuple[str, str]]:
+    """Строка итогов экрана INPUT частями (текст, состояние для цвета); нулевые предупреждения и ошибки не пишутся."""
+    converted, warned, failed = totals(results)
+    parts = [(f"{converted} CONVERTED", OK)]
+    if warned:
+        parts.append((f"{warned} WITH WARNINGS", WARN))
+    if failed:
+        parts.append((f"{failed} FAILED", ERROR))
+    return parts
 
 
 def result_details(res: FileResult, head: str = "") -> str:

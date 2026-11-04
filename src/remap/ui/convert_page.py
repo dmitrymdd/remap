@@ -14,15 +14,16 @@ from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QDrag, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
-    QMenu, QPushButton, QScrollArea, QSizePolicy, QVBoxLayout, QWidget,
+    QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from ..core import FileResult, RemapProfile, convert_batch, output_path_for
 from ..core.profile import FORWARD, REVERSE
 from ..storage import Storage
 from . import theme
+from .convert_input import InputScreen
 from .convert_strip import ConvertStrip
-from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details, result_line
+from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details
 from .profiles_page import SWAP_TIP, map_summary
 from .theme import repolish as _repolish
 from .tips import tip
@@ -46,177 +47,6 @@ def _label(text: str, name: str) -> QLabel:
     label = QLabel(text)
     label.setObjectName(name)
     return label
-
-
-class SourceZone(QFrame):
-    """Зона исходных файлов. Пустая — «перетащи сюда»; один файл — имя и папка; несколько — компактный список
-    (имя и кнопка удаления, «Clear all»). После конвертации у каждого файла (и у одного) — строка результата
-    (result_line: ✓ итог / ✗ ошибка) и «Details» (полный отчёт в окне). Клик открывает диалог выбора файлов;
-    сам drop и Ctrl+V принимает всё окно."""
-
-    ROW_H, RESULT_ROW_H = 26, 44  # строка списка; с результатом под именем
-    LIST_MAX_H = 4 * RESULT_ROW_H + 2  # длиннее — прокрутка внутри списка
-
-    def __init__(self, on_click, on_remove=None, on_clear=None, on_details=None) -> None:
-        super().__init__()
-        self.setObjectName("drop")
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._on_click = on_click
-        self._on_remove = on_remove or (lambda path: None)
-        self._on_clear = on_clear or (lambda: None)
-        self._on_details = on_details or (lambda path: None)
-        self.paths: list[Path] = []
-        self.results: dict[Path, FileResult] = {}
-        self.icon = _label("↓", "icon")
-        self.name = _label("", "cardName")
-        self.folder = _label("", "muted")
-        for w in (self.name, self.folder):
-            w.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        box = QVBoxLayout(self)
-        box.setContentsMargins(16, 14, 16, 14)
-        box.setSpacing(2)
-        for w in (self.icon, self.name, self.folder):
-            w.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            box.addWidget(w)
-        # один файл: строка результата и Details под папкой
-        self.single = QWidget()
-        self.single_result, self.single_details = self._result_widgets(lambda: self._details_of_single())
-        single = QHBoxLayout(self.single)
-        single.setContentsMargins(0, 4, 0, 0)
-        single.addStretch(1)
-        single.addWidget(self.single_result)
-        single.addWidget(self.single_details)
-        single.addStretch(1)
-        box.addWidget(self.single)
-        # несколько файлов: заголовок «N files · Clear all» и список строк с кнопками удаления
-        self.files_box = QWidget()
-        self.count = _label("", "cardName")
-        self.clear_btn = QPushButton("Clear all")
-        self.clear_btn.setObjectName("link")
-        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.clear_btn.setToolTip("Remove all files (Esc)")
-        self.clear_btn.clicked.connect(lambda: self._on_clear())
-        head = QHBoxLayout()
-        head.setContentsMargins(0, 0, 0, 0)
-        head.addWidget(self.count, stretch=1)
-        head.addWidget(self.clear_btn)
-        self.rows = QWidget()
-        self.rows_box = QVBoxLayout(self.rows)
-        self.rows_box.setContentsMargins(0, 0, 0, 0)
-        self.rows_box.setSpacing(0)
-        self.scroll = QScrollArea()
-        self.scroll.setWidgetResizable(True)
-        self.scroll.setFrameShape(QFrame.Shape.NoFrame)
-        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.scroll.setWidget(self.rows)
-        files = QVBoxLayout(self.files_box)
-        files.setContentsMargins(0, 0, 0, 0)
-        files.setSpacing(4)
-        files.addLayout(head)
-        files.addWidget(self.scroll)
-        box.addWidget(self.files_box)
-        self.set_files([])
-
-    def _result_widgets(self, on_details) -> tuple[QLabel, QPushButton]:
-        result = _label("", "status")
-        result.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        details = QPushButton("Details")
-        details.setObjectName("link")
-        details.setCursor(Qt.CursorShape.PointingHandCursor)
-        details.setToolTip("Show the full report")
-        details.clicked.connect(lambda _=False: on_details())
-        return result, details
-
-    def _details_of_single(self) -> None:
-        if self.paths:
-            self._on_details(self.paths[0])
-
-    @staticmethod
-    def _show_result(label: QLabel, details: QPushButton, res: FileResult | None) -> None:
-        label.setText(result_line(res) if res is not None else "")
-        label.setToolTip("" if res is None or res.ok else (res.error or ""))
-        _repolish(label, "state", "" if res is None else "ok" if res.ok else "error")
-        for w in (label, details):
-            w.setVisible(res is not None)
-
-    def set_files(self, paths: list[Path], results: dict[Path, FileResult] | None = None) -> None:
-        """Список файлов и (после конвертации) их результаты."""
-        self.paths, self.results = list(paths), dict(results or {})
-        many = len(paths) > 1
-        self.files_box.setVisible(many)
-        for w in (self.icon, self.name, self.folder):
-            w.setVisible(not many)
-        self.single.setVisible(len(paths) == 1 and paths[0] in self.results)
-        if not paths:
-            self.icon.setText("↓")
-            self.name.setText("Drop a MIDI file here")
-            self.folder.setText("or click to browse  ·  Ctrl+V to paste a copied file")
-        elif not many:
-            self.icon.setText("♫")
-            self.name.setText(paths[0].name)
-            self.folder.setText(str(paths[0].parent))
-            self._show_result(self.single_result, self.single_details, self.results.get(paths[0]))
-        else:
-            self.count.setText(f"{len(paths)} files")
-            while self.rows_box.count():
-                item = self.rows_box.takeAt(0)
-                if item.widget() is not None:  # прежняя строка — скрыть сразу (удалится в цикле событий)
-                    item.widget().hide()
-                    item.widget().deleteLater()
-            height = 0
-            for path in paths:
-                row = self._row(path)
-                height += row.height()
-                self.rows_box.addWidget(row)
-            self.scroll.setFixedHeight(min(height, self.LIST_MAX_H))
-        self.setToolTip((f"{paths[0]}\n" if len(paths) == 1 else "")
-                        + "Click or drop to add files · Esc to clear" if paths else "")
-        _repolish(self, "loaded", "true" if paths else "false")
-        self.updateGeometry()
-
-    def row_widgets(self) -> list[QWidget]:
-        """Строки списка (несколько файлов) в порядке файлов."""
-        return [self.rows_box.itemAt(i).widget() for i in range(self.rows_box.count())]
-
-    def _row(self, path: Path) -> QWidget:
-        res = self.results.get(path)
-        row = QWidget()
-        row.setFixedHeight(self.RESULT_ROW_H if res is not None else self.ROW_H)
-        row.name = name = _label(path.name, "muted")
-        name.setToolTip(str(path))
-        name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        remove = QPushButton("✕")
-        remove.setObjectName("remove")
-        remove.setFixedSize(24, 22)
-        remove.setCursor(Qt.CursorShape.PointingHandCursor)
-        remove.setToolTip("Remove from the list")
-        remove.clicked.connect(lambda _=False, p=path: self._on_remove(p))
-        row.result, row.details = self._result_widgets(lambda p=path: self._on_details(p))
-        self._show_result(row.result, row.details, res)
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.addWidget(name, stretch=1)
-        top.addWidget(remove)
-        bottom = QHBoxLayout()
-        bottom.setContentsMargins(0, 0, 28, 0)
-        bottom.addWidget(row.result, stretch=1)
-        bottom.addWidget(row.details)
-        box = QVBoxLayout(row)
-        box.setContentsMargins(2, 0, 2, 0)
-        box.setSpacing(0)
-        box.addLayout(top)
-        if res is not None:
-            box.addLayout(bottom)
-        return row
-
-    def set_active(self, active: bool) -> None:
-        """Подсветка во время перетаскивания файла над окном."""
-        _repolish(self, "active", "true" if active else "false")
-
-    def mouseReleaseEvent(self, event) -> None:
-        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
-            self._on_click()
-        super().mouseReleaseEvent(event)
 
 
 class OutputCard(QFrame):
@@ -357,8 +187,8 @@ class ConvertPage(QWidget):
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
-        root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 16)
-        root.setSpacing(8)
+        root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 0)
+        root.setSpacing(0)
 
         self.strip = ConvertStrip()
         self.profile_combo = self.strip.combo
@@ -375,34 +205,43 @@ class ConvertPage(QWidget):
         self.output_choose_action = self.output_menu.addAction("Choose folder…", self.choose_output_folder)
         self.output_btn.setMenu(self.output_menu)
         root.addWidget(self.strip)
-        root.addSpacing(theme.STRIP_GAP - root.spacing())
+        root.addSpacing(theme.STRIP_GAP)
 
-        self.drop = SourceZone(self.choose_file, self.remove_source, self.clear, self.show_details)
-        root.addWidget(self.drop)
-        root.addSpacing(6)
+        self.input = InputScreen(self.remove_sources, self.show_details, self.choose_file, self.clear)
+        # TEMP: until 5.4/5.5 — старые карточка результата и кнопки в правой колонке
         self.out_card = OutputCard(self.open_folder)
-        root.addWidget(self.out_card)
-        root.addSpacing(6)
-
         self.convert_btn = QPushButton("Convert  →")
         self.convert_btn.setObjectName("primary")
         self.convert_btn.clicked.connect(self.convert)
         self.copy_btn = QPushButton()
         self.copy_btn.clicked.connect(self.copy_output)
         self._show_copy()
-        actions = QHBoxLayout()
-        actions.addWidget(self.convert_btn)
-        actions.addStretch(1)
-        actions.addWidget(self.copy_btn)
-        root.addLayout(actions)
-        root.addSpacing(6)
+        right = QWidget()
+        right.setFixedWidth(theme.CONVERT_RIGHT_W)
+        rbox = QVBoxLayout(right)
+        rbox.setContentsMargins(0, 0, 0, 0)
+        rbox.setSpacing(8)
+        rbox.addWidget(self.out_card)
+        rbox.addWidget(self.copy_btn, 0, Qt.AlignmentFlag.AlignRight)
+        rbox.addStretch(1)
+        rbox.addWidget(self.convert_btn)
+        screens = QHBoxLayout()
+        screens.setContentsMargins(0, 0, 0, 0)
+        screens.setSpacing(theme.SCREEN_GAP)
+        screens.addWidget(self.input)
+        screens.addWidget(right)
+        root.addLayout(screens, stretch=1)
 
-        root.addStretch(1)
-
+        # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Profiles
         self.status = QLabel("Supports .mid and .midi files.")
         self.status.setObjectName("status")
-        self.status.setWordWrap(True)
-        root.addWidget(self.status)
+        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        band = QWidget()
+        band.setFixedHeight(theme.BAND_H)
+        band_box = QHBoxLayout(band)
+        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
+        band_box.addWidget(self.status, stretch=1)
+        root.addWidget(band)
         self._show_output_dir()
 
     def _bind_shortcuts(self) -> None:
@@ -413,7 +252,9 @@ class ConvertPage(QWidget):
                                (QKeySequence.StandardKey.Copy, self.copy_output),
                                (Qt.Key.Key_Return, self.convert),
                                (Qt.Key.Key_Enter, self.convert),
-                               (Qt.Key.Key_Escape, self.clear))]
+                               (Qt.Key.Key_Escape, self.clear),
+                               (QKeySequence.StandardKey.Delete, self.remove_selected),
+                               (QKeySequence.StandardKey.SelectAll, self.input.select_all))]
 
     def set_shortcuts_enabled(self, enabled: bool) -> None:
         for sc in self._convert_shortcuts:
@@ -489,7 +330,7 @@ class ConvertPage(QWidget):
             if path not in files:
                 files.append(path)
         self.sources, self.outputs, self.results = files, [], {}
-        self.drop.set_files(files)
+        self.input.set_files(files, {})
         self._show_planned_outputs()
         self._show_copy()
 
@@ -528,9 +369,22 @@ class ConvertPage(QWidget):
         self.set_status("Cleared.")
 
     def remove_source(self, path: Path) -> None:
-        """Кнопка ✕ в списке файлов."""
-        self.set_sources([p for p in self.sources if p != path])
-        self.set_status(f"Removed {path.name}." if self.sources else "Cleared.")
+        self.remove_sources([path])
+
+    def remove_sources(self, paths: list[Path]) -> None:
+        """«×» и Delete: убрать файлы из списка."""
+        gone = set(paths)
+        self.set_sources([p for p in self.sources if p not in gone])
+        if not self.sources:
+            self.set_status("Cleared.")
+        else:
+            self.set_status(f"Removed {paths[0].name}." if len(paths) == 1 else f"Removed {_plural(len(paths), 'file')}.")
+
+    def remove_selected(self) -> None:
+        """Delete: убрать выделенные строки (ничего не выделено — ничего)."""
+        selected = self.input.selection.selected
+        if selected:
+            self.remove_sources(selected)
 
     def choose_file(self) -> None:
         start = str(self.sources[0].parent) if self.sources else ""
@@ -576,7 +430,7 @@ class ConvertPage(QWidget):
         """Папка для всех результатов; None — каждый рядом со своим исходником."""
         self.output_dir = folder
         self.outputs, self.results = [], {}
-        self.drop.set_files(self.sources)
+        self.input.set_files(self.sources, {})
         self._show_output_dir()
         self._show_planned_outputs()
         self._show_copy()
@@ -620,14 +474,14 @@ class ConvertPage(QWidget):
     def drag_enter(self, event) -> None:
         if event.source() is None and midi_paths_from_mime(event.mimeData()):  # свой результат не принимаем
             event.acceptProposedAction()
-            self.drop.set_active(True)
+            self.input.set_active(True)
 
     def drag_leave(self) -> None:
-        self.drop.set_active(False)
+        self.input.set_active(False)
 
     def drop_files(self, event) -> bool:
         """Drop на окно: True — файлы приняты (окно откроет вкладку Convert)."""
-        self.drop.set_active(False)
+        self.input.set_active(False)
         files = midi_paths_from_mime(event.mimeData())
         if files:
             event.acceptProposedAction()
@@ -660,7 +514,7 @@ class ConvertPage(QWidget):
         self.outputs = result.outputs
         self.results = {f.src: f for f in result.files}
         self.report_head = f"Profile: {profile.name}{' (reverse)' if self.direction == REVERSE else ''}\n\n"
-        self.drop.set_files(self.sources, self.results)  # итог — в строке каждого файла
+        self.input.set_files(self.sources, self.results)  # итог — в строке каждого файла
         self._show_copy()
         if result.outputs:
             self.out_card.set_files(result.outputs, ready=True, where=self._where())
