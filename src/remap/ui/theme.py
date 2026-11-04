@@ -132,6 +132,9 @@ POPUP_ROUNDED = True
 
 # --- Плашки: строки пула и сцены, заголовки групп, бейдж «+N», строки нот и карт (ui/plates.py) ---
 PLATE_RADIUS, PLATE_PAD_X, PLATE_GAP, PLATE_NUM_W = 5, 10, 10, 28  # номер — столбец 28 px, по правому краю
+# содержимое заголовка группы Profiles (значок, метка, число) — с полем плашки: рамка наведения/drop не задевает значок;
+# в макете поле 2 px (пул) и 0 (сцена), но рамки наведения там нет
+HEADER_INSET = PLATE_PAD_X
 PLATE_NUM, PLATE_NAME = SCREEN_TEXT_2, POPUP_TEXT  # обычная плашка: фон CHIP_BG, рамка CHIP_BORDER
 PLATE_NUM_FONT, PLATE_NAME_FONT = 11.5, 12
 PLATE_SELECTED_BG: RGBA = (255, 255, 255, 0.09)  # выбрана: рамка, номер и имя белые

@@ -187,7 +187,7 @@ def test_suggestion_bar_and_apply(window, app):
     rows = [r for r in ed.current.scene.source_rows if r.suggested]
     assert {n for r in rows for n in r.notes} == set(planned)
     row = next(r for r in rows if not r.expanded)
-    assert ed.source_items[row.note].opacity() == 1.0 and "Suggested:" in ed.source_items[row.note].toolTip()
+    assert ed.source_items[row.note].opacity() == 1.0 and "Suggested:" in ed.source_items[row.note].tip_text
 
     expected, done = apply_suggested(page.work, st)
     assert page.apply_suggestions() == len(done) == len(planned) - need
@@ -318,7 +318,7 @@ def test_issues_highlighted_in_rows(window):
     missing = next(x for x in range(128) if x not in page.work.target_map.names)
     page.assign_note([n], missing)
     item = page.cables.source_items[n]
-    assert item.warn and f"Note {n} is mapped to {missing}, which is not in the target map" in item.toolTip()
+    assert item.warn and f"Note {n} is mapped to {missing}, which is not in the target map" in item.tip_text
     assert not hasattr(page, "issues_label")  # панели замечаний под редактором нет
     # delete для ноты вне исходной карты — не замечание
     outside = next(x for x in range(128) if x not in page.work.source_map.names)
@@ -433,8 +433,8 @@ def test_suggestion_needing_write_to_tooltip(window):
     ed = page.cables
     cable = next(c for c in ed.current.scene.cables if c.suggested and c.dst is None)
     item = next(i for i in ed.scene_rows if i.model.y == cable.src_y)
-    assert item.dashed and SUGGESTED_WRITE_TO_HINT in item.toolTip()
-    assert normalize_name(cable.target.label) in normalize_name(item.toolTip())
+    assert item.dashed and SUGGESTED_WRITE_TO_HINT in item.tip_text
+    assert normalize_name(cable.target.label) in normalize_name(item.tip_text)
 
 
 def test_new_profile_without_maps_has_no_rows(window):
@@ -504,13 +504,15 @@ def test_rows_show_number_without_pitch_pitch_in_tooltip(window):
     assert note_tip([37]) == "Note 37 · C#1" and note_tip([37, 76]) == "Notes 37 · C#1, 76 · E4"
     alias = ed.pool_items[38]  # «Snare: Center» на нескольких нотах — высоты всех в подсказке
     assert alias.number == "38" and not hasattr(alias, "pitch") and alias.lines == [(0, "38")]
-    assert note_tip(alias.notes) in alias.toolTip() and "38 · D1, 39 · D#1" in alias.toolTip()
+    assert note_tip(alias.notes) in alias.tip_text and "38 · D1, 39 · D#1" in alias.tip_text
     single = next(i for i in ed.pool_rows if len(i.notes) == 1)
-    assert note_tip(single.notes) in single.toolTip().splitlines()[:2]  # первая строка (или вторая — после имени)
+    # первая строка (или вторая — после полного имени)
+    assert any(line.startswith(note_tip(single.notes)) for line in single.tip_text.splitlines()[:2])
     src = ed.source_items[37]
-    assert "Note 37 · C#1" in src.toolTip().splitlines()[:2]
+    assert any(line.startswith("Note 37 · C#1  →  37") for line in src.tip_text.splitlines()[:2])
     tgt = next(t for t in ed.target_items.values() if 37 in t.notes)
-    assert all(len(line) == 2 for line in tgt.lines) and "37 · C#1" in tgt.toolTip()
+    assert all(len(line) == 2 for line in tgt.lines) and "37 · C#1" in tgt.tip_text
+    assert all(i.toolTip().startswith("<") for i in [alias, src, tgt])  # через tip()
 
 
 def test_write_to_choice_shows_numbers_only(window, monkeypatch):
@@ -719,7 +721,9 @@ def editor_point(ed, view, scene_pt):
 
 
 def target_point(ed, slot):
-    rect = ed.target_items[slot].rect
+    """Точка строки цели вне номеров (у раскрытой — плашка-заголовок): назначение на артикуляцию."""
+    item = ed.target_items[slot]
+    rect = item.head_rect() if item.expanded else item.rect
     ed.view.ensureVisible(rect, 0, 0)
     return editor_point(ed, ed.view, rect.center())
 
@@ -1104,7 +1108,7 @@ def test_right_click_pool_row_and_group_toggle_strike(window, app):
     page.cables.refresh()
     keep_row = ed.pool_items[notes[0]]
     assert keep_row.model.block == UNASSIGNED and keep_row.marker == "="
-    assert "Kept on the same number" in keep_row.toolTip()
+    assert "Kept on the same number" in keep_row.tip_text
     assert ed.current.header(KEEP) is None
     ed.right_click(keep_row)
     assert all(page.work.rules[n] == Rule.delete() for n in notes)
@@ -1245,7 +1249,7 @@ def test_drop_single_match_becomes_write_to_silently(window, app):
     assert page.work.target_map.primary & set(notes) == {notes[1]} and page.answers["asked"] == []
     item = ed.target_items["a:" + key]
     assert [line[1] for line in item.lines] == [str(notes[1])]
-    assert f"Write to: {notes[1]}" in item.toolTip()  # Write to — в подсказке (и галочкой в меню «+N»)
+    assert f"Write to: {notes[1]}" in item.tip_text  # Write to — в подсказке (и галочкой в меню «+N»)
 
 
 def test_drop_several_matches_asks_once_with_preselect(window, app):
@@ -1357,7 +1361,7 @@ def test_alias_row_badge_and_shown_number(window, app):
     row = item.model
     assert item.pill == f"+{len(row.notes) - 1}" and not item.badge  # бейдж источника не кликабелен
     assert item.number == str(row.shown)
-    assert all(str(n) in item.toolTip() for n in row.notes)  # номера — в подсказке
+    assert all(str(n) in item.tip_text for n in row.notes)  # номера — в подсказке
     pool = next(i for i in ed.pool_rows if len(i.notes) > 1 and not i.model.expanded)
     assert pool.number == str(min(pool.notes))
 
@@ -1465,8 +1469,8 @@ def test_truncated_names_in_tooltips(window, app):
     _page, ed = cables_page(window, size=(900, 700))
     cut = [i for i in ed.target_items.values() if plates.name_width(i.name, i.italic) > i.name_room()]
     fits = [i for i in ed.target_items.values() if plates.name_width(i.name, i.italic) <= i.name_room()]
-    assert cut and all(i.toolTip().startswith(i.name) for i in cut)
-    assert all(not i.toolTip().startswith(i.name) for i in fits if i.toolTip())
+    assert cut and all(i.tip_text.startswith(i.name) for i in cut)
+    assert all(not i.tip_text.startswith(i.name) for i in fits if i.tip_text)
 
 
 @pytest.mark.parametrize("direction", ["forward", "reverse"])
@@ -1603,9 +1607,13 @@ def test_reverse_uses_forward_layout(window, app):
         assert {i.port for i in ed.scene_rows if i.port} == {"right"}
         assert {i.port for i in ed.target_items.values() if i.port} == {"left"}
         bundles = [i for i in ed.view.scene().items() if isinstance(i, _Bundle)]
-        assert bundles and all(b.rect.right() <= lx + col2 + 4 for b in bundles)  # рамка раскрытых алиасов — у «from»
+        left = [b for b in bundles if b.rect.right() <= lx + col2 + 4]  # рамки раскрытых алиасов — у «from»
+        right = [b for b in bundles if b.rect.left() >= rx - 4]          # и раскрытых строк цели — у «to»
+        assert left and len(left) + len(right) == len(bundles)
         heads = [i for i in ed.scene_rows if i.model.expanded]
-        assert sorted(b.rect.top() for b in bundles) == sorted(i.rect.top() for i in heads)
+        assert sorted(b.rect.top() for b in left) == sorted(i.rect.top() for i in heads)
+        expanded = [i for i in ed.target_items.values() if i.expanded]
+        assert sorted(b.rect.top() for b in right) == sorted(i.rect.top() for i in expanded)
         c = ed.cable_items[0]
         assert c.path().pointAtPercent(0).x() == c.src.rect.right() and c.path().pointAtPercent(1).x() == rx
         a = ed.source_anchor(ed.pool_rows[0].notes[0])
@@ -1631,7 +1639,7 @@ def test_reverse_uses_forward_layout(window, app):
     assert {n for i in ed.scene_rows for n in i.notes} <= set(w.target_map.names)
     c = geometry(ed)
     assert c.pen().color().name().upper() == theme.CABLE.upper()  # в ← кабели такие же: направления цветом не различаем
-    assert "  →  " in c.toolTip()  # подсказка — как на картинке, слева направо
+    assert "  →  " in c.tip_text  # подсказка — как на картинке, слева направо
     # кнопки на местах, но выбирают другую карту: над «from» — цель, над «to» — источник
     assert page.from_btn.text() == w.target_map.name and page.to_btn.text() == w.source_map.name
     assert page.target_btn is page.from_btn and page.source_btn is page.to_btn
@@ -1802,8 +1810,9 @@ def test_selected_sources_light_their_target_plates(window, app, direction):
     assert many.dst.state() == "normal"
 
 
-def test_target_plate_spans_first_to_last_number(window, app):
-    """Разные номера одной артикуляции: одна плашка от первого номера до последнего."""
+def test_target_with_several_numbers_is_a_header_and_number_plates(window, app):
+    """Разные номера одной артикуляции: плашка-заголовок с именем, под ней плашки номеров (кабели — на них), рамка."""
+    from remap.ui.cable_view import INDENT, _Bundle
     src = NoteMap("From", {1: "Tom: A", 2: "Tom: B", 3: "Tom: C"})
     tgt = NoteMap("To", {50: "Tom: Hit", 51: "Tom: Hit"})
     window.resize(900, 800)
@@ -1813,26 +1822,25 @@ def test_target_plate_spans_first_to_last_number(window, app):
                    direction="forward")
     app.processEvents()
     item = ed.target_items["a:tom: hit"]
-    assert item.plate_rect().height() == 2 * 36 + 30 and item.rect.height() == 3 * 36
+    assert item.expanded and item.number == "" and item.model.numbers == ((1, 50), (3, 51))
+    assert item.rect.height() == 4 * 36 and item.head_rect().top() == item.rect.top() + 3
+    assert all(item.child_rect(off).width() == item.rect.width() - INDENT for off, _ in item.model.numbers)
+    ends = sorted(round(c.path().pointAtPercent(1).y()) for c in ed.cable_items)
+    assert ends == sorted(round(item.line_center(off)) for off in (1, 1, 3))  # кабели — на плашки номеров
+    assert all(c.path().pointAtPercent(1).y() > item.head_rect().bottom() for c in ed.cable_items)
+    assert any(isinstance(b, _Bundle) and b.rect.left() < item.rect.left() for b in ed.view.scene().items())
+    assert "Tom: Hit" in item.part_tips[51] and item.zone_at(item.child_rect(3).center()) == ("line", 3, 51)
+    assert item.zone_at(item.head_rect().center()) == ("row",)
 
 
-def test_empty_from_column_shows_hint(window, app):
-    from remap.core.profile import FORWARD, REVERSE
+def test_empty_scene_hint_only_when_the_scene_is_empty(window, app):
     page, ed = cables_page(window, accept=False)
+    assert ed.current.scene.source_rows == [] and ed.current.scene.target_headers
+    assert ed.view.hint is None  # заголовки и строки цели есть — подсказка легла бы на них
+    new_profile(page, "Source only", EZD3, None)
     lx, _rx, col2, _col3 = ed._scene_columns()
-    assert ed.current.scene.source_rows == []
+    assert not (ed.current.scene.target_rows or ed.current.scene.target_headers)
     assert ed.view.hint == (lx, col2, "Drag notes from Unassigned onto the target map")
-    page.set_direction(REVERSE)
-    assert ed.view.hint is None  # пунктирные подсказки — тоже строки в «from»
-    page.dismiss_suggestions()
-    assert ed.view.hint[2] == "Drag notes from Unassigned onto the source map"
-    page.set_direction(FORWARD)
-    key, notes = three_note_articulation(page.work)
-    assert page.connect_to(notes[:1], "a:" + key)
-    assert ed.view.hint is None  # первый кабель — подсказка исчезает
-    assert page.undo()
-    ed.refresh()  # строка без кабеля вернулась в пул — колонка снова пуста
-    assert ed.view.hint is not None
     new_profile(page, "Bare", None, None)  # нечего тащить — подсказки нет
     assert ed.view.hint is None
 
@@ -2060,7 +2068,7 @@ def test_double_click_unassigned_free_number_connects(window, app):
     page, ed = bare_page(window)
     (t,) = shared_numbers(page.work, 1)
     item = ed.pool_items[t]
-    assert SAME_NUMBER_HINT in item.toolTip()
+    assert SAME_NUMBER_HINT in item.tip_text
     steps = len(page._undo)
     dbl_pool_row(app, ed, t)
     assert not ed.dragging
@@ -2136,7 +2144,7 @@ def test_double_click_struck_row_does_nothing(window, app):
     (t,) = shared_numbers(page.work, 1)
     page.toggle_strike([t])
     ed.refresh()
-    assert ed.pool_items[t].strike and SAME_NUMBER_HINT not in ed.pool_items[t].toolTip()
+    assert ed.pool_items[t].strike and SAME_NUMBER_HINT not in ed.pool_items[t].tip_text
     dbl_pool_row(app, ed, t)
     assert page.work.rules == {t: Rule.delete()}
 
@@ -2204,13 +2212,13 @@ def badge_point(ed, slot):
 
 
 def test_drop_zones_feedback_and_tooltip(window, app):
-    from remap.ui.cable_view import NUMBER_DROP_HINT
     page, ed = cables_page(window, accept=False)
     key, notes = three_note_articulation(page.work)
     slot = "a:" + key
     assert page.connect_to(notes[:2], slot)
     item = ed.target_items[slot]
-    assert NUMBER_DROP_HINT in item.toolTip()
+    assert item.expanded and "choose the Write to" in item.part_tips["head"]
+    assert item.part_tips[notes[1]].startswith(f"Note {notes[1]} ·") and item.name in item.part_tips[notes[1]]
     (x,) = notes_off(page.work, notes, 1)
     ed.begin_drag({x}, line_point(ed, slot, notes[1]))
     item = ed.target_items[slot]
@@ -2366,11 +2374,11 @@ def test_drop_on_write_to_number_with_cables_and_on_first_line(window, app, dire
     assert page.connect_to([notes[0], wt], slot)  # n -> n: кабели на notes[0] и на Write to
     ed.refresh()
     lines = ed.current.target_row(slot).lines
-    assert lines[0] == (0, notes[0]) and wt in [n for _, n in lines] and lines[-1][0] > 0
+    assert lines[0] == (1, notes[0]) and wt in [n for _, n in lines] and lines[-1][0] > 1  # строка 0 — заголовок
     (y,) = notes_off(page._oriented(), notes, 1)
     drop(app, ed, [y], line_point(ed, slot, wt))  # номер Write to, к нему уже идёт кабель
     assert page._oriented().rules[y] == Rule.map_to(wt)
-    drop(app, ed, [y], line_point(ed, slot, notes[0]))  # номер на первой строке (рядом с именем)
+    drop(app, ed, [y], line_point(ed, slot, notes[0]))  # первый номер (под заголовком с именем)
     q = page._oriented()
     assert q.rules[y] == Rule.map_to(notes[0]) and q.target_map.primary & set(notes) == {wt}
     assert page.answers["asked"] == []
@@ -2437,7 +2445,9 @@ def test_names_differ_tooltip_on_real_maps(window):
         assert differ and len(differ) < len(items)
         for c in items:
             src, dst = shown.source_map.names[ends(c)[0]], shown.target_map.names[ends(c)[1]]
-            assert c.toolTip().startswith(f"Names differ: {src} → {dst}\n") == (c in differ)
+            head, *rest = c.tip_text.splitlines()
+            assert src in head and dst in head and "  →  " in head  # обе стороны — в первой строке
+            assert ("Names differ" in rest[0]) == (c in differ) and len(rest) <= 2
 
 
 def test_status_fades_after_last_message(window, app):
@@ -2530,9 +2540,10 @@ def test_group_headers_use_pool_and_scene_variants(window, app):
     assert ed.pool_headers and all(h.variant == "pool" for h in ed.pool_headers.values())
     assert ed.scene_headers and all(h.variant == "scene" for h in ed.scene_headers.values())
     head = next(iter(ed.pool_headers.values()))
-    assert head.label_x() - head.rect.left() == plates.header_label_x("pool")
+    assert head.label_x() - head.rect.left() == plates.header_label_x("pool", theme.HEADER_INSET)
     scene_head = next(iter(ed.scene_headers.values()))
-    assert scene_head.label_x() - scene_head.rect.left() == plates.header_label_x("scene")
+    assert scene_head.label_x() - scene_head.rect.left() == plates.header_label_x("scene", theme.HEADER_INSET)
+    assert plates.header_label_x("pool", theme.HEADER_INSET) == plates.header_label_x("scene", theme.HEADER_INSET)
 
 
 def test_suggested_cable_is_dashed_cable_colour(window, app):
@@ -2563,24 +2574,24 @@ def hand_tip_setup(window):
 def test_reverse_tooltips_mark_hand_set_notes(window, app):
     from remap.ui.cable_view import HAND_REMOVED_TIP, HAND_SET_TIP
     _page, ed, drawn, gone, bundle, part = hand_tip_setup(window)
-    assert HAND_SET_TIP in ed.source_items[drawn].toolTip()
+    assert HAND_SET_TIP in ed.source_items[drawn].tip_text
     cable = next(c for c in ed.cable_items if drawn in c.cable.notes)
-    assert HAND_SET_TIP in cable.toolTip()
-    assert HAND_REMOVED_TIP in ed.pool_items[gone].toolTip() and HAND_SET_TIP not in ed.pool_items[gone].toolTip()
+    assert HAND_SET_TIP in cable.tip_text
+    assert HAND_REMOVED_TIP in ed.pool_items[gone].tip_text and HAND_SET_TIP not in ed.pool_items[gone].tip_text
     # пачка алиасов: названы только ручные ноты
-    tip = ed.source_items[bundle.note].toolTip()
-    assert f"Set by hand ({part}): forward changes don't affect them" in tip
+    tip = ed.source_items[bundle.note].tip_text
+    assert f"Set by hand ({part})" in tip
     cable = next(c for c in ed.cable_items if part in c.cable.notes)
-    assert f"Set by hand ({part}): forward changes don't affect them" in cable.toolTip()
+    assert f"Set by hand ({part})" in cable.tip_text
     other = next(r for r in ed.current.scene.source_rows if r.connected and r.note not in (drawn, bundle.note))
-    assert "by hand" not in ed.source_items[other.note].toolTip()
+    assert "by hand" not in ed.source_items[other.note].tip_text
 
 
 def test_forward_tooltips_ignore_hand_set_notes(window, app):
     from remap.core.profile import FORWARD
     page, ed, *_ = hand_tip_setup(window)
     page.set_direction(FORWARD)
-    assert all("by hand" not in i.toolTip() for i in [*ed.source_items.values(), *ed.cable_items])
+    assert all("by hand" not in i.tip_text for i in [*ed.source_items.values(), *ed.cable_items])
 
 
 def test_map_change_text_without_rules_and_hand_set(window, app):
@@ -2611,3 +2622,57 @@ def test_shell_header_follows_the_mockup(window, app):
     assert all(f.size().toTuple() == (118, 36) and f.top() == 14 for f in faces)  # по центру шапки 64
     assert faces[2].right() == 900 - 40 and faces[1].left() - faces[0].right() == 8
     assert len(window.centralWidget().findChildren(Screw)) == 4  # винты корпуса
+
+
+# --- подсказки комбо, раскрытые группы с обеих сторон, короткие подсказки ---
+
+def test_profile_and_map_combos_tooltip_the_full_name(window, app):
+    page = window.profiles_page
+    new_profile(page, "A very long profile name that does not fit")
+    assert "A very long profile name that does not fit" in page.combo.toolTip()
+    assert "EZdrummer 3" in page.from_btn.toolTip() and "Superior Drummer 3" in page.to_btn.toolTip()
+    assert page.from_btn.toolTip().startswith("<")  # через tip()
+
+
+def test_expanded_groups_show_name_on_header_and_number_on_children(window, app):
+    page, ed = reverse_page(window, accept=False)
+    page.dismiss_suggestions()
+    assert page.match_by_number()
+    head = next(i for i in ed.scene_rows if i.model.expanded)
+    children = [i for i in ed.scene_rows if i.model.child and set(i.notes) <= set(head.notes)]
+    assert head.number == "" and head.name and children
+    assert all(c.name == "" and c.number == str(c.notes[0]) for c in children)
+    assert all(head.model.name in c.tip_text for c in children)  # имя — в подсказке строки ноты
+    target = next(i for i in ed.target_items.values() if i.expanded)
+    assert target.number == "" and target.name
+    assert all(target.name in target.part_tips[n] for _, n in target.model.numbers)
+
+
+def test_selection_lights_only_the_numbers_of_an_expanded_target(window, app):
+    page, ed = reverse_page(window, accept=False)
+    page.dismiss_suggestions()
+    assert page.match_by_number()
+    target = next(i for i in ed.target_items.values() if i.expanded)
+    cable = next(c for c in ed.cable_items if c.dst is target)
+    ed.set_selection(set(cable.src.notes))
+    assert target.lit == {cable.cable.dst} and target.part_state(cable.cable.dst) == "selected"
+    others = [n for _, n in target.model.numbers if n != cable.cable.dst]
+    assert others and all(target.part_state(n) == "normal" for n in others)
+    assert target.part_state("head") == "normal"
+    ed.hover_cable(cable)
+    assert target.part_state(cable.cable.dst) == "drop"  # кабель под курсором — его номер
+    ed.hover_cable(None)
+
+
+@pytest.mark.parametrize("direction", ["forward", "reverse"])
+def test_scene_tooltips_are_at_most_three_lines(window, app, direction):
+    page, ed = (cables_page(window, accept=False) if direction == "forward" else reverse_page(window, accept=False))
+    page.match_by_number()
+    items = [*ed.pool_rows, *ed.scene_rows, *ed.target_items.values(), *ed.cable_items]
+    tips = [i.tip_text for i in items] + [t for i in ed.target_items.values() for t in i.part_tips.values()]
+    assert tips and all(len(t.splitlines()) <= 3 for t in tips)
+    assert not any("Drag" in t or "drag" in t for t in tips)  # жесты — в обучении
+    row = next(i for i in ed.scene_rows if i.model.connected and not i.model.expanded and not i.model.child
+               and len(i.notes) == 1)
+    head, *rest = row.tip_text.splitlines()
+    assert head.startswith(f"Note {row.notes[0]} · ") and "  →  " in head and rest[-1] == "Right-click: remove"

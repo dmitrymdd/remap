@@ -7,7 +7,7 @@
 (не группа, не сворачивается) и кнопка «Match by number». Views стоят в экранах с запасом PAD вокруг содержимого, чтобы
 плашки лежали на сетке макета (поля экрана 14 + рамка). Поверх всего —
 прозрачный для мыши слой CableOverlay: на нём рисуется кабель-превью от исходных строк к курсору через границу пула
-и сцены. Пустая колонка «from» — подсказка по центру (EMPTY_HINT).
+и сцены. Пустая сцена (ни заголовков, ни строк) — подсказка по центру (EMPTY_HINT).
 
 Направление (set_direction): вид строится по profile.oriented(direction) (поле shown) одним и тем же кодом —
 поток всегда слева направо: [пул] [подключённые ноты] кабели [карта цели]. В REVERSE это ноты целевой карты слева
@@ -66,6 +66,7 @@ from . import plates, text, theme
 from .field import ScreenButton
 from .glass import Screen
 from .metal import RecessedBlock
+from .tips import tip
 
 POOL_ROWS = RowMetrics(*theme.POOL_ROWS)
 SCENE_ROWS = RowMetrics(*theme.SCENE_ROWS)
@@ -96,36 +97,52 @@ MAX_PREVIEW = 24                # кабелей-превью при перет�
 
 POOL, SOURCE, TARGET = "pool", "source", "target"  # роль строки: пул, колонка «from», цель
 
-STATE_TIPS = {
-    UNASSIGNED: "No target yet: removed when saving unless you keep it",
-    KEEP: "Kept on the same number",
-    DELETE: "Deleted from converted files",
-    MIXED: "These notes have different rules",
-}
+# Подсказки строк, кабелей и плашек цели (через tip(), не больше трёх строк): высота ноты, куда идёт, замечания и
+# ручные правки, действие правой кнопкой. То, что видно на плашке, и жесты, которым учит обучение (перетаскивание,
+# росчерк), не повторяются.
+DELETED_TIP = "Deleted from converted files"
+KEPT_TIP = "Kept on the same number"
 # ←: ноты цели без обратного правила при сохранении не спрашиваются (полнота — статус)
-REVERSE_UNASSIGNED_TIP = "No rule in this direction: kept on the same number when converting"
-SAME_NUMBER_HINT = "Double-click to connect to the same number"
-NUMBER_DROP_HINT = "Drop on a number to connect to that note"
-ROW_HINT = "Drag onto a target to map · Ctrl/Shift+click to select several · Right-click to delete or restore"
-CONNECTED_HINT = "Drag onto another target to remap · Right-click to remove the cable"
-HAND_SET_TIP = "Set by hand: forward changes don't affect it"
-HAND_SET_SOME_TIP = "Set by hand ({notes}): forward changes don't affect them"
-HAND_REMOVED_TIP = "Removed by hand: forward changes won't bring it back"
-HAND_REMOVED_SOME_TIP = "Removed by hand ({notes}): forward changes won't bring them back"
-ALIAS_HINT = "Click the arrow to show the notes one by one"
-MIXED_HINT = "Notes with different rules are always shown one by one"
+REVERSE_UNASSIGNED_TIP = "No rule here: kept on the same number"
+MIXED_TIP = "Different rules: shown one by one"
+REMOVE_ACTION = "Right-click: remove"
+DELETE_ACTION = "Right-click: delete"
+RESTORE_ACTION = "Right-click: restore"
+SAME_NUMBER_HINT = "Double-click: same number"
+SUGGESTED_HINT = "Suggested: apply in the bar above"
+SUGGESTED_WRITE_TO_HINT = "Suggested, needs a Write to note: Apply skips it"
+NAMES_DIFFER_TIP = "Names differ"
+NOT_WRITE_TO_TIP = "Not the Write to note ({n})"
+WRITE_TO_TIP = "Write to: {n}"
+NO_WRITE_TO_TIP = "Write to: not chosen"
+BADGE_HINT = "Click {pill}: choose the Write to"
+HAND_SET_TIP = "Set by hand: forward edits don't change it"
+HAND_SET_SOME_TIP = "Set by hand ({notes})"
+HAND_REMOVED_TIP = "Removed by hand: forward edits don't restore it"
+HAND_REMOVED_SOME_TIP = "Removed by hand ({notes})"
+TIP_LINES = 3
 POOL_TITLE = "Unassigned"
 POOL_TIP = ("{side} notes not connected in this direction, by instrument.\n"
             "Struck-through notes are deleted: right-click to restore")
 EMPTY_HINT = "Drag notes from Unassigned onto the {side} map"
-BADGE_HINT = "Click the badge to choose the Write to note"
-WRITE_TO_HINT = "Write to: {n} — notes from other numbers are written here"
-GROUP_HINT = ("Drag onto a target group to connect notes with the same numbers\n"
-              "Right-click to delete or restore the whole group")
+GROUP_HINT = "Right-click to delete or restore the whole group"
 TARGET_GROUP_HINT = "Drop notes here to connect those with the same numbers"
-SUGGESTED_HINT = "Apply in the bar above, or drag onto another target"
-SUGGESTED_WRITE_TO_HINT = ("The target is on several notes: drag the row onto it to choose the Write to note. "
-                           "Apply skips it")
+
+
+def tip_lines(head: str, details: list[str], action: str = "") -> str:
+    """Текст подсказки: первая строка, замечания, действие; больше TIP_LINES строк — замечания в одну строку через «·»."""
+    details = [d for d in details if d]
+    if len(details) + 1 + bool(action) > TIP_LINES and len(details) > 1:
+        details = [" · ".join(details)]
+    return "\n".join([line for line in (head, *details, action) if line])
+
+
+def with_name(name: str, text: str) -> str:
+    """Полное имя первой строкой подсказки; строк стало больше TIP_LINES — средние склеиваются через «·»."""
+    lines = [name, *text.splitlines()]
+    if len(lines) > TIP_LINES:
+        lines = [lines[0], " · ".join(lines[1:-1]), lines[-1]]
+    return "\n".join(lines)
 
 
 def cable_path(a: QPointF, b: QPointF) -> QPainterPath:
@@ -155,7 +172,12 @@ class _Row(QGraphicsItem):
     role — POOL / SOURCE / TARGET; model — SourceRow или TargetRow из раскладки. pill — текст бейджа («+N» —
     ещё N нот: алиасы источника или скрытые ноты артикуляции цели); badge — бейдж кликабелен (меню Write to).
     port — сторона точек кабеля ("left" / "right"; точка — на каждом номере из lines); dim — имя приглушено
-    (нет имени, нота зачёркнута)."""
+    (нет имени, нота зачёркнута).
+
+    Раскрытая строка цели (TargetRow.expanded) — как раскрытые алиасы слева: плашка-заголовок с именем (и бейджем) на
+    строке 0 и под ней по плашке на номер, только номер (уже на INDENT справа); кабели приходят на плашки номеров.
+    Состояние у каждой плашки своё: выбрана — номер, куда идёт кабель выбранной строки (lit), drop и кабель под
+    курсором — тоже по номеру. Подсказка — у плашки под курсором (part_tips)."""
 
     def __init__(self, rect: QRectF, role: str, model: SourceRow | TargetRow, number: str, name: str,
                  *, dim=False, strike=False, italic=False, marker="", pill="", chevron: str | None = None,
@@ -171,22 +193,49 @@ class _Row(QGraphicsItem):
         self.pill, self.chevron, self.badge = pill, chevron, badge  # chevron: collapsed / expanded / fixed
         self.port, self.dashed, self.warn = port, dashed, warn
         self.highlighted = False
+        self.hot: int | None = None  # номер кабеля под курсором (у раскрытой цели подсвечивается его плашка)
         self.selected = False
+        self.lit: set[int] = set()   # номера, куда идут кабели выбранных строк
         self.drop_zone: tuple | None = None  # строка цели под кабелем-превью: зона (см. zone_at)
+        self.expanded = role == TARGET and getattr(model, "expanded", False)
         self._hover = False
+        self._part: int | str | None = None  # плашка раскрытой цели под курсором: "head" или номер
+        self.part_tips: dict[int | str, str] = {}
+        self.tip_text = ""
         self.setZValue(1)
         self.setAcceptHoverEvents(True)
-        if tooltip:
-            self.setToolTip(tooltip)
+        self.set_tip(tooltip)
+
+    def set_tip(self, text: str) -> None:
+        """Подсказка (простой текст хранится в tip_text, Qt получает tip())."""
+        self.tip_text = text
+        self.setToolTip(tip(text) if text else "")
 
     @property
     def notes(self) -> tuple[int, ...]:
         return self.model.notes
 
     def number_rect(self, off: int) -> QRectF:
-        """Зона номера на строке off блока — цель drop «ровно на эту ноту»."""
-        return QRectF(self.rect.left(), self.rect.top() + off * self.metrics.pitch, plates.NAME_OFFSET,
-                      self.metrics.pitch)
+        """Зона номера на строке off блока — цель drop «ровно на эту ноту» (у раскрытой цели — слот плашки номера)."""
+        width = self.rect.width() - INDENT if self.expanded else plates.NAME_OFFSET
+        return QRectF(self.rect.left(), self.rect.top() + off * self.metrics.pitch, width, self.metrics.pitch)
+
+    def head_rect(self) -> QRectF:
+        """Плашка-заголовок раскрытой цели (строка 0)."""
+        m = self.metrics
+        return QRectF(self.rect.left(), self.rect.top() + m.inset, self.rect.width(), m.plate)
+
+    def child_rect(self, off: int) -> QRectF:
+        """Плашка номера раскрытой цели на строке off: уже заголовка на INDENT справа (зеркально алиасам слева)."""
+        m = self.metrics
+        return QRectF(self.rect.left(), self.rect.top() + off * m.pitch + m.inset, self.rect.width() - INDENT, m.plate)
+
+    def part_at(self, pt: QPointF) -> int | str:
+        """Плашка раскрытой цели под точкой: номер или "head" (заголовок и зазоры)."""
+        for off, n in self.model.numbers:
+            if self.number_rect(off).contains(pt):
+                return n
+        return "head"
 
     def line_center(self, off: int = 0) -> float:
         """y центра плашки на строке off блока: сюда приходит кабель."""
@@ -210,14 +259,19 @@ class _Row(QGraphicsItem):
             self.drop_zone = zone
             self.update()
 
-    def set_highlighted(self, on: bool) -> None:
-        if on != self.highlighted:
-            self.highlighted = on
+    def set_highlighted(self, on: bool, number: int | None = None) -> None:
+        if (on, number) != (self.highlighted, self.hot):
+            self.highlighted, self.hot = on, number
             self.update()
 
     def set_selected(self, on: bool) -> None:
         if on != self.selected:
             self.selected = on
+            self.update()
+
+    def set_lit(self, numbers: set[int]) -> None:
+        if numbers != self.lit:
+            self.lit = set(numbers)
             self.update()
 
     def boundingRect(self) -> QRectF:
@@ -255,9 +309,20 @@ class _Row(QGraphicsItem):
         pos = event.scenePos()
         hot = any(r is not None and r.contains(pos) for r in (self.chevron_rect(), self.badge_rect()))
         self.setCursor(Qt.CursorShape.PointingHandCursor if hot else Qt.CursorShape.ArrowCursor)
+        if self.expanded:
+            self.set_part(self.part_at(pos))
+
+    def set_part(self, part: int | str | None) -> None:
+        """Плашка раскрытой цели под курсором: её подсказка и наведение."""
+        if part != self._part:
+            self._part = part
+            self.set_tip(self.part_tips.get(part, "") if part is not None else self.part_tips.get("head", ""))
+            self.update()
 
     def hoverLeaveEvent(self, event) -> None:
         self._hover = False
+        if self.expanded:
+            self.set_part(None)
         self.update()
 
     def state(self) -> str:
@@ -276,13 +341,48 @@ class _Row(QGraphicsItem):
             return "deleted"
         return "suggested" if self.dashed else "normal"
 
+    def part_state(self, part: int | str) -> str:
+        """Состояние плашки раскрытой цели: "head" — заголовок, иначе номер."""
+        zone = self.drop_zone
+        if part == "head":
+            if zone and zone[0] == "row":
+                return "drop"
+            if (zone and zone[0] == "badge") or self._part == "head":
+                return "hover"
+            return "suggested" if self.dashed else "normal"
+        if (zone and zone[0] == "line" and zone[2] == part) or (self.highlighted and self.hot == part):
+            return "drop"  # у цели отклик drop важнее выбора
+        if part in self.lit:
+            return "selected"
+        if self._part == part:
+            return "hover"
+        return "suggested" if self.dashed else "normal"
+
     def plate_rect(self) -> QRectF:
         """Плашка в слоте: от первого номера до последнего (остальной слот — только зона drop)."""
         m = self.metrics
         last = max(off for off, _ in self.lines)
         return QRectF(self.rect.left(), self.rect.top() + m.inset, self.rect.width(), last * m.pitch + m.plate)
 
+    def _paint_expanded(self, p: QPainter) -> None:
+        m = self.metrics
+        head = self.head_rect()
+        plates.paint_plate(p, head, self.part_state("head"), name=self.name, name_room=self.name_room(),
+                           line_h=m.plate)
+        if self.pill:
+            pill = QRectF(self._pill_right() - BADGE_W, head.center().y() - theme.BADGE_HEIGHT / 2, BADGE_W - 6,
+                          theme.BADGE_HEIGHT)
+            plates.paint_badge(p, pill, self.pill, hot=bool(self.drop_zone) and self.drop_zone[0] == "badge")
+        for off, n in self.model.numbers:
+            plates.paint_plate(p, self.child_rect(off), self.part_state(n), numbers=[(0, str(n))], line_h=m.plate)
+            if self.port:
+                color = plates.cable_color(n in self.lit, self.highlighted and self.hot == n)
+                plates.paint_port(p, QPointF(self.rect.left(), self.line_center(off)), PORT, color, self.dashed)
+
     def paint(self, p: QPainter, option, widget=None) -> None:
+        if self.expanded:
+            self._paint_expanded(p)
+            return
         m = self.metrics
         r = self.plate_rect()
         zone = self.drop_zone[0] if self.drop_zone else None
@@ -327,7 +427,12 @@ class _HeaderItem(QGraphicsItem):
         self.setZValue(1)
         self.setAcceptHoverEvents(True)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.setToolTip(tooltip)
+        self.tip_text = ""
+        self.set_tip(tooltip)
+
+    def set_tip(self, text: str) -> None:
+        self.tip_text = text
+        self.setToolTip(tip(text) if text else "")
 
     def set_highlighted(self, on: bool) -> None:
         if on != self.highlighted:
@@ -341,7 +446,7 @@ class _HeaderItem(QGraphicsItem):
         return self.rect.center().y()
 
     def label_x(self) -> float:
-        return self.rect.left() + plates.header_label_x(self.variant)
+        return self.rect.left() + plates.header_label_x(self.variant, theme.HEADER_INSET)
 
     def label_room(self) -> float:
         """Ширина под подпись, px (справа — место под число): заголовок сцены идёт через обе колонки, подпись — в левой."""
@@ -373,12 +478,14 @@ class _HeaderItem(QGraphicsItem):
         state = "lit" if self.highlighted else "hover" if self._hover else "normal"
         # треугольник — режим группы, а не видимость строк: ▸ — группа что-то скрывает, ▾ — показывает всё
         plates.paint_group_header(p, self.rect, h.label, count, h.collapsed, variant=self.variant, state=state,
-                                  label_room=self.label_room(),
-                                  twin_x=theme.COL_FROM + theme.COL_GAP if self.variant == "scene" else None)
+                                  inset=theme.HEADER_INSET, label_room=self.label_room(),
+                                  twin_x=theme.COL_FROM + theme.COL_GAP + theme.HEADER_INSET if self.variant == "scene"
+                                  else None)
 
 
 class _Bundle(QGraphicsItem):
-    """Тонкая рамка вокруг раскрытых алиасов в колонке «from»: заголовок и строки его нот читаются как один блок."""
+    """Тонкая рамка вокруг раскрытых алиасов в колонке «from» и раскрытой строки цели в «to»: заголовок и плашки под
+    ним читаются как один блок."""
 
     def __init__(self, rect: QRectF) -> None:
         super().__init__()
@@ -406,8 +513,9 @@ class _CableItem(QGraphicsPathItem):
         self.swiped = False  # отмечен росчерком правой кнопкой: снимется при отпускании
         self.setZValue(0.5)
         self.setAcceptHoverEvents(not cable.suggested)
-        if not cable.suggested:
-            self.setToolTip(tooltip)
+        self.tip_text = tooltip if not cable.suggested else ""
+        if self.tip_text:
+            self.setToolTip(tip(self.tip_text))
         self.set_style(False)
 
     def set_style(self, hovered: bool) -> None:
@@ -839,10 +947,15 @@ class CableEditor(QWidget):
         self.selection = set(notes)
         for item in self.pool_rows + self.scene_rows:
             item.set_selected(bool(self.selection) and set(item.notes) <= self.selection)
-        # строка цели выбрана, если в неё идёт кабель выбранной строки (как в макете: многие-в-одну — цель белая)
-        lit = {id(c.dst) for c in self.cable_items if c.src.selected}
+        # строка цели выбрана, если в неё идёт кабель выбранной строки (как в макете: многие-в-одну — цель белая);
+        # у раскрытой — плашки тех номеров, куда идут эти кабели
+        lit: dict[int, set[int]] = {}
+        for c in self.cable_items:
+            if c.src.selected and c.cable.dst is not None:
+                lit.setdefault(id(c.dst), set()).add(c.cable.dst)
         for item in self.target_items.values():
             item.set_selected(id(item) in lit)
+            item.set_lit(lit.get(id(item), set()))
         for cable in self.cable_items + self.suggestion_items:
             cable.set_style(cable._hovered)  # кабель выбранной строки — белый
 
@@ -910,7 +1023,8 @@ class CableEditor(QWidget):
         for row in self.scene_rows:
             row.set_highlighted(item is not None and row is item.src)
         for row in self.target_items.values():
-            row.set_highlighted(item is not None and row is item.dst)
+            on = item is not None and row is item.dst
+            row.set_highlighted(on, item.cable.dst if on else None)
 
     # --- мышь ---
 
@@ -1405,8 +1519,9 @@ class CableEditor(QWidget):
         col = width - 2 * PAD
         scene = view.scene()
         for h in lay.pool.headers:
-            tip = ("Click to expand" if h.collapsed else "Click to collapse") + f"\n{GROUP_HINT}"
-            item = _HeaderItem(QRectF(PAD, PAD + ruler.top(h.y), col, POOL_ROWS.head), h, self.toggle_pool, tip, "pool")
+            text = ("Click to expand" if h.collapsed else "Click to collapse") + f"\n{GROUP_HINT}"
+            item = _HeaderItem(QRectF(PAD, PAD + ruler.top(h.y), col, POOL_ROWS.head), h, self.toggle_pool, text,
+                               "pool")
             self._full_label(item, view)
             self.pool_headers[h.key] = item
             scene.addItem(item)
@@ -1440,14 +1555,18 @@ class CableEditor(QWidget):
 
     @staticmethod
     def _full_name(item: _Row, view: _ColumnView) -> None:
-        """Имя не помещается в строку — полное имя первой строкой подсказки."""
+        """Имя не помещается в строку — полное имя первой строкой подсказки (у раскрытой цели — заголовка)."""
         if item.name and plates.name_width(item.name, item.italic) > item.name_room():
-            item.setToolTip(f"{item.name}\n{item.toolTip()}".strip())
+            if item.expanded:
+                item.part_tips["head"] = with_name(item.name, item.part_tips["head"])
+                item.set_tip(item.part_tips["head"])
+            else:
+                item.set_tip(with_name(item.name, item.tip_text))
 
     @staticmethod
     def _full_label(item: _HeaderItem, view: _ColumnView) -> None:
         if item.label_width() > item.label_room():
-            item.setToolTip(f"{item.header.label}\n{item.toolTip()}")
+            item.set_tip(f"{item.header.label}\n{item.tip_text}")
 
     def _draw_scene(self) -> None:
         """Колонка «from» (подключённые строки, точка справа) и колонка «to» (строки цели, точка слева)."""
@@ -1465,8 +1584,9 @@ class CableEditor(QWidget):
         self.view.begin(ruler.total)
         lx, rx, col2, col3 = self._scene_columns()
         scene = self.view.scene()
-        # колонка «from» пуста (новый профиль) — что делать; пул пуст — подсказывать нечего
-        empty = not sc.source_rows and bool(lay.pool.rows or lay.pool.headers)
+        # сцена совсем пуста (ни заголовков, ни строк — иначе подсказка ложится на них) — что делать; пул пуст —
+        # подсказывать нечего
+        empty = not (sc.source_rows or sc.target_rows or sc.target_headers) and bool(lay.pool.rows or lay.pool.headers)
         self.view.set_hint((lx, col2, EMPTY_HINT.format(side=self.sides[1])) if empty else None)
 
         def rect(x: float, y: int, h: int = 1) -> QRectF:
@@ -1476,17 +1596,17 @@ class CableEditor(QWidget):
 
         for h in sc.target_headers:
             if h.key in self.show_all:
-                tip = "All articulations shown. Click to show connected only"
+                text = "All articulations shown. Click to show connected only"
             else:
-                tip = "Connected only. Click to show all articulations"
+                text = "Connected only. Click to show all articulations"
             if h.shown:
-                tip = f"{h.shown} of {h.count} connected\n{tip}"
+                text = f"{h.shown} of {h.count} connected\n{text}"
             if h.notes:
-                tip += f"\n{TARGET_GROUP_HINT}"
+                text += f"\n{TARGET_GROUP_HINT}"
             head_rect = QRectF(lx, PAD + ruler.top(h.y), rx + col3 - lx, m.head)
             top, bottom = ruler.head_zone(h.y)
             zone = QRectF(lx, PAD + top, head_rect.width(), bottom - top)
-            item = _HeaderItem(head_rect, h, self.toggle_target, tip, "scene", zone)
+            item = _HeaderItem(head_rect, h, self.toggle_target, text, "scene", zone)
             self._full_label(item, self.view)
             self.scene_headers[h.key] = item
             scene.addItem(item)
@@ -1497,6 +1617,9 @@ class CableEditor(QWidget):
             self._full_name(item, self.view)
             self.target_items[t.slot] = item
             scene.addItem(item)
+            if t.expanded:  # рамка от заголовка до последнего номера — как у раскрытых алиасов слева
+                last = max(off for off, _ in t.lines)
+                scene.addItem(_Bundle(rect(rx, t.y, last + 1).adjusted(-3, 0, 3, 0)))
         for i, r in enumerate(sc.source_rows):
             indent = INDENT if r.child else 0
             item = self._source_item(rect(lx, r.y).adjusted(indent, 0, 0, 0), r, SOURCE)
@@ -1512,106 +1635,127 @@ class CableEditor(QWidget):
             src = rows_by_y[c.src_y]
             a = QPointF(src.rect.right(), src.line_center())
             b = QPointF(rx, PAD + ruler.top(c.dst_y) + m.plate / 2)  # на свой номер в строке цели
-            tip = self._cable_tip(c.notes, c.dst) if c.dst is not None else ""
-            if tip and names_differ(self.shown, c.notes[0], c.dst):
-                tip = f"{self._names_differ_tip(c.notes[0], c.dst)}\n{tip}"
-            tip = self._with_hand_tip(tip, c.notes, connected=True)
-            item = _CableItem(cable_path(a, b), c, self, src, self.target_items[c.target.slot], tip)
+            text = self._cable_text(c) if c.dst is not None else ""
+            item = _CableItem(cable_path(a, b), c, self, src, self.target_items[c.target.slot], text)
             scene.addItem(item)
             (self.suggestion_items if c.suggested else self.cable_items).append(item)
         self.view.end()
 
     def _source_item(self, r: QRectF, row: SourceRow, role: str) -> _Row:
-        p = self.shown
-        tgt = p.target_map
-        if row.connected and not row.expanded:
-            tip = f"{self._cable_tip(row.notes, p.rules[row.note].dst)}\n{CONNECTED_HINT}"
-        elif row.suggested and not row.expanded:
-            cable = next(c for c in self.current.scene.cables if c.src_y == row.y)
-            name = cable.target.label
-            tip = (f"Suggested: {name} · {cable.dst}\n{SUGGESTED_HINT}" if cable.dst is not None
-                   else f"Suggested: {name}\n{SUGGESTED_WRITE_TO_HINT}")
-        else:
-            tip = (REVERSE_UNASSIGNED_TIP if self.direction == REVERSE and row.state == UNASSIGNED
-                   else STATE_TIPS.get(row.state, ""))
-            if row.state == KEEP and tgt is not None:
-                tip += (f": {tgt.names[row.note]}" if row.note in tgt.names
-                        else f" (no such note in the {self.sides[1]} map)")
-            tip += f"\n{ROW_HINT}"
-            if row.block == UNASSIGNED and row.state != DELETE:
-                tip += f"\n{SAME_NUMBER_HINT}"
-        if len(row.notes) > 1:
-            tip = f"{tip}\n{MIXED_HINT if row.mixed else ALIAS_HINT}"
-        tip = f"{note_tip(row.notes)}\n{tip}"
-        tip = self._with_hand_tip(tip, row.notes, connected=row.connected and not row.suggested)
-        issues = [i for n in row.notes for i in self._issues.get(n, [])]
-        if issues:
-            tip = "\n".join(issues + [tip])
         chevron = None
         if row.alias is not None:
             chevron = "fixed" if row.mixed else "expanded" if row.expanded else "collapsed"
         n = row.shown
         cabled = (row.connected or row.suggested) and not row.expanded
-        return _Row(r, role, row, str(n), row.name or "—",
+        issues = [i for n_ in row.notes for i in self._issues.get(n_, [])]
+        # раскрытые алиасы: у заголовка — только имя, у строк нот — только номер (имя — в подсказке)
+        return _Row(r, role, row, "" if row.expanded else str(n), "" if row.child else row.name or "—",
                     dim=row.state == DELETE or row.name is None,
                     strike=row.state == DELETE, marker="=" if row.state == KEEP else "",
                     pill=f"+{len(row.notes) - 1}" if len(row.notes) > 1 and not row.expanded else "",
                     chevron=chevron, port="right" if cabled else None,
-                    dashed=row.suggested, warn=bool(issues), tooltip=tip,
+                    dashed=row.suggested, warn=bool(issues), tooltip=self._source_text(row, issues),
                     metrics=POOL_ROWS if role == POOL else SCENE_ROWS)
 
+    def _source_text(self, row: SourceRow, issues: list[str]) -> str:
+        """Подсказка строки слева: ноты (у строки ноты под заголовком алиасов — и имя), куда идёт, замечания, действие."""
+        p = self.shown
+        tgt = p.target_map
+        head = note_tip(row.notes)
+        if row.child and row.name:
+            head = f"{head} · {row.name}"
+        details: list[str] = list(issues)
+        action = ""
+        if row.expanded:
+            details += [MIXED_TIP] if row.mixed else []
+        elif row.connected:
+            dst = p.rules[row.note].dst
+            dst_name = tgt.names.get(dst, "") if tgt is not None else ""
+            head = f"{head}  →  {dst} {dst_name}".rstrip()
+            details.append(self._not_write_to(dst))
+            action = REMOVE_ACTION
+        elif row.suggested:
+            cable = next(c for c in self.current.scene.cables if c.src_y == row.y)
+            if cable.dst is not None:
+                head = f"{head}  →  {cable.dst} {cable.target.label}".rstrip()
+                details.append(SUGGESTED_HINT)
+            else:
+                head = f"{head}  →  {cable.target.label}"
+                details.append(SUGGESTED_WRITE_TO_HINT)
+        elif row.state == DELETE:
+            details.append(DELETED_TIP)
+            action = RESTORE_ACTION
+        else:
+            if row.state == KEEP:
+                where = (f": {tgt.names[row.note]}" if tgt is not None and row.note in tgt.names
+                         else f" (not in the {self.sides[1]} map)")
+                details.append(KEPT_TIP + where)
+            elif self.direction == REVERSE and row.state == UNASSIGNED:
+                details.append(REVERSE_UNASSIGNED_TIP)
+            elif row.state == MIXED:
+                details.append(MIXED_TIP)
+            action = DELETE_ACTION
+            if row.block == UNASSIGNED:
+                action += f" · {SAME_NUMBER_HINT}"
+        details.append(self._hand_text(row.notes, connected=row.connected and not row.suggested and not row.expanded))
+        return tip_lines(head, details, action)
+
     def _target_item(self, r: QRectF, t: TargetRow, connected: bool, dashed: bool = False) -> _Row:
-        tgt = self.shown.target_map
         port = "left" if connected else None
         if not t.in_map:
             side = f"{self.sides[1]} map"
-            tip = note_tip(t.notes) + "\n" + (f"Not in the {side}" if tgt is not None else f"No {side}")
+            text = tip_lines(note_tip(t.notes), [f"Not in the {side}" if self.shown.target_map is not None
+                                                 else f"No {side}"])
             return _Row(r, TARGET, t, str(t.notes[0]), "—", dim=True,
-                        italic=True, port=port, dashed=dashed, tooltip=tip, metrics=SCENE_ROWS)
+                        italic=True, port=port, dashed=dashed, tooltip=text, metrics=SCENE_ROWS)
         many = len(t.notes) > 1
         lines = [(off, str(n)) for off, n in t.numbers]
-        tip = note_tip(t.notes)
+        pill = (f"+{t.hidden}" if t.hidden else "…") if many else ""
+        details = []
         if many:
-            wt = WRITE_TO_HINT.format(n=t.write_to) if t.write_to is not None else "Write to: not chosen"
-            tip = f"{tip}\n{wt}\n{BADGE_HINT}"
-        tip = f"{tip}\n{NUMBER_DROP_HINT}"
-        return _Row(r, TARGET, t, lines[0][1], t.label, pill=(f"+{t.hidden}" if t.hidden else "…") if many else "",
-                    badge=many, port=port, dashed=dashed, tooltip=tip, lines=lines, metrics=SCENE_ROWS)
+            wt = WRITE_TO_TIP.format(n=t.write_to) if t.write_to is not None else NO_WRITE_TO_TIP
+            details = [f"{wt} · {BADGE_HINT.format(pill=pill)}"]
+        text = tip_lines(note_tip(t.notes), details)
+        item = _Row(r, TARGET, t, "" if t.expanded else lines[0][1], t.label, pill=pill, badge=many, port=port,
+                    dashed=dashed, tooltip=text, lines=lines, metrics=SCENE_ROWS)
+        if t.expanded:  # плашки номеров: номер, высота и имя (на плашке имени нет)
+            item.part_tips = {"head": text}
+            for _off, n in t.numbers:
+                item.part_tips[n] = tip_lines(f"{note_tip([n])} · {t.label}", ["Write to" if n == t.write_to else ""])
+        return item
 
-    def _with_hand_tip(self, tip: str, notes: tuple[int, ...], connected: bool) -> str:
+    def _hand_text(self, notes: tuple[int, ...], connected: bool) -> str:
         """← : пометка «ручная правка» — по `reverse_overrides` прямого профиля (в → ничего не меняется)."""
         if self.direction != REVERSE or self.profile is None:
-            return tip
+            return ""
         over = self.profile.reverse_overrides
         if connected:
             hand = [n for n in notes if over.get(n) is not None]
             if not hand:
-                return tip
-            if len(notes) == 1:
-                return f"{tip}\n{HAND_SET_TIP}"
-            return f"{tip}\n{HAND_SET_SOME_TIP.format(notes=', '.join(map(str, hand)))}"
+                return ""
+            return HAND_SET_TIP if len(notes) == 1 else HAND_SET_SOME_TIP.format(notes=", ".join(map(str, hand)))
         gone = [n for n in notes if n in over and over[n] is None]
         if not gone:
-            return tip
-        if len(notes) == 1:
-            return f"{tip}\n{HAND_REMOVED_TIP}"
-        return f"{tip}\n{HAND_REMOVED_SOME_TIP.format(notes=', '.join(map(str, gone)))}"
+            return ""
+        return HAND_REMOVED_TIP if len(notes) == 1 else HAND_REMOVED_SOME_TIP.format(notes=", ".join(map(str, gone)))
 
-    def _names_differ_tip(self, src: int, dst: int) -> str:
-        p = self.shown
-        return f"Names differ: {p.source_map.names[src]} → {p.target_map.names[dst]}"
+    def _not_write_to(self, dst: int) -> str:
+        """Кабель идёт не на Write to своей артикуляции — замечание."""
+        tgt = self.shown.target_map
+        if tgt is None or dst not in tgt.names:
+            return ""
+        wt = primary_note(tgt, tgt.names[dst])
+        return NOT_WRITE_TO_TIP.format(n=wt) if wt is not None and wt != dst else ""
 
-    def _cable_tip(self, notes: tuple[int, ...], dst: int) -> str:
-        """«ноты имя → нота имя» по ориентированному профилю (как на картинке — слева направо)."""
+    def _cable_text(self, c: Cable) -> str:
+        """Кабель: «ноты имя  →  нота имя» по ориентированному профилю (как на картинке — слева направо), замечания
+        (имена разные, не Write to, ручная правка), действие."""
         p = self.shown
-        src_name = p.source_map.names.get(notes[0], "") if p.source_map is not None else ""
+        src_name = p.source_map.names.get(c.notes[0], "") if p.source_map is not None else ""
         tgt = p.target_map
-        dst_name = tgt.names.get(dst, "") if tgt is not None else ""
-        left = f"{', '.join(map(str, notes))} {src_name}".strip()
-        right = f"{dst} {dst_name}".strip()
-        text = f"{left}  →  {right}"
-        if tgt is not None and dst in tgt.names:
-            wt = primary_note(tgt, dst_name)
-            if wt is not None and wt != dst:
-                text += f"\nNot the Write to note ({wt})"
-        return text
+        dst_name = tgt.names.get(c.dst, "") if tgt is not None else ""
+        left = f"{', '.join(map(str, c.notes))} {src_name}".strip()
+        right = f"{c.dst} {dst_name}".strip()
+        details = [NAMES_DIFFER_TIP if names_differ(p, c.notes[0], c.dst) else "", self._not_write_to(c.dst),
+                   self._hand_text(c.notes, connected=True)]
+        return tip_lines(f"{left}  →  {right}", details, REMOVE_ACTION)

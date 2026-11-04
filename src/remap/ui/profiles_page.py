@@ -394,12 +394,19 @@ class ProfilesPage(QWidget):
                 continue
             self._item(p.name, profile_summary(p), e.id)
         self.combo.setPlaceholderText("Select a profile" if entries else "No profiles yet")
-        self.combo.setToolTip("" if entries else "Create one with New")
+        self._update_combo_tip()
         if issues:
             self.set_status(f"Skipped unreadable profiles ({len(issues)}): "
                             + ", ".join(i.path.name for i in issues), "error")
         self.combo.setCurrentIndex(self._index_of(select))
         self.combo.blockSignals(False)
+
+    def _update_combo_tip(self) -> None:
+        """Подсказка комбо профиля: полное имя открытого профиля (в поле оно может не поместиться)."""
+        if self.work is not None:
+            self.combo.setToolTip(tip(self.work.name))
+        else:
+            self.combo.setToolTip(tip("Create one with New") if not self._ids else "")
 
     def _item(self, title: str, subtitle: str, profile_id: str | None) -> None:
         self.combo.addItem(title)
@@ -642,8 +649,10 @@ class ProfilesPage(QWidget):
             btn.setEnabled(has)
         self._update_suggest_bar()
         self._update_direction()
-        self.source_btn.setToolTip(tip(SOURCE_TIP))
-        self.target_btn.setToolTip(tip(TARGET_TIP))
+        self._update_combo_tip()
+        for btn, side, text in ((self.source_btn, "source", SOURCE_TIP), (self.target_btn, "target", TARGET_TIP)):
+            m = getattr(self.work, f"{side}_map") if has else None
+            btn.setToolTip(tip(text, title=m.name if m is not None else None))  # полное имя карты — первой строкой
         self.source_btn.setText(map_summary(self.work.source_map) if has else "—")
         self.target_btn.setText(map_summary(self.work.target_map) if has else "—")
 

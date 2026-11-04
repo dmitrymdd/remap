@@ -488,7 +488,36 @@ def test_bundle_same_number_first_then_ascending():
     p = profile({33: Rule.map_to(35), 34: Rule.map_to(36), 35: Rule.map_to(35), 36: Rule.map_to(36)}, src, tgt)
     lay = build_layout(p, no_collapse())
     assert lay.placement.slots["a:kick"] == (35, 36, 33, 34)
-    assert lay.target_row("a:kick").lines == ((0, 35), (1, 36))  # свой номер на строке цели — верхний
+    t = lay.target_row("a:kick")
+    assert t.expanded and t.lines == ((1, 35), (2, 36))  # свой номер — верхний; строка 0 — заголовок цели
+
+
+def test_target_with_several_numbers_is_expanded_under_a_header():
+    rules = {53: Rule.map_to(53), 40: Rule.map_to(60), 38: Rule.map_to(38)}
+    lay = build_layout(profile(rules, src=SNARES, tgt=MULTI), no_collapse())
+    t = lay.target_row("a:snare: center")
+    rows = [r for r in lay.scene.source_rows if t.y <= r.y < t.y + t.height]
+    assert t.expanded and all(off >= 1 for off, _ in t.lines)  # кабели — только на номера под заголовком
+    assert min(r.y for r in rows) == t.y + 1 and t.height == len(rows) + 1  # напротив заголовка — пусто
+    assert all(c.dst_y > t.y for c in lay.scene.cables)
+    assert all(c.dst_y == c.src_y for c in lay.scene.cables)  # «53 — 53» по-прежнему
+
+
+def test_expanded_target_header_faces_an_alias_header_without_a_shift():
+    src = NoteMap("S", {34: "Kick: Open", 36: "Kick: Open"})
+    tgt = NoteMap("T", {34: "Kick: Open", 36: "Kick: Open"})
+    p = profile({34: Rule.map_to(34), 36: Rule.map_to(36)}, src, tgt)
+    lay = build_layout(p, no_collapse(), expanded={"a:kick: open|kick: open"})
+    t = lay.target_row("a:kick: open")
+    head, *children = [r for r in lay.scene.source_rows if t.y <= r.y < t.y + t.height]
+    assert head.expanded and head.y == t.y  # заголовок алиасов слева — напротив заголовка цели
+    assert [c.y - t.y for c in children] == [1, 2] and t.lines == ((1, 34), (2, 36)) and t.height == 3
+
+
+def test_target_with_one_number_stays_one_line():
+    rules = {38: Rule.map_to(60), 40: Rule.map_to(60)}
+    t = build_layout(profile(rules, src=SNARES, tgt=MULTI), no_collapse()).target_row("a:snare: center")
+    assert not t.expanded and t.lines == ((0, 60),) and t.height == 2
 
 
 def test_bundle_order_as_in_the_mockup_and_independent_of_the_reverse_scheme():

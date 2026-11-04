@@ -9,7 +9,10 @@
   цели = max(1, число строк напротив неё): связка 10-в-1 — одна высокая строка цели и десять строк напротив.
   Строка цели показывает номера, на которые реально идут правила (TargetRow.lines): каждый номер — на уровне
   первой строки напротив, чей кабель идёт на него, и кабель приходит на свой номер (53 — 53 читается сразу).
-  Неиспользуемые ноты артикуляции — за «+N» (TargetRow.hidden).
+  Неиспользуемые ноты артикуляции — за «+N» (TargetRow.hidden). Кабели идут на несколько номеров — строка цели
+  раскрыта (TargetRow.expanded), как раскрытые алиасы слева: строка 0 блока — заголовок с именем, номера — строками под
+  ним, кабель никогда не приходит на заголовок. Если напротив строки 0 стоит строка с кабелем, строки слева сдвигаются
+  на одну вниз (напротив заголовка цели — пусто). Свернуть такую строку нельзя: кабели идут на разные номера.
 
 Координаты — в строках (y, height) каждой раскладки отдельно; в пиксели их переводит Ruler (шаг зависит от соседей:
 строка или заголовок), рисует виджет (cable_view.py).
@@ -125,6 +128,7 @@ class TargetRow:
     y: int
     height: int
     lines: tuple[tuple[int, int], ...] = ()  # (смещение строки внутри блока, номер): номера, на которые идут кабели
+    expanded: bool = False  # кабели идут на несколько номеров: строка 0 — заголовок (имя), номера — строками под ним
 
     @property
     def numbers(self) -> tuple[tuple[int, int], ...]:
@@ -468,6 +472,34 @@ def _pool_layout(ctx: _Ctx, order: Placement, collapsed: set[str], expanded: set
     return PoolLayout(heads, rows, y)
 
 
+def _target_block(ctx: _Ctx, order: Placement, r: TargetRow, y: int,
+                  expanded: set[str]) -> tuple[TargetRow, list[SourceRow], list[Cable]]:
+    """Строка цели с y, строки напротив неё и их кабели. Номер — на уровне первой строки, чей кабель идёт на него;
+    номеров несколько — строка раскрыта: строка 0 — заголовок (при нужде строки слева сдвигаются на одну)."""
+
+    def place(top: int) -> tuple[list[SourceRow], list[SourceRow], dict[int, int]]:
+        units = _unit_rows(ctx, order.slots.get(r.slot, ()), top, None, r.slot, expanded)
+        cabled = [row for row in units if (row.connected or row.suggested) and not row.expanded]
+        first: dict[int, int] = {}  # номер -> смещение (от y) первой строки, чей кабель идёт на него
+        for row in cabled:
+            dst = ctx.dst(row.shown)
+            if dst is not None:
+                first.setdefault(dst, row.y - y)
+        return units, cabled, first
+
+    units, cabled, first = place(y)
+    many = len(first) > 1
+    if many and 0 in first.values():  # строка с кабелем напротив заголовка — сдвинуть строки слева
+        units, cabled, first = place(y + 1)
+    lines = tuple(sorted((off, dst) for dst, off in first.items()))
+    height = max(1, len(units) + (units[0].y - y if units else 0))
+    placed = TargetRow(r.slot, r.label, r.notes, r.write_to, r.in_map, y, height, lines, expanded=many)
+    fallback = lines[0][0] if many else 0  # подсказке без номера (нужен выбор Write to) — первый номер, не заголовок
+    cables = [Cable(row.notes, ctx.dst(row.shown), row.y, placed, y + first.get(ctx.dst(row.shown), fallback),
+                    row.suggested) for row in cabled]
+    return placed, units, cables
+
+
 def _scene_layout(ctx: _Ctx, order: Placement, show_all: set[str], expanded: set[str]) -> SceneLayout:
     p = ctx.p
     s_rows: list[SourceRow] = []
@@ -487,19 +519,9 @@ def _scene_layout(ctx: _Ctx, order: Placement, show_all: set[str], expanded: set
                                   shown=len(occupied)))
             y += 1
         for r in visible:
-            units = _unit_rows(ctx, order.slots.get(r.slot, ()), y, None, r.slot, expanded)
-            cabled = [row for row in units if (row.connected or row.suggested) and not row.expanded]
-            first: dict[int, int] = {}  # номер -> смещение первой строки, чей кабель идёт на него
-            for row in cabled:
-                dst = ctx.dst(row.shown)
-                if dst is not None:
-                    first.setdefault(dst, row.y - y)
-            lines = tuple(sorted((off, dst) for dst, off in first.items()))
-            placed = TargetRow(r.slot, r.label, r.notes, r.write_to, r.in_map, y, max(1, len(units)), lines)
+            placed, units, block_cables = _target_block(ctx, order, r, y, expanded)
             t_rows.append(placed)
             s_rows.extend(units)
-            for row in cabled:
-                dst = ctx.dst(row.shown)
-                cables.append(Cable(row.notes, dst, row.y, placed, y + first.get(dst, 0), row.suggested))
+            cables.extend(block_cables)
             y += placed.height
     return SceneLayout(s_rows, t_heads, t_rows, cables, y)
