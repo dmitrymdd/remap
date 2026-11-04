@@ -7,6 +7,7 @@ import pytest
 from remap.storage import Storage
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("REMAP_NO_TUTORIAL", "1")  # обучение при первом заходе на Profiles закрыло бы страницу в тестах
 
 
 @pytest.fixture(scope="module")

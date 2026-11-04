@@ -846,6 +846,40 @@ class CableEditor(QWidget):
         for cable in self.cable_items + self.suggestion_items:
             cable.set_style(cable._hovered)  # кабель выбранной строки — белый
 
+    # --- места для обучения (координаты CableEditor) ---
+
+    def _scene_to_editor(self, rect: QRectF) -> QRectF:
+        """Прямоугольник сцены — в координатах CableEditor, обрезанный видимой частью сцены."""
+        vp = self.view.viewport()
+        shift = QPointF(vp.mapTo(self, QPoint(0, 0))) - self.view.mapToScene(QPoint(0, 0))
+        return rect.translated(shift).intersected(QRectF(vp.rect()).translated(QPointF(vp.mapTo(self, QPoint(0, 0)))))
+
+    def target_column_rect(self) -> QRectF:
+        """Колонка цели: по x — её строки, по y — экран сцены."""
+        _lx, rx, _col2, col3 = self._scene_columns()
+        x = self._scene_to_editor(QRectF(rx, self.view.mapToScene(QPoint(0, 0)).y(), col3, 1))
+        screen = QRectF(self.scene_screen.rect()).translated(QPointF(self.scene_screen.mapTo(self, QPoint(0, 0))))
+        return QRectF(x.left(), screen.top(), x.width(), screen.height())
+
+    def busiest_bundle(self, reveal: bool = False) -> QRectF | None:
+        """Связка кабелей в строку цели, куда их сходится больше всего (при равенстве — в верхнюю): промежуток между
+        колонками от верха верхней плашки до низа нижней. `reveal` — сначала прокрутить сцену, чтобы связка встала
+        посередине (под ней остаётся место для плашки обучения). Кабелей нет (или связка не видна) — None."""
+        groups: dict[int, list[_CableItem]] = {}
+        for cable in self.cable_items:
+            groups.setdefault(id(cable.dst), []).append(cable)
+        if not groups:
+            return None
+        bundle = max(groups.values(), key=lambda cs: (len(cs), -cs[0].dst.rect.top()))
+        plates_ = [row.plate_rect() for row in [c.src for c in bundle] + [bundle[0].dst]]
+        lx, rx, col2, _col3 = self._scene_columns()
+        top, bottom = min(r.top() for r in plates_), max(r.bottom() for r in plates_)
+        rect = QRectF(lx + col2, top, rx - lx - col2, bottom - top)
+        if reveal:
+            self.view.centerOn(rect.center())
+        rect = self._scene_to_editor(rect)
+        return None if rect.isEmpty() else rect
+
     def source_anchor(self, note: int) -> QPointF | None:
         """Точка строки ноты (правый край) в координатах CableEditor — начало кабеля-превью.
         None — строки не видно (свёрнута) или вид не построен."""

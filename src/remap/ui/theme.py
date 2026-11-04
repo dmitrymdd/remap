@@ -215,6 +215,32 @@ MATCH_FONT, MATCH_SPACING, MATCH_H, MATCH_PAD = 9, 0.04, 24, 8
 MATCH_BG: RGBA = (110, 190, 140, 0.06)
 MATCH_RADIUS = 4
 
+# --- Обучение (Profiles.dc.html): затемнение с вырезами, кольцо вокруг выреза, плашка шага ---
+HELP_GAP = 16  # от лица «?» до лица первой вкладки
+TUT_DIM: RGBA = (3, 4, 5, 0.7)  # #030405, fill-opacity .7; вырез — скруглённый прямоугольник без затемнения
+TUT_RING_OUT, TUT_RING_WIDTH = 2, 1.5  # кольцо на 2 px шире выреза (радиус + 2), рамка 1.5 px акцентом внутрь
+TUT_RING_SPREAD: RGBA = (98, 214, 154, 0.18)  # 0 0 0 4px — полоса 4 px вокруг кольца
+TUT_RING_SPREAD_W = 4
+TUT_RING_GLOW = {"dy": 0, "blur": 18, "alpha": 0.35, "rgb": (98, 214, 154)}  # 0 0 18px rgba(98,214,154,.35)
+TUT_PLATE_W, TUT_PLATE_RADIUS = 320, 12  # ширина с рамкой (box-sizing: border-box)
+TUT_PLATE_PAD_X, TUT_PLATE_PAD_TOP, TUT_PLATE_PAD_BOTTOM = 18, 16, 18  # padding 16px 18px 18px
+TUT_PLATE_GAP, TUT_PLATE_ROW_TOP, TUT_PLATE_KEY_GAP = 10, 4, 8  # между строками; над клавишами; между клавишами
+TUT_PLATE_STOPS = ((0.0, "#24272B"), (0.55, "#1B1D20"), (1.0, "#17191B"))
+TUT_PLATE_INSET_LIGHT: RGBA = (255, 255, 255, 0.14)  # inset 0 1px 0
+TUT_PLATE_INSET_DARK: RGBA = (0, 0, 0, 0.6)  # inset 0 -1px 0
+TUT_PLATE_SHADOW = {"dy": 18, "blur": 44, "alpha": 0.75}  # 0 18px 44px rgba(0,0,0,.75)
+TUT_PLATE_MARGIN = 8  # плашка не ближе к краю окна; в макете не задано
+TUT_PLATE_FLIP_GAP = 24  # плашка не помещается под вырезом — над ним с тем же зазором (под вырезом в макете 24)
+TUT_COUNTER_FONT, TUT_COUNTER_SPACING = 13, 0.18  # «STEP 4 / 8», цвет SILK_TEXT
+TUT_TITLE_FONT, TUT_TITLE_SPACING, TUT_TITLE = 22, 0.08, "#EDF0F2"
+TUT_TEXT_FONT, TUT_TEXT_LINE, TUT_TEXT = 16, 1.35, KEY_LABEL  # Barlow 500, line-height 1.35
+TUT_SKIP_FONT, TUT_SKIP_SPACING, TUT_SKIP = 13, 0.14, "#8C949B"
+TUT_SKIP_UNDERLINE = 3  # text-underline-offset: 3px от базовой линии, толщина 1 px
+TUT_DOT, TUT_DOT_GAP = 6, 5  # квадратные точки шагов
+TUT_DOT_PAST, TUT_DOT_FUTURE = "#6B7379", "#0B0C0D"  # текущая — ACCENT
+TUT_DOT_FUTURE_SHADOW = {"dy": 1, "blur": 1, "alpha": 0.8}  # inset 0 1px 1px rgba(0,0,0,.8)
+TUT_DOT_GLOW = {"dy": 0, "blur": 4, "alpha": 1.0, "rgb": (98, 214, 154)}  # текущая: 0 0 4px ACCENT
+
 # --- Винты корпуса: квадрат 14 px, левый верхний угол в 11 px от углов окна ---
 SCREW_SIZE, SCREW_INSET = 14, 11
 

@@ -20,8 +20,8 @@ BASE_PX = 100  # размер шрифта, на котором считаютс
 
 @dataclass(frozen=True)
 class TextSpec:
-    """Вид текста: семейство (`"mono"` / `"label"`), размер в px (дробный допустим), насыщенность, межбуквенный
-    интервал в em, ширина `wdth` (только Martian Mono; `theme.WDTH_TEXT` у span/div макета, `theme.WDTH_BUTTON` у текста
+    """Вид текста: семейство (`"mono"`; `"label"` — Barlow заглавными; `"prose"` — Barlow как написано), размер в px
+    (дробный допустим), насыщенность, межбуквенный интервал в em, ширина `wdth` (только Martian Mono; `theme.WDTH_TEXT` у span/div макета, `theme.WDTH_BUTTON` у текста
     внутри `<button>` и `<input>`)."""
 
     kind: str
@@ -43,13 +43,20 @@ def label(px: float, weight: QFont.Weight = QFont.Weight.DemiBold, spacing: floa
     return TextSpec("label", px, weight, spacing)
 
 
+def prose(px: float, weight: QFont.Weight = QFont.Weight.Medium, spacing: float = 0.0) -> TextSpec:
+    """Barlow Condensed без перевода в заглавные (текст шага обучения); `spacing` — в em."""
+    return TextSpec("prose", px, weight, spacing)
+
+
 @cache
 def _base_font(kind: str, family: str, generation: int, weight: QFont.Weight, spacing: float, wdth: float,
                italic: bool, strike: bool) -> QFont:
     """Шрифт размером BASE_PX; `family` и `generation` — часть ключа кэша: имена семейств выставляет
     `theme.load_fonts()`, и до неё под тем же именем — запасной шрифт (`theme.FONT_GENERATION`)."""
-    if kind == "label":
+    if kind in ("label", "prose"):
         font = theme.label_font(BASE_PX, weight, spacing)
+        if kind == "prose":
+            font.setCapitalization(QFont.Capitalization.MixedCase)
     else:
         font = theme.mono_font(BASE_PX, weight, wdth)
         font.setLetterSpacing(QFont.SpacingType.AbsoluteSpacing, BASE_PX * spacing)
@@ -60,7 +67,7 @@ def _base_font(kind: str, family: str, generation: int, weight: QFont.Weight, sp
 
 def _key(spec: TextSpec) -> tuple:
     """Ключ кэшей: семейство и поколение шрифтов берутся из темы (их меняет `load_fonts()`), поэтому они — часть ключа."""
-    family = theme.LABEL_FAMILY if spec.kind == "label" else theme.MONO_FAMILY
+    family = theme.MONO_FAMILY if spec.kind == "mono" else theme.LABEL_FAMILY
     return spec.kind, family, theme.FONT_GENERATION, spec.weight, spec.spacing, spec.wdth, spec.italic, spec.strike
 
 
@@ -116,6 +123,17 @@ def elide(text: str, spec: TextSpec, width: float, mode: Qt.TextElideMode = Qt.T
     if spec.kind == "label":
         text = text.upper()
     return _elided(text, _key(spec), mode, round(width / _scale(spec), 2))
+
+
+def wrap(text: str, spec: TextSpec, width: float) -> list[str]:
+    """Строки абзаца шириной не больше `width` (перенос по пробелам, как у браузера; слово длиннее строки — целиком)."""
+    lines: list[str] = []
+    for word in text.split():
+        if lines and text_width(f"{lines[-1]} {word}", spec) <= width:
+            lines[-1] = f"{lines[-1]} {word}"
+        else:
+            lines.append(word)
+    return lines
 
 
 def _place(rect: QRectF, text: str, spec: TextSpec, align: Qt.AlignmentFlag,

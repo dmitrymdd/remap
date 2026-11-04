@@ -7,11 +7,12 @@ ui/maps_page.py).
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QMimeData, QPoint, Qt, QUrl
+from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QDrag, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QApplication, QButtonGroup, QDialog, QDialogButtonBox, QFileDialog, QFrame, QHBoxLayout, QLabel, QMainWindow, QMessageBox,
@@ -27,17 +28,21 @@ from .settings import ui_settings
 from . import theme
 from .combo import ComboBox
 from .field import FaceSlot
-from .keys import TAB, Key, key_margins, key_row_spacing
+from .keys import HELP, TAB, Key, key_margins, key_row_spacing
 from .metal import MetalBody
 from .shell import BrandBlock
 from .theme import install_app_font, load_fonts, stylesheet
 from .theme import repolish as _repolish
+from .tips import tip
+from .tutorial import TutorialOverlay, profiles_resolver
 
 MIDI_EXTS = {".mid", ".midi"}
 
 PAGE_CONVERT, PAGE_PROFILES, PAGE_MAPS = 0, 1, 2
 
 DIRECTION_KEY = "convert/direction"  # ui.ini: направление конвертации, общее для всех профилей
+TUTORIAL_KEY = "tutorial/profiles"  # ui.ini: обучение Profiles уже показано (при первом заходе на вкладку)
+NO_TUTORIAL_ENV = "REMAP_NO_TUTORIAL"  # не показывать обучение само (тесты)
 
 
 def is_midi(path: str | Path | None) -> bool:
@@ -426,6 +431,7 @@ class MainWindow(QMainWindow):
         saved = self.settings.value(DIRECTION_KEY)
         self.direction = saved if saved in (FORWARD, REVERSE) else FORWARD
         self._seed_error = ""
+        self._tutorial_scroll = 0  # прокрутка сцены Profiles до обучения
         try:  # первый запуск: схема первой версии — обычный профиль (удалённый не вернётся)
             self.storage.seed_profiles([legacy_profile()])
         except OSError as e:
@@ -477,6 +483,12 @@ class MainWindow(QMainWindow):
         head.setSpacing(key_row_spacing(theme.KEY_TAB_GAP))
         head.addWidget(BrandBlock())
         head.addStretch(1)
+        self.help_btn = Key("?", spec=HELP)
+        self.help_btn.setToolTip(tip("Show the tutorial"))
+        self.help_btn.clicked.connect(self.start_tutorial)
+        self.help_btn.setEnabled(False)  # открыта Convert
+        head.addWidget(FaceSlot(self.help_btn, theme.HEADER_H - theme.RECESS_EDGE_TOP))
+        head.addSpacing(theme.HELP_GAP - key_margins(HELP).right() - key_margins(TAB).left() - head.spacing())
         self.nav_group = QButtonGroup(self)  # клавиши лежат в разных контейнерах: взаимное исключение — через группу
         for i, b in enumerate((self.nav_convert, self.nav_profiles, self.nav_maps)):
             self.nav_group.addButton(b, i)
@@ -499,6 +511,8 @@ class MainWindow(QMainWindow):
         self.pages.addWidget(self.maps_page)
         self._build_convert_page(convert_page)
         self.setCentralWidget(central)
+        self.tutorial = TutorialOverlay(central, profiles_resolver(self))
+        self.tutorial.finished.connect(self._tutorial_finished)
 
     def _build_convert_page(self, page: QWidget) -> None:
         root = QVBoxLayout(page)
@@ -611,6 +625,24 @@ class MainWindow(QMainWindow):
         (self.nav_convert, self.nav_profiles, self.nav_maps)[page].setChecked(True)
         for sc in self._convert_shortcuts:
             sc.setEnabled(page == PAGE_CONVERT)
+        self.help_btn.setEnabled(page == PAGE_PROFILES)  # обучение пока есть только у Profiles
+        if (page == PAGE_PROFILES and self.isVisible() and not os.environ.get(NO_TUTORIAL_ENV)
+                and not self.settings.value(TUTORIAL_KEY, False, type=bool)):
+            QTimer.singleShot(0, self.start_tutorial)  # первый заход на вкладку: после раскладки страницы
+
+    # --- обучение ---
+
+    def start_tutorial(self) -> None:
+        if self.pages.currentIndex() != PAGE_PROFILES or self.tutorial.isVisible():
+            return
+        self._tutorial_scroll = self.profiles_page.cables.view.verticalScrollBar().value()
+        self.tutorial.start()
+
+    def _tutorial_finished(self) -> None:
+        """Обучение закрыто: прокрутка сцены — как до него (шаг REMOVE CABLES мог её сдвинуть), больше само не
+        показывается."""
+        self.profiles_page.cables.view.verticalScrollBar().setValue(self._tutorial_scroll)
+        self.settings.setValue(TUTORIAL_KEY, True)
 
     def closeEvent(self, event) -> None:
         for page_index, page in ((PAGE_PROFILES, self.profiles_page), (PAGE_MAPS, self.maps_page)):
