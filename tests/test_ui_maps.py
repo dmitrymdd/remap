@@ -14,7 +14,6 @@ from remap.core.pitch import pitch_name
 from remap.core.notenames import parse_notenames
 from remap.templates import load_map_template
 from remap.ui.main_window import PAGE_MAPS, MainWindow
-from remap.ui.maps_list import REF_ROLE
 from remap.ui.maps_table import OTHERS_ROLE
 from remap.ui.maps_text import COL_NAME, COL_NOTE, TEMPLATE, USER, MapRef
 
@@ -32,14 +31,14 @@ def window(app, storage):
     page.confirm = lambda *a: page.answers["confirm"]
     page.ask_save_changes = lambda: page.answers["save_changes"]
     page.show_error = lambda text: page.answers.setdefault("errors", []).append(text)
+    page.show_issues = lambda *a: page.answers.setdefault("issues", []).append(a)
     yield w
     w.close()
     w.deleteLater()
 
 
 def refs(page):
-    return [page.list.item(i).data(REF_ROLE) for i in range(page.list.count())
-            if page.list.item(i).data(REF_ROLE) is not None]
+    return page.list.refs()
 
 
 
@@ -56,7 +55,7 @@ def test_manager_lists_templates_and_opens_read_only(window):
     assert not page.strip.rename_action.isEnabled() and not page.strip.delete_action.isEnabled()
     assert page.strip.duplicate_action.isEnabled()
     assert not hasattr(page, "status_chip")  # статус карты в UI не показывается
-    assert "verified" not in page.list.currentItem().toolTip().casefold()
+    assert "verified" not in page.list.entry(page.current).tip.casefold()
     # у шаблона сохранять нечего: Save недоступна; поле — TEMPLATE с замком, полное имя — в подсказке
     assert not page.strip.save_btn.isEnabled() and not page.strip.revert_action.isEnabled()
     field = page.strip.field
@@ -196,7 +195,7 @@ def test_unsaved_prompt_on_switch(window, storage):
     page.answers["save_changes"] = "cancel"
     page.select(MapRef(USER, "B"))
     assert page.current == MapRef(USER, "A") and page.dirty
-    assert page.list.currentItem().data(REF_ROLE) == MapRef(USER, "A")
+    assert page.list.current == MapRef(USER, "A")
 
     page.answers["save_changes"] = "save"
     page.select(MapRef(USER, "B"))
@@ -261,9 +260,8 @@ def test_legacy_txt_map_marked_and_saved_as_json(window, storage):
     shutil.copy(FIXTURE, storage.maps_dir / "Old.txt")
     page = window.maps_page
     page.reload_list()
-    item = next(page.list.item(i) for i in range(page.list.count())
-                if page.list.item(i).data(REF_ROLE) == MapRef(USER, "Old"))
-    assert "legacy" in item.data(Qt.ItemDataRole.UserRole + 1)
+    entry = page.list.entry(MapRef(USER, "Old"))
+    assert entry.sub.startswith("legacy .txt") and "Legacy REAPER .txt map" in entry.tip
     page.select(MapRef(USER, "Old"))
     assert page.legacy and "Legacy REAPER .txt map" in page.strip.field.toolTip()
     n = next(iter(page.work.names))
@@ -273,21 +271,21 @@ def test_legacy_txt_map_marked_and_saved_as_json(window, storage):
     assert not page.legacy
 
 
-def test_import_shows_issues_and_can_be_cancelled(window, storage, tmp_path):
+def test_import_shows_issues_after_import(window, storage, tmp_path):
     src = tmp_path / "broken.txt"
     src.write_text("# MIDI note/CC name map\n36 Kick\n300 Bad\nwhat is this\n", encoding="utf-8")
     page = window.maps_page
     page.choose_open_file = lambda: str(src)
-    page.answers["confirm"] = False
-    page.import_txt()
-    assert storage.list_maps()[0] == []
+    page.import_txt()  # имя не дали — отмена: ни карты, ни окна проблем
+    assert storage.list_maps()[0] == [] and "issues" not in page.answers
 
-    page.answers["confirm"] = True
     page.answers["text"] = ["Imported"]
     page.import_txt()
     m, _ = storage.load_map("Imported")
     assert m.names == {36: "Kick"} and m.meta.status == "unverified"
     assert page.current == MapRef(USER, "Imported")
+    [(_title, text, details)] = page.answers["issues"]  # проблемы — сразу после импорта
+    assert "2 issue(s)" in text and "line 3" in details
 
 
 def test_export_full_map(window, storage, tmp_path):
@@ -401,3 +399,32 @@ def test_note_table_sort_cycle_every_column(window, app):
     assert len(rows) == 128 and all(n not in names for n in rows[len(names):])
 
 
+
+
+def test_map_list_screen_layout_and_keyboard(window, storage, app):
+    """Заголовок 30, зазоры 6 (+2 под заголовком, +10 перед второй секцией), записи 46; ↑/↓/Home/End выбирают карты."""
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+
+    from remap.ui.maps_list import layout_items
+    storage.save_map(NoteMap("A", {36: "Kick"}))
+    storage.save_map(NoteMap("B", {38: "Snare"}))
+    page = window.maps_page
+    page.reload_list()
+    items, height = layout_items(page.list.sections, 218)
+    tops = [(it.rect.top(), it.rect.height()) for it in items]
+    n = len(page.list.sections[0].entries)
+    assert tops[:3] == [(0, 30), (38, 46), (90, 46)]
+    assert tops[n + 1] == (30 + 8 + n * 52 - 6 + 16, 30)
+    assert height == tops[-1][0] + 46
+    body = page.list.area.widget()
+    page.select(MapRef(USER, "A"))
+    for key, want in ((Qt.Key.Key_Down, MapRef(USER, "B")), (Qt.Key.Key_Home, page.list.refs()[0]),
+                      (Qt.Key.Key_End, MapRef(USER, "B")), (Qt.Key.Key_Up, MapRef(USER, "A"))):
+        app.sendEvent(body, QKeyEvent(QEvent.Type.KeyPress, key, Qt.KeyboardModifier.NoModifier))
+        assert page.current == want and page.list.current == want
+
+
+def test_empty_my_maps_shows_message_entry(window):
+    mine = window.maps_page.list.sections[1]
+    assert [(e.name, e.ref) for e in mine.entries] == [("No maps yet", None)]

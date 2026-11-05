@@ -20,7 +20,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidgetItem, QMessageBox, QSizePolicy, QVBoxLayout,
+    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QSizePolicy, QVBoxLayout,
     QWidget,
 )
 
@@ -29,7 +29,7 @@ from ..core.notenames import ParseIssue, load_notenames, save_notenames
 from ..storage import Storage, id_taken, sanitize_id
 from ..templates import list_map_templates, load_map_template
 from . import theme
-from .maps_list import REF_ROLE, MapList
+from .maps_list import MapEntry, MapListScreen, MapSection
 from .maps_strip import MapsStrip
 from .maps_table import NoteFilter, NotesPanel, NoteTableModel
 from .maps_text import (
@@ -88,9 +88,8 @@ class MapsPage(QWidget):
         self._shortcuts = [QShortcut(QKeySequence(k), self, activated=self._save_if_dirty,
                                      context=Qt.ShortcutContext.WindowShortcut) for k in SAVE_KEYS]
 
-        self.list = MapList()
-        self.list.setFixedWidth(theme.POOL_W)
-        self.list.currentItemChanged.connect(self._on_current_changed)
+        self.list = MapListScreen()
+        self.list.chosen.connect(self._on_chosen)
 
         self.model = NoteTableModel()
         self.model.edited.connect(self._update_state)
@@ -153,62 +152,60 @@ class MapsPage(QWidget):
                                               "REAPER note names (*.txt)")
         return path or None
 
+    def show_issues(self, title: str, text: str, details: str) -> None:
+        box = QMessageBox(QMessageBox.Icon.Warning, title, text, QMessageBox.StandardButton.Ok, self)
+        box.setInformativeText(details)
+        box.exec()
+
     def show_error(self, text: str) -> None:
         QMessageBox.warning(self, "REMAP", text)
 
     # --- список ---
 
     def reload_list(self, select: MapRef | None = None) -> None:
-        """Перестроить список; выделение — select или текущая карта (сигналы при этом не идут)."""
+        """Перестроить список; выделение — select или текущая карта (карта при этом не открывается)."""
         select = select or self.current
-        self.list.blockSignals(True)
-        self.list.clear()
         self._templates = {}
-        self.list.add_header("BUILT-IN TEMPLATES")
+        templates = []
         for tid, m in list_map_templates():
             self._templates[tid] = m
-            self.list.add_entry(f"🔒  {m.name}", subtitle(m), MapRef(TEMPLATE, tid), map_tooltip(m, TEMPLATE_TIP))
-        self.list.add_header("MY MAPS")
+            templates.append(MapEntry(m.name, subtitle(m), MapRef(TEMPLATE, tid),
+                                      tip(map_tooltip(m, TEMPLATE_TIP), title=m.name)))
         try:
             entries, issues = self.storage.list_maps()
         except OSError as e:
             entries, issues = [], []
             self.set_status(f"Cannot read the maps folder: {e}", "error")
         self._user_ids = [e.id for e in entries]
+        mine = []
         for e in entries:
             try:
                 m, _ = self.storage.load_map(e.id)
             except (OSError, ValueError) as err:
-                self.list.add_entry(e.name, f"cannot read: {err}", None, str(e.path))
+                mine.append(MapEntry(e.name, f"cannot read: {err}", None, tip(str(e.path), title=e.name)))
                 continue
             extra = legacy_tip(e.path.name) if e.legacy else ""
-            self.list.add_entry(e.name, subtitle(m, e.legacy), MapRef(USER, e.id), map_tooltip(m, extra))
+            mine.append(MapEntry(e.name, subtitle(m, e.legacy), MapRef(USER, e.id),
+                                 tip(map_tooltip(m, extra), title=e.name)))
         if not entries:
-            self.list.add_entry("No maps yet", "Create, import or duplicate one", None)
+            mine.append(MapEntry("No maps yet", "Create, import or duplicate one", None))
         if issues:
             self.set_status(f"Skipped unreadable maps ({len(issues)}): "
                             + ", ".join(i.path.name for i in issues), "error")
-        row = self.list.row_of(select) if select is not None else -1
-        if row >= 0:
-            self.list.setCurrentRow(row)
-        self.list.blockSignals(False)
+        self.list.set_sections([MapSection("BUILT-IN TEMPLATES", tuple(templates), lock=True),
+                                MapSection("MY MAPS", tuple(mine))])
+        self.list.set_current(select if select in self.list.refs() else None)
 
-    def _on_current_changed(self, cur: QListWidgetItem | None, prev: QListWidgetItem | None) -> None:
-        ref = cur.data(REF_ROLE) if cur is not None else None
-        if ref is None or ref == self.current:
-            return
-        if not self.maybe_leave():
-            self.list.blockSignals(True)
-            self.list.setCurrentItem(prev)
-            self.list.blockSignals(False)
+    def _on_chosen(self, ref: MapRef) -> None:
+        """Пользователь выбрал другую карту в списке: несохранённые правки — спросить; отказ — остаётся прежняя."""
+        if ref == self.current or not self.maybe_leave():
             return
         self.open(ref)
 
     def select(self, ref: MapRef) -> None:
         """Выделить и открыть карту (с вопросом о несохранённых правках)."""
-        row = self.list.row_of(ref)
-        if row >= 0:
-            self.list.setCurrentRow(row)
+        if ref in self.list.refs():
+            self._on_chosen(ref)
 
     # --- редактор ---
 
@@ -226,6 +223,7 @@ class MapsPage(QWidget):
             self.show_error(f"Cannot open the map:\n\n{e}")
             return False
         self.current, self.base, self.load_issues = ref, m, issues
+        self.list.set_current(ref)
         self._asked_duplicate = False
         self.legacy = not ref.read_only and not (self.storage.maps_dir / f"{ref.id}.json").is_file()
         self.work = copy.deepcopy(m)
@@ -237,6 +235,7 @@ class MapsPage(QWidget):
 
     def close_map(self) -> None:
         self.current = self.base = self.work = None
+        self.list.set_current(None)
         self.load_issues = []
         self.legacy = False
         self.model.set_map(None, True)
@@ -404,11 +403,6 @@ class MapsPage(QWidget):
         except (OSError, ValueError) as e:
             self.show_error(f"Cannot read the file:\n\n{e}")
             return
-        if issues and not self.confirm(
-                "Import REAPER note names",
-                f"{Path(path).name}: {len(m.names)} notes read, {len(issues)} issue(s). Import anyway?",
-                format_parse_issues(issues)):
-            return
         name = self.ask_unique_name("Import map", m.name)
         if name is None:
             return
@@ -416,6 +410,10 @@ class MapsPage(QWidget):
         m.meta.notes = f"Imported from {Path(path).name}"
         if self._add_and_open(m):
             self.set_status(f'Imported "{name}": {len(m.names)} notes.', "ok")
+            if issues:  # карта уже импортирована: проблемы чтения — сразу показать, что пропущено
+                self.show_issues("Import REAPER note names",
+                                 f"{Path(path).name}: {len(m.names)} notes imported, {len(issues)} issue(s).",
+                                 format_parse_issues(issues))
 
     def duplicate(self) -> None:
         if self.base is None or not self.maybe_leave():

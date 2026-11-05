@@ -83,14 +83,15 @@ def group_rows(names: dict[int, str], notes: list[int], unnamed_label: str = "No
 
 
 def subtitle(m: NoteMap, legacy: bool = False) -> str:
-    """Вторая строка записи в списке карт: старая карта .txt и источник."""
+    """Вторая строка записи в списке карт: старая карта .txt и источник (нет источника — заметки)."""
     parts = ["legacy .txt"] if legacy else []
-    parts.append(m.meta.source or "source not recorded")
+    parts.append(m.meta.source or m.meta.notes or "source not recorded")
     return " · ".join(parts)
 
 
 def map_tooltip(m: NoteMap, extra: str = "") -> str:
-    lines = [m.name, f"Source: {m.meta.source or 'not recorded'}"]
+    """Тело подсказки записи (заголовок — имя карты): источник и заметки целиком, затем `extra`."""
+    lines = [f"Source: {m.meta.source or 'not recorded'}"]
     if m.meta.notes:
         lines.append(f"Notes: {m.meta.notes}")
     if extra:

@@ -426,7 +426,7 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QLabel#status[state="ok"] {{ color: {OK_TEXT}; }}
     QLabel#status[state="error"] {{ color: {ERR_TEXT}; }}
 
-    QListWidget, QTableView, QTreeWidget {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
+    QTableView {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
                                outline: none; font-family: {mono}; font-size: 12px; }}
     QTableView {{ gridline-color: {t['border']}; selection-background-color: {t['selection']};
                   selection-color: {t['text']}; }}
