@@ -311,7 +311,7 @@ def test_chevron_changes_with_state():
 def test_note_row_number_column_line_and_editing():
     img, p = canvas(w=522, h=70)
     plates.paint_note_row(p, QRectF(0, 0, 522, 28), "37", "Snare: Sidestick", badge="+1")
-    plates.paint_note_row(p, QRectF(0, 34, 522, 28), "39", "Snare: Ruff", editing=True)
+    plates.paint_note_row(p, QRectF(0, 34, 522, 28), "39", "Snare: Ruff", state="editing")
     p.end()
     assert px(img, 300, 27.5)[1] > px(img, 300, 20)[1]  # линия под строкой rgba(110,190,140,.08)
     n = ink(img, (4, 2, 64, 26), theme.PLATE_NUM)

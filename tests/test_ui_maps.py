@@ -31,7 +31,7 @@ def window(app, storage):
     page.confirm = lambda *a: page.answers["confirm"]
     page.ask_save_changes = lambda: page.answers["save_changes"]
     page.show_error = lambda text: page.answers.setdefault("errors", []).append(text)
-    page.show_issues = lambda *a: page.answers.setdefault("issues", []).append(a)
+    page.ask_keep_import = lambda *a: page.answers.setdefault("issues", []).append(a) or page.answers.get("keep", True)
     yield w
     w.close()
     w.deleteLater()
@@ -136,12 +136,10 @@ def test_same_name_badge(window, storage, app):
     m = page.model
     assert m.data(m.note_index(36, COL_NAME), OTHERS_ROLE) == 1
     assert m.data(m.note_index(38, COL_NAME), OTHERS_ROLE) == 0
-    assert "On notes 35, 36" in m.data(m.note_index(35, COL_NAME), Qt.ItemDataRole.ToolTipRole)
+    assert m.badge_tip(35) == "Also on note 36"
     # дубли без Write to больше не подсвечиваются и не попадают в замечания
     assert m.data(m.note_index(36, COL_NAME), Qt.ItemDataRole.BackgroundRole) is None
-    assert "Write to" not in page.notes.issues_label.text()
-    from remap.ui.maps_table import NameDelegate
-    assert isinstance(page.notes.table.itemDelegateForColumn(COL_NAME), NameDelegate)
+    assert page.notes.totals.left == "3 NAMED NOTES" and not page.notes.totals.error
     window.resize(1000, 700)
     window.show()
     app.processEvents()
@@ -314,10 +312,9 @@ def test_columns_without_write_to(window, storage):
     assert COLUMNS == ("NOTE", "NAME") and page.model.columnCount() == 2  # высоты (C#1) нет — только в подсказке
     m = page.model
     assert m.data(m.note_index(37, COL_NOTE), Qt.ItemDataRole.ToolTipRole) == "Note 37 · C#1"
-    alias = m.data(m.note_index(37, COL_NAME), Qt.ItemDataRole.ToolTipRole)  # «Snare: Sidestick» — на 3 нотах
-    assert alias == "Snare: Sidestick\nNote 37 · C#1\nOn notes 37, 67, 127"
+    assert m.badge_tip(37) == "Also on notes 67, 127"  # «Snare: Sidestick» — на 3 нотах
     single = next(n for n in m.map.names if len(m.group(n)) == 1)
-    assert m.data(m.note_index(single, COL_NAME), Qt.ItemDataRole.ToolTipRole) == f"Note {single} · {pitch_name(single)}"
+    assert m.data(m.note_index(single, COL_NOTE), Qt.ItemDataRole.ToolTipRole) == f"Note {single} · {pitch_name(single)}"
     assert not any("C#1" in str(m.data(m.note_index(37, c))) for c in (COL_NOTE, COL_NAME))
     assert "+N" in page.model.headerData(COL_NAME, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
 
@@ -362,8 +359,8 @@ def test_note_table_sort_cycle_every_column(window, app):
     """Клик по заголовку: по возрастанию → по убыванию → снова группы; стрелка показывает состояние."""
     page = window.maps_page
     page.select(MapRef(TEMPLATE, "Superior Drummer 3"))
-    m, header = page.model, page.notes.table.horizontalHeader()
-    assert m.grouped and m.sort is None and not header.isSortIndicatorShown()
+    m, header = page.model, page.notes.header
+    assert m.grouped and m.sort is None and header.sort is None
     page.notes.table.setCurrentIndex(page.proxy.mapFromSource(m.note_index(38, COL_NAME)))
 
     def current():
@@ -371,30 +368,29 @@ def test_note_table_sort_cycle_every_column(window, app):
 
     names = page.work.names
     for col in (COL_NOTE,):  # колонки PITCH нет
-        header.sectionClicked.emit(col)
+        header.clicked.emit(col)
         notes = page.proxy.note_rows()
         assert m.sort == (col, False) and not m.grouped and notes == sorted(names)
-        assert header.isSortIndicatorShown() and header.sortIndicatorSection() == col
-        assert header.sortIndicatorOrder() == Qt.SortOrder.AscendingOrder
-        header.sectionClicked.emit(col)
+        assert header.sort == (col, False)
+        header.clicked.emit(col)
         assert m.sort == (col, True) and page.proxy.note_rows() == sorted(names, reverse=True)
-        assert header.sortIndicatorOrder() == Qt.SortOrder.DescendingOrder and current() == 38  # выбор сохранён
-        header.sectionClicked.emit(col)
-        assert m.sort is None and m.grouped and not header.isSortIndicatorShown()  # третий клик — группы
-    header.sectionClicked.emit(COL_NAME)
+        assert header.sort == (col, True) and current() == 38  # выбор сохранён
+        header.clicked.emit(col)
+        assert m.sort is None and m.grouped and header.sort is None  # третий клик — группы
+    header.clicked.emit(COL_NAME)
     by_name = sorted(names, key=lambda n: (names[n].casefold(), n))
     assert m.sort == (COL_NAME, False) and page.proxy.note_rows() == by_name
-    header.sectionClicked.emit(COL_NAME)
+    header.clicked.emit(COL_NAME)
     assert page.proxy.note_rows() == by_name[::-1]
-    header.sectionClicked.emit(COL_NOTE)  # другая колонка — сразу по возрастанию
+    header.clicked.emit(COL_NOTE)  # другая колонка — сразу по возрастанию
     assert m.sort == (COL_NOTE, False)
-    header.sectionClicked.emit(COL_NOTE)
-    header.sectionClicked.emit(COL_NOTE)
+    header.clicked.emit(COL_NOTE)
+    header.clicked.emit(COL_NOTE)
     assert m.grouped and current() == 38
     # ноты без имени — в конце при любом направлении
     page.notes.named_only.setChecked(False)
-    header.sectionClicked.emit(COL_NAME)
-    header.sectionClicked.emit(COL_NAME)
+    header.clicked.emit(COL_NAME)
+    header.clicked.emit(COL_NAME)
     rows = page.proxy.note_rows()
     assert len(rows) == 128 and all(n not in names for n in rows[len(names):])
 
@@ -428,3 +424,132 @@ def test_map_list_screen_layout_and_keyboard(window, storage, app):
 def test_empty_my_maps_shows_message_entry(window):
     mine = window.maps_page.list.sections[1]
     assert [(e.name, e.ref) for e in mine.entries] == [("No maps yet", None)]
+
+
+# --- экран нот ---
+
+def test_named_only_remembered_in_ui_ini(window, storage, app):
+    page = window.maps_page
+    assert page.notes.named_only.isChecked()  # по умолчанию включён
+    page.select(MapRef(TEMPLATE, "EZdrummer 3"))  # без карты флажок недоступен
+    page.notes.named_only.click()
+    assert not page.notes.named_only.isChecked() and not page.proxy.named_only
+    w2 = MainWindow(storage)
+    assert not w2.maps_page.notes.named_only.isChecked() and not w2.maps_page.proxy.named_only
+    w2.close()
+    # новая пустая карта снимает флажок сама — это не выбор пользователя, в ui.ini не пишется
+    page.notes.named_only.click()
+    page.answers["text"] = ["Fresh"]
+    page.new_map()
+    assert not page.notes.named_only.isChecked()
+    w3 = MainWindow(storage)
+    assert w3.maps_page.notes.named_only.isChecked()
+    w3.close()
+
+
+def test_group_collapses_and_unnamed_group_last(window):
+    page = window.maps_page
+    page.select(MapRef(TEMPLATE, "Superior Drummer 3"))
+    page.notes.named_only.setChecked(False)
+    view = page.notes.table
+    heads = [page.proxy.source_row(r) for r in range(page.proxy.rowCount())]
+    labels = [h.label for h in heads if h.is_header]
+    assert labels[-1] == "Unnamed" and labels[0] == "Kick"
+    unnamed = [h.note for h in heads if not h.is_header and h.group == heads[-1].group]
+    assert unnamed and all(n not in page.work.names for n in unnamed)
+    assert view.rowHeight(0) == 30 and view.rowHeight(1) == 28 and view.columnSpan(0, 0) == 2
+    kick = sorted(n for n, name in page.work.names.items() if name.startswith("Kick"))
+    view.group_clicked.emit(heads[0].group)  # свернуть Kick: заголовок остаётся, ноты скрыты
+    assert heads[0].group in page.proxy.collapsed
+    assert page.proxy.source_row(0).is_header and not set(kick) & set(page.proxy.note_rows())
+    view.group_clicked.emit(heads[0].group)
+    assert set(kick) <= set(page.proxy.note_rows())
+
+
+def test_in_row_name_edit_enter_saves_esc_cancels(window, storage, app):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    from PySide6.QtWidgets import QLineEdit
+    storage.save_map(NoteMap("Kit", {36: "Kick", 38: "Snare"}))
+    page = window.maps_page
+    page.reload_list()
+    page.select(MapRef(USER, "Kit"))
+    window.resize(900, 800)
+    window.show()
+    app.processEvents()
+    view, totals = page.notes.table, page.notes.totals
+    assert totals.left == "2 NAMED NOTES" and totals.right == ""
+
+    def start(note):
+        idx = page.proxy.mapFromSource(page.model.note_index(note, COL_NOTE))  # щелчок по номеру — правка имени
+        view.setCurrentIndex(idx)
+        view.edit(idx)
+        app.processEvents()
+        editor = view.findChild(QLineEdit)
+        assert editor is not None and editor.isVisible() and editor.text() == page.work.names[note]
+        assert editor.height() == 22 and editor.width() >= 180
+        assert totals.right.startswith("ENTER · SAVE NAME")
+        return editor
+
+    editor = start(38)
+    editor.setText("Snare: Center")
+    app.sendEvent(editor, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Return, Qt.KeyboardModifier.NoModifier))
+    app.processEvents()
+    assert page.work.names[38] == "Snare: Center" and page.dirty and totals.right == ""
+    editor = start(36)
+    editor.setText("Something else")
+    app.sendEvent(editor, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Escape, Qt.KeyboardModifier.NoModifier))
+    app.processEvents()
+    assert page.work.names[36] == "Kick" and totals.right == ""
+    # у шаблона правки нет: справа — READ-ONLY TEMPLATE
+    page.answers["save_changes"] = "discard"
+    page.select(MapRef(TEMPLATE, "EZdrummer 3"))
+    assert totals.right == "READ-ONLY TEMPLATE"
+
+
+def test_totals_show_map_errors_in_error_colour(window, storage):
+    storage.save_map(NoteMap("Bad", {35: "Kick", 36: "Kick", 38: "Snare"}, primary={35, 36}))
+    page = window.maps_page
+    page.reload_list()
+    page.select(MapRef(USER, "Bad"))
+    totals = page.notes.totals
+    assert totals.error and totals.left == "1 ERROR IN THE MAP"
+    assert "several Write to notes" in totals.toolTip()
+    page.close_map()
+    assert not totals.error and totals.left == "SELECT A MAP ON THE LEFT, OR CREATE ONE."
+
+
+def test_note_and_badge_tooltips(window, storage, app):
+    from PySide6.QtCore import QPoint
+    from remap.ui import plates
+    storage.save_map(NoteMap("Kit", {35: "Kick", 36: "Kick", 38: "Snare"}))
+    page = window.maps_page
+    page.reload_list()
+    page.select(MapRef(USER, "Kit"))
+    window.resize(900, 800)
+    window.show()
+    app.processEvents()
+    view = page.notes.table
+    note_cell = view.visualRect(page.proxy.mapFromSource(page.model.note_index(35, COL_NOTE)))
+    assert view.tooltip_at(note_cell.center()) == "Note 35 · B0"
+    name_cell = view.visualRect(page.proxy.mapFromSource(page.model.note_index(35, COL_NAME)))
+    _, pill = plates.note_badge_rect(name_cell.toRectF(), "Kick", "+1")
+    assert view.tooltip_at(pill.center().toPoint()) == "Also on note 36"
+    assert view.tooltip_at(QPoint(name_cell.left() + 5, name_cell.center().y())) == ""  # имя не обрезано
+
+
+def test_import_with_issues_can_be_discarded(window, storage, tmp_path):
+    src = tmp_path / "broken.txt"
+    src.write_text("# MIDI note/CC name map\n36 Kick\n300 Bad\n", encoding="utf-8")
+    storage.save_map(NoteMap("Before", {38: "Snare"}))
+    page = window.maps_page
+    page.reload_list()
+    page.select(MapRef(USER, "Before"))
+    page.choose_open_file = lambda: str(src)
+    page.answers["text"] = ["Imported"]
+    page.answers["keep"] = False  # «Discard import»
+    page.import_txt()
+    assert page.answers["issues"]
+    assert [e.id for e in storage.list_maps()[0]] == ["Before"]
+    assert page.current == MapRef(USER, "Before") and MapRef(USER, "Imported") not in page.list.refs()
+    assert page.status.text() == "Import discarded."

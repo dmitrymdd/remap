@@ -31,16 +31,18 @@ from ..templates import list_map_templates, load_map_template
 from . import theme
 from .maps_list import MapEntry, MapListScreen, MapSection
 from .maps_strip import MapsStrip
-from .maps_table import NoteFilter, NotesPanel, NoteTableModel
+from .maps_table import NoteFilter, NotesScreen, NoteTableModel
 from .maps_text import (
     DUPLICATE_TO_EDIT, DUPLICATE_TO_EDIT_DETAILS, EXPORT_TIP, IMPORT_TIP, MORE_TIP, NEW_TIP, NO_MAP_HINT, NO_MAP_TITLE,
-    SAVE_TIP, TEMPLATE, TEMPLATE_TIP, USER, MapRef, format_parse_issues, group_rows, issues_text, legacy_tip, map_info,
-    map_tooltip, subtitle,
+    SAVE_TIP, TEMPLATE, TEMPLATE_TIP, USER, MapRef, format_parse_issues, group_rows, legacy_tip, map_tooltip, next_sort,
+    subtitle, totals_text, totals_tip,
 )
+from .settings import ui_settings
 from .theme import repolish
 from .tips import tip
 
 SAVE_KEYS = ("Ctrl+S",)
+NAMED_ONLY_KEY = "maps/named_only"
 
 
 # --- страница ---
@@ -53,6 +55,7 @@ class MapsPage(QWidget):
     def __init__(self, storage: Storage) -> None:
         super().__init__()
         self.storage = storage
+        self.settings = ui_settings(storage)
         self.current: MapRef | None = None
         self.base: NoteMap | None = None  # последнее сохранённое состояние
         self.work: NoteMap | None = None  # рабочая копия, её правит таблица
@@ -95,10 +98,14 @@ class MapsPage(QWidget):
         self.model.edited.connect(self._update_state)
         self.proxy = NoteFilter()
         self.proxy.setSourceModel(self.model)
-        self.notes = NotesPanel(self.model, self.proxy)
+        self.notes = NotesScreen(self.model, self.proxy)
+        self.notes.named_only.setChecked(self.settings.value(NAMED_ONLY_KEY, True, type=bool))
+        self.proxy.named_only = self.notes.named_only.isChecked()
         self.notes.search.textChanged.connect(self._apply_filter)
         self.notes.named_only.toggled.connect(self._apply_filter)
-        self.notes.table.horizontalHeader().sectionClicked.connect(self.sort_by)
+        # запоминается только выбор пользователя (новая пустая карта снимает флажок сама)
+        self.notes.named_only.clicked.connect(lambda on: self.settings.setValue(NAMED_ONLY_KEY, on))
+        self.notes.header.clicked.connect(self.sort_by)
         self.notes.edit_blocked.connect(self._edit_blocked)
 
         screens = QHBoxLayout()
@@ -152,10 +159,16 @@ class MapsPage(QWidget):
                                               "REAPER note names (*.txt)")
         return path or None
 
-    def show_issues(self, title: str, text: str, details: str) -> None:
-        box = QMessageBox(QMessageBox.Icon.Warning, title, text, QMessageBox.StandardButton.Ok, self)
+    def ask_keep_import(self, title: str, text: str, details: str) -> bool:
+        """Проблемы чтения .txt сразу после импорта: Keep (по умолчанию) — оставить карту; Discard import — удалить её."""
+        box = QMessageBox(QMessageBox.Icon.Warning, title, text, QMessageBox.StandardButton.NoButton, self)
         box.setInformativeText(details)
+        keep = box.addButton("Keep", QMessageBox.ButtonRole.AcceptRole)
+        box.addButton("Discard import", QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(keep)
+        box.setEscapeButton(keep)
         box.exec()
+        return box.clickedButton() is keep
 
     def show_error(self, text: str) -> None:
         QMessageBox.warning(self, "REMAP", text)
@@ -244,13 +257,7 @@ class MapsPage(QWidget):
     def sort_by(self, column: int) -> None:
         """Клик по заголовку колонки: по возрастанию → по убыванию → снова по группам инструментов (вид по
         умолчанию); клик по другой колонке — сразу по возрастанию. Стрелка заголовка показывает состояние."""
-        sort = self.model.sort
-        if sort is None or sort[0] != column:
-            sort = (column, False)
-        elif not sort[1]:
-            sort = (column, True)
-        else:
-            sort = None
+        sort = next_sort(self.model.sort, column)
         self.notes.show_sort(sort)
         note = self.notes.current_note()
         self.model.set_sort(sort)
@@ -337,21 +344,14 @@ class MapsPage(QWidget):
         if not has_map:
             field.set_map(NO_MAP_TITLE, locked=False)
             field.setToolTip("")
-            self.notes.source_label.setText(NO_MAP_HINT)
-            self.notes.issues_label.setText("")
+            self.notes.set_totals(NO_MAP_HINT.upper())
             return
         field.set_map(self.work.name, locked=read_only)
         extra = TEMPLATE_TIP if read_only else legacy_tip(f"{ref.id}.txt") if self.legacy else ""
         field.setToolTip(tip(extra, title=self.work.name) if extra else tip(self.work.name))
-        self.notes.source_label.setText(map_info(self.work))
-        self._update_issues()
-
-    def _update_issues(self) -> None:
         errors = [i.message for i in validate_map(self.work) if i.severity == "error"]
-        label = self.notes.issues_label
-        label.setText(issues_text(errors, len(self.load_issues)))
-        label.setToolTip(format_parse_issues(self.load_issues) if self.load_issues else "")
-        repolish(label, "state", "error" if errors else "")
+        left, error = totals_text(len(self.work.names), errors)
+        self.notes.set_totals(left, error, totals_tip(errors, self.load_issues))
 
     # --- действия ---
 
@@ -408,12 +408,29 @@ class MapsPage(QWidget):
             return
         m.name = name
         m.meta.notes = f"Imported from {Path(path).name}"
-        if self._add_and_open(m):
-            self.set_status(f'Imported "{name}": {len(m.names)} notes.', "ok")
-            if issues:  # карта уже импортирована: проблемы чтения — сразу показать, что пропущено
-                self.show_issues("Import REAPER note names",
-                                 f"{Path(path).name}: {len(m.names)} notes imported, {len(issues)} issue(s).",
-                                 format_parse_issues(issues))
+        previous = self.current
+        ref = self._add_and_open(m)
+        if ref is None:
+            return
+        self.set_status(f'Imported "{name}": {len(m.names)} notes.', "ok")
+        # карта уже импортирована: проблемы чтения — сразу показать, что пропущено, и дать отказаться
+        if issues and not self.ask_keep_import(
+                "Import REAPER note names", f"{Path(path).name}: {len(m.names)} notes imported, {len(issues)} issue(s).",
+                format_parse_issues(issues)):
+            self._discard_import(ref, previous)
+
+    def _discard_import(self, ref: MapRef, previous: MapRef | None) -> None:
+        """Удалить только что импортированную карту и вернуться к прежней."""
+        try:
+            self.storage.delete_map(ref.id)
+        except OSError as e:
+            self.show_error(f"Cannot delete the map:\n\n{e}")
+            return
+        self.close_map()
+        self.reload_list()
+        if previous is not None and previous in self.list.refs():
+            self.open(previous)
+        self.set_status("Import discarded.", "ok")
 
     def duplicate(self) -> None:
         if self.base is None or not self.maybe_leave():

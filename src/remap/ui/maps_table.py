@@ -1,49 +1,33 @@
-"""Таблица нот вкладки Maps: модель над рабочей копией карты, фильтр, делегат имени с бейджем «+N» и панель
-(сведения о карте, поиск, «только с именем», таблица, ошибки карты)."""
+"""Экран нот вкладки Maps: модель над рабочей копией карты, фильтр (поиск, «только с именем», свёрнутые группы) и вид.
+
+Вид — QTableView без QSS и без собственного фона: всё рисует делегат функциями `plates.py` (строка ноты 28 px, заголовок
+группы 30 px), над таблицей — поиск, флажок NAMED ONLY и строка заголовков NOTE / NAME, под ней — строка итогов. Имя
+правится настоящим QLineEdit в поле 22 px поверх строки (Enter — сохранить, Esc — отменить). Числа — из макета Maps.
+"""
 from __future__ import annotations
 
-from PySide6.QtCore import QAbstractTableModel, QEvent, QModelIndex, QRectF, QSortFilterProxyModel, Qt, Signal
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtCore import (
+    QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex, QPointF, QRectF, QSortFilterProxyModel, Qt, Signal,
+)
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QCheckBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QStyle,
-    QStyledItemDelegate, QStyleOptionViewItem, QTableView, QVBoxLayout, QWidget,
+    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QSizePolicy, QStyle, QStyledItemDelegate, QTableView,
+    QToolTip, QWidget,
 )
 
 from ..core.notemap import NoteMap, articulations, normalize_name, set_note_name
 from ..core.pitch import note_tip, pitch_name
-from . import plates, theme
-from .maps_text import COL_NAME, COL_NOTE, COLUMN_TIPS, COLUMNS, EDIT_TIP, SORT_TIPS, LayoutRow, group_rows
+from . import plates, text, theme
+from .field import ScreenCheck, SearchField
+from .glass import Screen
+from .maps_text import (
+    COL_NAME, COL_NOTE, COLUMNS, EDIT_HINT, EDIT_TIP, GROUP_TIP, NAMED_ONLY, NAMED_ONLY_TIP, READ_ONLY_HINT,
+    SEARCH_PLACEHOLDER, LayoutRow, badge_tip, group_rows, sort_tip,
+)
+from .metal import RecessedBlock
+from .tips import tip
 
 OTHERS_ROLE = Qt.ItemDataRole.UserRole + 4  # сколько ещё нот карты с этим именем (бейдж «+N»)
-
-
-def update_spans(table: QTableView, columns: int) -> None:
-    """Заголовки групп — на всю ширину таблицы (span пересчитывается после фильтрации и перестройки).
-    Модель таблицы — модель с row_at() или прокси над ней."""
-    table.clearSpans()
-    view = table.model()
-    proxy = view if isinstance(view, QSortFilterProxyModel) else None
-    model = proxy.sourceModel() if proxy is not None else view
-    for r in range(view.rowCount()):
-        src = proxy.mapToSource(proxy.index(r, 0)).row() if proxy is not None else r
-        if model.row_at(src).is_header:
-            table.setSpan(r, 0, 1, columns)
-
-
-def header_data(row: LayoutRow, col: int, role):
-    """Данные строки-заголовка группы в таблице нот."""
-    if role == Qt.ItemDataRole.DisplayRole and col == 0:
-        return row.label.upper()
-    if role == Qt.ItemDataRole.FontRole:
-        f = QFont()
-        f.setBold(True)
-        f.setPointSizeF(8)
-        return f
-    if role == Qt.ItemDataRole.ForegroundRole:
-        return QColor(theme.ACCENT)
-    if role == Qt.ItemDataRole.BackgroundRole:
-        return QColor(theme.RECESS_BOTTOM)
-    return None
 
 
 class NoteTableModel(QAbstractTableModel):
@@ -150,10 +134,8 @@ class NoteTableModel(QAbstractTableModel):
             if role == Qt.ItemDataRole.DisplayRole:
                 return COLUMNS[section]
             if role == Qt.ItemDataRole.ToolTipRole:
-                tip = COLUMN_TIPS[section] + "\n" + SORT_TIPS[section]
-                if section == COL_NAME and not self.read_only:
-                    return tip + "\n" + EDIT_TIP
-                return tip
+                tip_text = sort_tip(self.sort, section)
+                return tip_text + "\n" + EDIT_TIP if section == COL_NAME and not self.read_only else tip_text
         return None
 
     def data(self, index, role=Qt.ItemDataRole.DisplayRole):
@@ -161,28 +143,20 @@ class NoteTableModel(QAbstractTableModel):
             return None
         row = self.rows[index.row()]
         if row.is_header:
-            return header_data(row, index.column(), role)
+            return row.label.upper() if role == Qt.ItemDataRole.DisplayRole and index.column() == 0 else None
         n, col = row.note, index.column()
         name = self.map.names.get(n)
-        notes = self.group(n)
         if role in (Qt.ItemDataRole.DisplayRole, Qt.ItemDataRole.EditRole):
-            if col == COL_NOTE:
-                return str(n)
-            if col == COL_NAME:
-                return name or ""
-            return None
+            return str(n) if col == COL_NOTE else name or ""
         if role == OTHERS_ROLE and col == COL_NAME:
-            return max(0, len(notes) - 1)
-        if role == Qt.ItemDataRole.ForegroundRole and name is None:
-            return QColor(theme.PLATE_DELETED_NAME)
-        if role == Qt.ItemDataRole.TextAlignmentRole and col != COL_NAME:
-            return int(Qt.AlignmentFlag.AlignCenter)
-        if role == Qt.ItemDataRole.ToolTipRole:
-            tip = note_tip([n])
-            if col == COL_NAME and len(notes) > 1:
-                tip = f"{name}\n{tip}\nOn notes {', '.join(map(str, notes))}"
-            return tip
+            return max(0, len(self.group(n)) - 1)
+        if role == Qt.ItemDataRole.ToolTipRole and col == COL_NOTE:
+            return note_tip([n])
         return None
+
+    def badge_tip(self, note: int) -> str:
+        """Подсказка бейджа «+N» ноты: остальные номера с её именем."""
+        return badge_tip(note, self.group(note))
 
     def flags(self, index):
         if not index.isValid() or self.map is None:
@@ -217,50 +191,35 @@ class NoteTableModel(QAbstractTableModel):
         self.edited.emit()
 
 
-class NameDelegate(QStyledItemDelegate):
-    """Имя и бейдж «+N» (имя ещё на N нотах карты) — как в виде «кабелями». Правка имени — как обычно."""
-
-    def paint(self, p, option, index) -> None:
-        others = index.data(OTHERS_ROLE)
-        if not others:
-            super().paint(p, option, index)
-            return
-        opt = QStyleOptionViewItem(option)
-        self.initStyleOption(opt, index)
-        style = opt.widget.style() if opt.widget is not None else QApplication.style()
-        rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, opt, opt.widget)
-        margin = style.pixelMetric(QStyle.PixelMetric.PM_FocusFrameHMargin, opt, opt.widget) + 1
-        badge = f"+{others}"
-        p.save()
-        bw = plates.badge_width(badge)
-        # имя рисует сам стиль (тот же отступ, что у строк без бейджа); место под бейдж — заранее
-        opt.text = opt.fontMetrics.elidedText(opt.text, Qt.TextElideMode.ElideRight,
-                                              max(0, rect.width() - 2 * margin - bw - 8))
-        style.drawControl(QStyle.ControlElement.CE_ItemViewItem, opt, p, opt.widget)
-        x = rect.left() + margin + opt.fontMetrics.horizontalAdvance(opt.text) + 8
-        h = theme.BADGE_HEIGHT
-        plates.paint_badge(p, QRectF(x, rect.center().y() - h / 2 + 1, bw, h), badge)
-        p.restore()
-
-
 class NoteFilter(QSortFilterProxyModel):
-    """«Только ноты с именем» + поиск по имени, номеру ноты или названию высоты.
-    Заголовок группы виден, если видна хотя бы одна нота группы.
+    """«Только ноты с именем» + поиск по имени, номеру ноты или названию высоты + свёрнутые группы.
+    Заголовок группы виден, если поиску и «только с именем» отвечает хотя бы одна нота группы (даже свёрнутой).
 
     Фильтр не пересчитывается при правке (dynamicSortFilter выключен): строка, у которой стёрли имя,
-    не исчезает из-под курсора. Пересчёт — при смене фильтра или карты.
+    не исчезает из-под курсора. Пересчёт — при смене фильтра, карты или свёрнутых групп.
     """
 
     def __init__(self) -> None:
         super().__init__()
         self.named_only = True
         self.query = ""
+        self.collapsed: set[str] = set()  # ключи свёрнутых групп (на всё время работы вкладки, для любой карты)
         self.setDynamicSortFilter(False)
 
     def set_filter(self, named_only: bool, query: str) -> None:
         self.beginFilterChange()
         self.named_only, self.query = named_only, query
         self.endFilterChange()
+
+    def toggle_group(self, key: str) -> None:
+        self.beginFilterChange()
+        self.collapsed ^= {key}
+        self.endFilterChange()
+
+    def source_row(self, row: int) -> LayoutRow | None:
+        """Строка раскладки под строкой фильтра `row`."""
+        index = self.mapToSource(self.index(row, 0))
+        return self.sourceModel().row_at(index.row()) if index.isValid() else None
 
     def note_rows(self) -> list[int]:
         """Видимые ноты (без заголовков), сверху вниз."""
@@ -275,6 +234,8 @@ class NoteFilter(QSortFilterProxyModel):
         r = model.row_at(row)
         if r.is_header:
             return any(self._accept_note(model.rows[i].note) for i in model.members(r.group))
+        if r.group is not None and r.group in self.collapsed and model.grouped:
+            return False
         return self._accept_note(r.note)
 
     def _accept_note(self, n: int) -> bool:
@@ -289,15 +250,315 @@ class NoteFilter(QSortFilterProxyModel):
         return q == pitch_name(n).casefold() or (name is not None and q in normalize_name(name))
 
 
+def row_rect(view: QTableView, cell: QRectF) -> QRectF:
+    """Вся строка таблицы (обе колонки) по прямоугольнику одной её ячейки."""
+    return QRectF(0, cell.top(), view.viewport().width(), cell.height())
+
+
+class NoteDelegate(QStyledItemDelegate):
+    """Рисует строки целиком (каждая ячейка — свою часть строки, по клипу): ноту `paint_note_row`, заголовок группы
+    `paint_group_header`. Правка имени — QLineEdit в поле `plates.note_edit_field()`; на время правки строка в виде
+    «editing», сигнал `editing(bool)`."""
+
+    editing = Signal(bool)
+
+    def __init__(self, view: NotesView) -> None:
+        super().__init__(view)
+        self._view = view
+        self.edit_index: QPersistentModelIndex | None = None
+
+    def paint(self, p, option, index) -> None:
+        view = self._view
+        proxy = view.model()
+        row = proxy.source_row(index.row())
+        if row is None:
+            return
+        full = row_rect(view, QRectF(option.rect))
+        hover = view.hover_row == index.row()
+        p.save()
+        p.setClipRect(option.rect)
+        if row.is_header:
+            plates.paint_group_header(p, full, row.label, collapsed=row.group in proxy.collapsed, variant="scene",
+                                      state="hover" if hover else "normal", inset=theme.NOTE_GROUP_INSET)
+        else:
+            model = proxy.sourceModel()
+            name = model.map.names.get(row.note, "")
+            others = model.data(model.note_index(row.note, COL_NAME), OTHERS_ROLE)
+            editing = self.edit_index is not None and self.edit_index.row() == index.row()
+            selected = bool(option.state & QStyle.StateFlag.State_Selected)
+            state = "editing" if editing else "selected" if selected else "hover" if hover else "normal"
+            plates.paint_note_row(p, full, str(row.note), name, state=state, dim=not name,
+                                  badge=f"+{others}" if others else "", field=False)
+        p.restore()
+
+    def sizeHint(self, option, index):
+        size = super().sizeHint(option, index)
+        size.setHeight(theme.NOTE_ROW_H)
+        return size
+
+    def createEditor(self, parent, option, index):
+        editor = QLineEdit(parent)
+        editor.setFont(theme.mono_font(theme.PLATE_NAME_FONT))
+        editor.setFrame(False)
+        accent = theme.qss_rgba((98, 214, 154, 0.35))
+        # поле макета: заливка, рамка 1 px, радиус 3, текст в 9 px от края (у QLineEdit ещё 2 px своего поля)
+        editor.setStyleSheet(
+            f"QLineEdit {{ background: {theme.NOTE_EDIT_FIELD}; border: 1px solid {theme.CHIP_BORDER};"
+            f" border-radius: {theme.NOTE_EDIT_RADIUS}px; padding: 0 6px; margin: 0; color: {theme.SELECTED};"
+            f" selection-background-color: {accent}; selection-color: {theme.SELECTED}; }}")
+        editor.textChanged.connect(lambda _t, e=editor: self._fit(e))
+        self.edit_index = QPersistentModelIndex(index)
+        self.editing.emit(True)
+        return editor
+
+    def updateEditorGeometry(self, editor, option, index) -> None:
+        editor.setProperty("row_top", option.rect.top())
+        editor.setProperty("row_h", option.rect.height())
+        self._fit(editor)
+
+    def _fit(self, editor: QLineEdit) -> None:
+        """Поле растёт с текстом (не уже 180 px), но не дальше края строки."""
+        top, height = editor.property("row_top"), editor.property("row_h")
+        if top is None:
+            return
+        full = row_rect(self._view, QRectF(0, top, 1, height))
+        editor.setGeometry(plates.note_edit_field(full, editor.text()).toRect())
+
+    def destroyEditor(self, editor, index) -> None:
+        super().destroyEditor(editor, index)
+        self.edit_index = None
+        self.editing.emit(False)
+        self._view.viewport().update()
+
+
+class NotesView(QTableView):
+    """Таблица без рамки, фона, сетки и заголовков; заголовки групп — на всю ширину, высоты строк — из макета. Клик по
+    заголовку группы сворачивает или раскрывает её; правка идёт всегда в колонке имени; подсказки — свои (номер — высота
+    ноты, бейдж — остальные номера с этим именем, обрезанное имя — целиком)."""
+
+    group_clicked = Signal(str)
+
+    def __init__(self, proxy: NoteFilter, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.hover_row = -1
+        self.setModel(proxy)
+        self.setFrameShape(QTableView.Shape.NoFrame)
+        self.setShowGrid(False)
+        self.setWordWrap(False)
+        self.setMouseTracking(True)
+        self.setAutoFillBackground(False)
+        self.viewport().setAutoFillBackground(False)
+        pal = self.palette()
+        # фона нет, а выделение рисует делегат плашкой: стиль не должен заливать выбранную строку (PE_PanelItemViewRow)
+        for role in (QPalette.ColorRole.Base, QPalette.ColorRole.Window, QPalette.ColorRole.Highlight):
+            for group in (QPalette.ColorGroup.Active, QPalette.ColorGroup.Inactive):
+                pal.setColor(group, role, QColor(Qt.GlobalColor.transparent))
+        self.setPalette(pal)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
+                             | QAbstractItemView.EditTrigger.EditKeyPressed
+                             | QAbstractItemView.EditTrigger.AnyKeyPressed)
+        self.verticalHeader().hide()
+        self.verticalHeader().setMinimumSectionSize(1)
+        self.verticalHeader().setDefaultSectionSize(theme.NOTE_ROW_H)
+        header = self.horizontalHeader()
+        header.hide()
+        header.setSectionResizeMode(COL_NOTE, QHeaderView.ResizeMode.Fixed)
+        self.setColumnWidth(COL_NOTE, theme.NOTE_NUM_COL)
+        header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
+        self.delegate = NoteDelegate(self)
+        self.setItemDelegate(self.delegate)
+        for sig in (proxy.modelReset, proxy.layoutChanged, proxy.rowsInserted, proxy.rowsRemoved):
+            sig.connect(lambda *_: self.relayout_rows())
+
+    @property
+    def proxy(self) -> NoteFilter:
+        return self.model()
+
+    def relayout_rows(self) -> None:
+        """Заголовки групп — на всю ширину и выше строк нот (пересчёт после фильтрации и перестройки)."""
+        self.clearSpans()
+        for r in range(self.proxy.rowCount()):
+            row = self.proxy.source_row(r)
+            if row is not None and row.is_header:
+                self.setSpan(r, 0, 1, len(COLUMNS))
+                self.setRowHeight(r, theme.NOTE_GROUP_H)
+            else:
+                self.setRowHeight(r, theme.NOTE_ROW_H)
+        self.hover_row = -1
+
+    def edit(self, index, *args):
+        """Правка — всегда в колонке имени, по какой бы ячейке строки ни щёлкнули."""
+        if index.isValid() and index.column() != COL_NAME:
+            index = index.siblingAtColumn(COL_NAME)
+        return super().edit(index, *args)
+
+    def _header_at(self, pos) -> LayoutRow | None:
+        index = self.indexAt(pos)
+        row = self.proxy.source_row(index.row()) if index.isValid() else None
+        return row if row is not None and row.is_header else None
+
+    def mousePressEvent(self, event) -> None:
+        row = self._header_at(event.position().toPoint())
+        if row is not None:
+            if event.button() == Qt.MouseButton.LeftButton:
+                self.group_clicked.emit(row.group)
+            return
+        super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        if self._header_at(event.position().toPoint()) is not None:
+            self.mousePressEvent(event)  # второй щелчок — снова переключить
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        index = self.indexAt(event.position().toPoint())
+        row = index.row() if index.isValid() else -1
+        if row != self.hover_row:
+            self.hover_row = row
+            self.viewport().update()
+        super().mouseMoveEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self.hover_row != -1:
+            self.hover_row = -1
+            self.viewport().update()
+        super().leaveEvent(event)
+
+    def tooltip_at(self, pos) -> str:
+        """Текст подсказки в точке `pos` вьюпорта ('' — подсказки нет)."""
+        index = self.indexAt(pos)
+        row = self.proxy.source_row(index.row()) if index.isValid() else None
+        if row is None:
+            return ""
+        if row.is_header:
+            return GROUP_TIP
+        model = self.proxy.sourceModel()
+        if index.column() == COL_NOTE:
+            return note_tip([row.note])
+        name = model.map.names.get(row.note, "")
+        others = model.data(model.note_index(row.note, COL_NAME), OTHERS_ROLE)
+        cell = QRectF(self.visualRect(index))
+        shown, pill = plates.note_badge_rect(cell, name, f"+{others}" if others else "")
+        if pill is not None and pill.contains(QPointF(pos)):
+            return model.badge_tip(row.note)
+        return name if shown != name else ""
+
+    def viewportEvent(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip:
+            text_ = self.tooltip_at(event.pos())
+            if text_:
+                QToolTip.showText(event.globalPos(), tip(text_), self.viewport())
+            else:
+                QToolTip.hideText()
+            return True
+        return super().viewportEvent(event)
+
+
+def _sort_arrow(p: QPainter, x: float, cy: float, desc: bool) -> None:
+    """Стрелка сортировки 7×4: вершиной вверх — по возрастанию, вниз — по убыванию."""
+    path = QPainterPath()
+    tip_y, base_y = (cy + 2, cy - 2) if desc else (cy - 2, cy + 2)
+    path.moveTo(x, base_y)
+    path.lineTo(x + 7, base_y)
+    path.lineTo(x + 3.5, tip_y)
+    path.closeSubpath()
+    p.fillPath(path, theme.qcolor(theme.FIELD_CAPTION))
+
+
+class ColumnHeader(QWidget):
+    """Строка заголовков NOTE / NAME (28 px и линия 1 px снизу): NOTE по правому краю столбца 64 с отступом 18, NAME — от
+    64. Клик — `clicked(колонка)`; стрелка показывает сортировку (`set_sort`). Подсказки — `tip_for(колонка)`."""
+
+    clicked = Signal(int)
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.sort: tuple[int, bool] | None = None
+        self.tip_for = lambda _col: ""
+        self._spec = text.mono(theme.NOTES_HEAD_FONT, QFont.Weight.DemiBold, theme.NOTES_HEAD_SPACING)
+        self.setFixedHeight(theme.NOTES_HEAD_H + 1)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def set_sort(self, sort: tuple[int, bool] | None) -> None:
+        self.sort = sort
+        self.update()
+
+    @staticmethod
+    def column_at(x: float) -> int:
+        return COL_NOTE if x < theme.NOTE_NUM_COL else COL_NAME
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        h = theme.NOTES_HEAD_H
+        pad = theme.NOTE_NUM_PAD
+        note = QRectF(0, 0, theme.NOTE_NUM_COL - pad, h)
+        text.draw_text(p, note, COLUMNS[COL_NOTE], self._spec, theme.FIELD_CAPTION, plates.RIGHT_MID)
+        text.draw_text(p, QRectF(theme.NOTE_NUM_COL, 0, self.width() - theme.NOTE_NUM_COL, h), COLUMNS[COL_NAME],
+                       self._spec, theme.FIELD_CAPTION, plates.LEFT_MID)
+        if self.sort is not None:
+            col, desc = self.sort
+            x = note.right() + 4 if col == COL_NOTE else \
+                theme.NOTE_NUM_COL + text.text_width(COLUMNS[COL_NAME], self._spec) + 4
+            _sort_arrow(p, x, h / 2, desc)
+        p.fillRect(QRectF(0, h, self.width(), 1), theme.qcolor(theme.SCREEN_DIVIDER))
+
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.clicked.emit(self.column_at(event.position().x()))
+
+    def event(self, e) -> bool:
+        if e.type() == QEvent.Type.ToolTip:
+            text_ = self.tip_for(self.column_at(e.pos().x()))
+            if text_:
+                QToolTip.showText(e.globalPos(), tip(text_), self)
+            return True
+        return super().event(e)
+
+
+class TotalsBar(QWidget):
+    """Строка итогов (линия 1 px сверху и 26 px, текст по нижнему краю): слева — число нот с именем или ошибки карты
+    цветом ошибки, справа — подсказка клавиш правки или «READ-ONLY TEMPLATE»."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.left, self.right, self.error = "", "", False
+        self._spec = text.mono(theme.NOTES_TOTALS_FONT, spacing=theme.NOTES_TOTALS_SPACING)
+        self.setFixedHeight(theme.NOTES_TOTALS_H + 1)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+    def set_texts(self, left: str, right: str, error: bool = False) -> None:
+        if (left, right, error) != (self.left, self.right, self.error):
+            self.left, self.right, self.error = left, right, error
+            self.update()
+
+    def paintEvent(self, _event) -> None:
+        p = QPainter(self)
+        p.fillRect(QRectF(0, 0, self.width(), 1), theme.qcolor(theme.SCREEN_DIVIDER))
+        area = QRectF(0, 1, self.width(), theme.NOTES_TOTALS_H)
+        bottom = Qt.AlignmentFlag.AlignBottom
+        right_w = text.text_width(self.right, self._spec) if self.right else 0.0
+        text.draw_text(p, area.adjusted(0, 0, -(right_w + 12 if right_w else 0), 0), self.left, self._spec,
+                       theme.ERR_TEXT if self.error else theme.SCREEN_TEXT_3, Qt.AlignmentFlag.AlignLeft | bottom,
+                       Qt.TextElideMode.ElideRight)
+        if self.right:
+            text.draw_text(p, area, self.right, self._spec, theme.SCREEN_TEXT_3, Qt.AlignmentFlag.AlignRight | bottom)
+
+
 TYPING_MODIFIERS = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.KeypadModifier  # ввод текста, не сочетание
 
 
-class NotesPanel(QWidget):
-    """Правая колонка без заголовка и кнопок: сведения о карте, поиск и «только с именем», таблица нот, ошибки.
+class NotesScreen(RecessedBlock):
+    """Правый экран Maps: поиск и NAMED ONLY, заголовки колонок, таблица нот, строка итогов.
 
-    Модель и фильтр принадлежат странице (это её состояние); панель — только вид. Delete в таблице (не в режиме правки
-    ячейки) стирает имена выделенных нот. У шаблона попытка правки (ввод, Delete, двойной клик по ноте) —
-    сигнал `edit_blocked`.
+    Модель и фильтр принадлежат странице (это её состояние); экран — только вид. Delete в таблице (не в режиме правки)
+    стирает имена выделенных нот. У шаблона попытка правки (ввод, Delete, двойной клик по ноте) — сигнал
+    `edit_blocked`.
     """
 
     edit_blocked = Signal()
@@ -305,60 +566,58 @@ class NotesPanel(QWidget):
     def __init__(self, model: NoteTableModel, proxy: NoteFilter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.model, self.proxy = model, proxy
-        box = QVBoxLayout(self)
-        box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(6)
-        self.source_label = QLabel()
-        self.source_label.setObjectName("muted")
-        self.source_label.setWordWrap(True)
-        self.source_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        box.addWidget(self.source_label)
+        self._left: tuple[str, bool] = ("", False)
+        self.screen = Screen()
+        self.body.addWidget(self.screen)
+        box = self.screen.body
 
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Search: name or note number")
-        self.search.setClearButtonEnabled(True)
-        self.named_only = QCheckBox("Show only named notes")
+        self.search = SearchField(SEARCH_PLACEHOLDER)
+        self.named_only = ScreenCheck(NAMED_ONLY)
         self.named_only.setChecked(True)
+        self.named_only.setToolTip(tip(NAMED_ONLY_TIP))
         tools = QHBoxLayout()
-        tools.addWidget(self.search, stretch=1)
-        tools.addSpacing(8)
-        tools.addWidget(self.named_only)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(theme.NOTES_TOOLS_GAP - theme.CHECK_PAD)
+        tools.addWidget(self.search, 1)
+        tools.addWidget(self.named_only, 0, Qt.AlignmentFlag.AlignVCenter)
         box.addLayout(tools)
+        box.addSpacing(theme.NOTES_HEAD_TOP)
 
-        self.table = QTableView()
-        self.table.setModel(proxy)
-        self.table.verticalHeader().hide()
-        self.table.verticalHeader().setDefaultSectionSize(26)
-        self.table.setShowGrid(False)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
-                                   | QAbstractItemView.EditTrigger.EditKeyPressed
-                                   | QAbstractItemView.EditTrigger.AnyKeyPressed)
-        header = self.table.horizontalHeader()
-        header.setHighlightSections(False)
-        header.setSectionsClickable(True)
-        header.setSortIndicatorShown(False)  # по умолчанию — группы, без стрелки
-        header.setSectionResizeMode(COL_NOTE, QHeaderView.ResizeMode.Fixed)
-        self.table.setColumnWidth(COL_NOTE, 64)
-        header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
-        self.table.setItemDelegateForColumn(COL_NAME, NameDelegate(self.table))
+        self.header = ColumnHeader()
+        self.header.tip_for = lambda col: model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
+        box.addWidget(self.header)
+        self.table = NotesView(proxy)
+        self.table.group_clicked.connect(self._toggle_group)
         self.table.installEventFilter(self)
         self.table.doubleClicked.connect(self._double_clicked)
-        for sig in (proxy.modelReset, proxy.layoutChanged, proxy.rowsInserted, proxy.rowsRemoved):
-            sig.connect(lambda *_: update_spans(self.table, len(COLUMNS)))
-        box.addWidget(self.table, stretch=1)
-
-        self.issues_label = QLabel()
-        self.issues_label.setObjectName("issues")
-        self.issues_label.setWordWrap(True)
-        box.addWidget(self.issues_label)
+        self.table.delegate.editing.connect(lambda _on: self._show_hint())
+        box.addWidget(self.table, 1)
+        self.totals = TotalsBar()
+        box.addWidget(self.totals)
+        self.bar = self.screen.attach(self.table, theme.NOTES_TRACK_TOP, theme.NOTES_TRACK_BOTTOM)
 
     def show_sort(self, sort: tuple[int, bool] | None) -> None:
-        """Стрелка в заголовке столбца: по возрастанию / по убыванию; по группам — без стрелки."""
-        header = self.table.horizontalHeader()
-        header.setSortIndicatorShown(sort is not None)
-        if sort is not None:
-            header.setSortIndicator(sort[0], Qt.SortOrder.DescendingOrder if sort[1] else Qt.SortOrder.AscendingOrder)
+        """Стрелка в заголовке колонки: по возрастанию / по убыванию; по группам — без стрелки."""
+        self.header.set_sort(sort)
+
+    def set_totals(self, left: str, error: bool = False, tip_text: str = "") -> None:
+        """Левая часть строки итогов (ошибки — цветом ошибки) и её подсказка; правая часть — по состоянию."""
+        self.totals.setToolTip(tip(tip_text) if tip_text else "")
+        self._left = (left, error)
+        self._show_hint()
+
+    def _show_hint(self) -> None:
+        left, error = self._left
+        if self.model.map is None:
+            right = ""
+        elif self.model.read_only:
+            right = READ_ONLY_HINT
+        else:
+            right = EDIT_HINT if self.table.delegate.edit_index is not None else ""
+        self.totals.set_texts(left, right, error)
+
+    def _toggle_group(self, key: str) -> None:
+        self.proxy.toggle_group(key)
 
     def current_note(self) -> int | None:
         index = self.table.currentIndex()
@@ -392,3 +651,4 @@ class NotesPanel(QWidget):
                 self.model.set_name(n, "")
             return True
         return super().eventFilter(obj, event)
+

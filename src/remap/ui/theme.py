@@ -151,6 +151,14 @@ NOTE_ROW_H, NOTE_NUM_COL, NOTE_NUM_PAD = 28, 64, 18  # строка ноты Map
 NOTE_ROW_LINE: RGBA = (110, 190, 140, 0.08)  # линия под строкой
 NOTE_EDIT_BG: RGBA = (255, 255, 255, 0.07)  # строка в правке: заливка и белая рамка 1 px внутри
 NOTE_EDIT_FIELD, NOTE_EDIT_RADIUS = "#07120C", 3  # поле имени в правке (рамка — CHIP_BORDER)
+NOTE_EDIT_H, NOTE_EDIT_MIN_W = 22, 180  # поле имени: высота и наименьшая ширина
+NOTE_GROUP_H = 30  # заголовок группы в таблице нот (линия снизу, метка от левого края +4)
+NOTE_GROUP_INSET = 4
+NOTES_TOOLS_GAP = 14  # поиск — «NAMED ONLY»
+NOTES_HEAD_TOP, NOTES_HEAD_H = 10, 28  # строка NOTE / NAME: отступ сверху и высота (+1 px линии снизу)
+NOTES_HEAD_FONT, NOTES_HEAD_SPACING = 10, 0.14  # Martian 10/600, цвет FIELD_CAPTION
+NOTES_TOTALS_H, NOTES_TOTALS_FONT, NOTES_TOTALS_SPACING = 26, 10, 0.08  # строка итогов (+1 px линии сверху)
+NOTES_TRACK_TOP, NOTES_TRACK_BOTTOM = 86, 60  # дорожка полосы прокрутки от внутренних краёв экрана (макет: 86 и 470 px)
 MAP_ENTRY_H, MAP_NAME_FONT, MAP_SUB_FONT, MAP_ENTRY_GAP = 46, 12, 9.5, 2  # запись в списке карт: имя 12/500 и строка источника
 MAP_SUB_SELECTED = "#D8E6DD"  # подпись выбранной записи (обычная — SCREEN_TEXT_3)
 
@@ -426,14 +434,14 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QLabel#status[state="ok"] {{ color: {OK_TEXT}; }}
     QLabel#status[state="error"] {{ color: {ERR_TEXT}; }}
 
-    QTableView {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
+    QTableWidget {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
                                outline: none; font-family: {mono}; font-size: 12px; }}
-    QTableView {{ gridline-color: {t['border']}; selection-background-color: {t['selection']};
+    QTableWidget {{ gridline-color: {t['border']}; selection-background-color: {t['selection']};
                   selection-color: {t['text']}; }}
     QHeaderView::section {{ background: {t['bg']}; color: {t['text_muted']}; border: none;
                             border-bottom: 1px solid {t['border']}; padding: 4px 6px; font-family: {label};
                             font-size: 10pt; font-weight: 600; }}
-    QTableView QLineEdit {{ border-radius: 0; padding: 0 4px; }}
+    QTableWidget QLineEdit {{ border-radius: 0; padding: 0 4px; }}
     QLineEdit {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 6px;
                  padding: 5px 8px; font-family: {mono}; font-size: 12px; selection-background-color: {t['accent']};
                  selection-color: {t['on_accent']}; }}
@@ -441,14 +449,14 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QMenu {{ background: {t['surface']}; border: 1px solid {t['border']}; padding: 4px; }}
     QMenu::item {{ padding: 6px 18px; border-radius: 4px; }}
     QMenu::item:selected {{ background: {t['accent']}; color: {t['on_accent']}; }}
-    QCheckBox::indicator, QTableView::indicator {{ width: 14px; height: 14px; border: 1px solid {t['text_faint']};
+    QCheckBox::indicator, QTableWidget::indicator {{ width: 14px; height: 14px; border: 1px solid {t['text_faint']};
                                                    border-radius: 3px; background: {t['bg']}; }}
-    QCheckBox::indicator:checked, QTableView::indicator:checked {{ background: {t['accent']};
+    QCheckBox::indicator:checked, QTableWidget::indicator:checked {{ background: {t['accent']};
                                                                    border-color: {t['accent']}; }}
-    QCheckBox::indicator:hover, QTableView::indicator:hover {{ border-color: {t['accent']}; }}
-    QCheckBox::indicator:disabled, QTableView::indicator:disabled {{ border-color: {t['border']};
+    QCheckBox::indicator:hover, QTableWidget::indicator:hover {{ border-color: {t['accent']}; }}
+    QCheckBox::indicator:disabled, QTableWidget::indicator:disabled {{ border-color: {t['border']};
                                                                      background: {t['surface']}; }}
-    QCheckBox::indicator:checked:disabled, QTableView::indicator:checked:disabled {{
+    QCheckBox::indicator:checked:disabled, QTableWidget::indicator:checked:disabled {{
         background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
     QPushButton#iconButton {{ font-size: 14pt; padding: 1px 12px; color: {t['text_muted']}; }}
     QPushButton#iconButton:hover {{ color: {t['text']}; }}

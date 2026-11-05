@@ -285,50 +285,80 @@ def paint_port(p: QPainter, c: QPointF, radius: float, color: str, hollow: bool 
 
 
 # --- Maps ---
-def paint_note_number(p: QPainter, rect: QRectF, label: str, editing: bool = False) -> None:
-    """Номер в столбце ноты: по правому краю с отступом 18 px."""
-    text.draw_text(p, rect.adjusted(0, 0, -theme.NOTE_NUM_PAD, 0), label, number_spec(),
-                   theme.SELECTED if editing else theme.PLATE_NUM, RIGHT_MID)
+NOTE_ROW_STATES = ("normal", "hover", "selected", "editing")
 
 
-def paint_note_name(p: QPainter, rect: QRectF, name: str, *, dim: bool = False, badge: str = "") -> None:
-    """Имя ноты с «…» и бейджем «+N» за ним (зазор 8 px); `dim` — ноты без имени."""
-    p.save()
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    room = rect.width()
+def paint_note_number(p: QPainter, rect: QRectF, label: str, editing: bool = False, dim: bool = False) -> None:
+    """Номер в столбце ноты: по правому краю с отступом 18 px; `editing` — белый, `dim` — нота без имени."""
+    color = theme.SELECTED if editing else theme.PLATE_DELETED_NUM if dim else theme.PLATE_NUM
+    text.draw_text(p, rect.adjusted(0, 0, -theme.NOTE_NUM_PAD, 0), label, number_spec(), color, RIGHT_MID)
+
+
+def note_badge_rect(cell: QRectF, name: str, badge: str) -> tuple[str, QRectF | None]:
+    """Показанное имя (с «…») и прямоугольник бейджа «+N» за ним (зазор 8 px, по целым пикселям — рамка в 1 px без
+    размытия); без бейджа — None. Общая для рисования и подсказки бейджа."""
+    room = cell.width()
     pill = badge_width(badge) if badge else 0.0
     if badge:
         room -= pill + 8
     shown = text.elide(name, name_spec(), max(room, 0.0))
-    color = theme.PLATE_DELETED_NAME if dim else theme.PLATE_NAME
+    if not badge:
+        return shown, None
+    x = round(cell.left() + text.text_width(shown, name_spec()) + 8)
+    h = theme.BADGE_HEIGHT
+    return shown, QRectF(x, round(cell.center().y() - h / 2), round(pill), h)
+
+
+def paint_note_name(p: QPainter, rect: QRectF, name: str, *, dim: bool = False, badge: str = "",
+                    color: str | None = None) -> None:
+    """Имя ноты с «…» и бейджем «+N» за ним (зазор 8 px); `dim` — ноты без имени; `color` — свой цвет (выбранная)."""
+    p.save()
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    shown, pill = note_badge_rect(rect, name, badge)
+    room = (pill.left() - 8 - rect.left()) if pill is not None else rect.width()
+    color = color or (theme.PLATE_DELETED_NAME if dim else theme.PLATE_NAME)
     text.draw_text(p, QRectF(rect.left(), rect.top(), max(room, 0.0), rect.height()), shown, name_spec(), color, LEFT_MID)
-    if badge:
-        x = round(rect.left() + text.text_width(shown, name_spec()) + 8)  # по целым пикселям: рамка в 1 px без размытия
-        h = theme.BADGE_HEIGHT
-        paint_badge(p, QRectF(x, round(rect.center().y() - h / 2), round(pill), h), badge)
+    if pill is not None:
+        paint_badge(p, pill, badge)
     p.restore()
 
 
-def paint_note_row(p: QPainter, rect: QRectF, number: str, name: str, *, editing: bool = False, dim: bool = False,
-                   badge: str = "") -> None:
-    """Строка ноты Maps целиком: столбец номера 64 px, имя, линия под строкой. `editing` — как в макете: заливка и белая
-    рамка 1 px, поле имени `NOTE_EDIT_FIELD` с кареткой (в приложении правит настоящий QLineEdit; это для образца)."""
+def note_edit_field(rect: QRectF, name: str) -> QRectF:
+    """Поле имени строки в правке (как в макете): 22 px, на 9 px левее столбца имени, не уже 180 px и шире текста на поля
+    8, рамку и каретку; не дальше правого края строки."""
+    left = rect.left() + theme.NOTE_NUM_COL - 9
+    width = max(float(theme.NOTE_EDIT_MIN_W), text.text_width(name, name_spec()) + 17)
+    return QRectF(left, rect.center().y() - theme.NOTE_EDIT_H / 2, min(width, rect.right() - left), theme.NOTE_EDIT_H)
+
+
+def paint_note_row(p: QPainter, rect: QRectF, number: str, name: str, *, state: str = "normal", dim: bool = False,
+                   badge: str = "", field: bool = True) -> None:
+    """Строка ноты Maps целиком: столбец номера 64 px, имя, линия под строкой. `state`: normal / hover (в макете не задан)
+    / selected (плашка выбранной строки: номер и имя белые) / editing — как в макете: заливка и белая рамка 1 px, поле
+    имени `NOTE_EDIT_FIELD` с кареткой. `field=False` — без поля: в приложении поверх строки правит настоящий QLineEdit."""
+    if state not in NOTE_ROW_STATES:
+        raise ValueError(state)
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    editing = state == "editing"
     if editing:
         _paint_box(p, rect, PlateStyle(theme.NOTE_EDIT_BG, theme.SELECTED, "", ""), 4)
+    elif state in ("hover", "selected"):
+        _paint_box(p, rect, plate_style(state), 4)
     else:
         p.fillRect(QRectF(rect.left(), rect.bottom() - 1, rect.width(), 1), qcolor(theme.NOTE_ROW_LINE))
-    paint_note_number(p, QRectF(rect.left(), rect.top(), theme.NOTE_NUM_COL, rect.height()), number, editing)
+    white = editing or state == "selected"
+    paint_note_number(p, QRectF(rect.left(), rect.top(), theme.NOTE_NUM_COL, rect.height()), number, white, dim and not white)
     cell = QRectF(rect.left() + theme.NOTE_NUM_COL, rect.top(), rect.width() - theme.NOTE_NUM_COL, rect.height())
     if editing:
-        field = QRectF(cell.left() - 9, rect.center().y() - 11, max(180.0, text.text_width(name, name_spec()) + 17), 22)
-        _paint_box(p, field, PlateStyle(theme.NOTE_EDIT_FIELD, theme.CHIP_BORDER, "", ""), theme.NOTE_EDIT_RADIUS)
-        text.draw_text(p, field.adjusted(9, 0, -9, 0), name, name_spec(), theme.SELECTED, LEFT_MID)
-        caret_x = field.left() + 9 + text.text_width(name, name_spec()) + 1
-        p.fillRect(QRectF(caret_x, rect.center().y() - 7, 1, 14), qcolor(theme.SELECTED))
+        if field:
+            box = note_edit_field(rect, name)
+            _paint_box(p, box, PlateStyle(theme.NOTE_EDIT_FIELD, theme.CHIP_BORDER, "", ""), theme.NOTE_EDIT_RADIUS)
+            text.draw_text(p, box.adjusted(9, 0, -9, 0), name, name_spec(), theme.SELECTED, LEFT_MID)
+            caret_x = box.left() + 9 + text.text_width(name, name_spec()) + 1
+            p.fillRect(QRectF(caret_x, rect.center().y() - 7, 1, 14), qcolor(theme.SELECTED))
     else:
-        paint_note_name(p, cell, name, dim=dim, badge=badge)
+        paint_note_name(p, cell, name, dim=dim and not white, badge=badge, color=theme.SELECTED if white else None)
     p.restore()
 
 

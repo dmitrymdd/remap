@@ -15,15 +15,22 @@ COLUMNS = ("NOTE", "NAME")  # высота ноты (C#1) для барабан�
 COLUMN_TIPS = ("MIDI note number (the pitch name, 60 = C3, is in the cell tooltip)",
                "Articulation name. Empty = the note is not in the map. +N — the name is on N more notes")
 # клик по заголовку столбца: по возрастанию → по убыванию → по группам инструментов (вид по умолчанию)
-SORT_TIPS = ("Click to list notes in ascending order", "Click to list notes in ascending order",
+SORT_TIPS = ("Click to list notes in ascending order", "Click to list notes in descending order",
              "Click to group notes by instrument")
 
 EDIT_TIP = "Double-click or type to edit a name · Empty name: remove the note · Delete: clear selected names"
 
-UNNAMED_GROUP = "\0unnamed"  # служебный ключ группы нот без имени (не совпадёт с normalize_name инструмента)
+UNNAMED_GROUP, UNNAMED_LABEL = "\0unnamed", "Unnamed"  # служебный ключ группы нот без имени (не совпадёт с normalize_name инструмента)
 
 TEMPLATE_TIP = "Built-in template: read-only. Duplicate it to make your own map."
 NO_MAP_TITLE, NO_MAP_HINT = "No map selected", "Select a map on the left, or create one."
+
+# экран нот: поиск, флажок, строка итогов
+SEARCH_PLACEHOLDER = "Search: name or note number"
+NAMED_ONLY, NAMED_ONLY_TIP = "NAMED ONLY", "Hide notes that are not in the map"
+EDIT_HINT = "ENTER · SAVE NAME\u00a0\u00a0ESC · CANCEL"
+READ_ONLY_HINT = "READ-ONLY TEMPLATE"
+GROUP_TIP = "Click to collapse or expand the group"
 
 # полоса: подсказки клавиш (подписи — из макета) и вопрос при первой попытке править шаблон
 NEW_TIP = "New map"
@@ -58,7 +65,7 @@ class LayoutRow:
         return self.note is None
 
 
-def group_rows(names: dict[int, str], notes: list[int], unnamed_label: str = "Not in the map",
+def group_rows(names: dict[int, str], notes: list[int], unnamed_label: str = UNNAMED_LABEL,
                ) -> list[LayoutRow]:
     """Строки с заголовками групп instrument_group() (только для показа).
 
@@ -103,23 +110,41 @@ def legacy_tip(file_name: str) -> str:
     return f"Legacy REAPER .txt map ({file_name}). Saving converts it to JSON."
 
 
-def map_info(m: NoteMap) -> str:
-    """Источник, заметки и число нот с именем — под заголовком открытой карты."""
-    lines = [f"Source: {m.meta.source or 'not recorded'}"]
-    if m.meta.notes:
-        lines.append(f"Notes: {m.meta.notes}")
-    lines.append(f"{len(m.names)} named notes")
-    return "\n".join(lines)
+def next_sort(sort: tuple[int, bool] | None, column: int) -> tuple[int, bool] | None:
+    """Клик по заголовку колонки: по возрастанию → по убыванию → снова по группам инструментов (вид по умолчанию);
+    клик по другой колонке — сразу по возрастанию."""
+    if sort is None or sort[0] != column:
+        return column, False
+    return (column, True) if not sort[1] else None
 
 
-def issues_text(errors: list[str], load_issues: int) -> str:
-    """Ошибки карты и число проблем чтения .txt (сами проблемы — в подсказке)."""
+def sort_tip(sort: tuple[int, bool] | None, column: int) -> str:
+    """Подсказка заголовка колонки: что она показывает и что сделает следующий клик."""
+    after = next_sort(sort, column)
+    return COLUMN_TIPS[column] + "\n" + SORT_TIPS[2 if after is None else int(after[1])]
+
+
+def totals_text(named: int, errors: list[str]) -> tuple[str, bool]:
+    """Левая часть строки итогов и признак ошибки: число нот с именем; ошибки карты (validate_map) — вместо него."""
+    if errors:
+        return (f"{len(errors)} ERROR{'S' if len(errors) > 1 else ''} IN THE MAP"), True
+    return f"{named} NAMED NOTE{'' if named == 1 else 'S'}", False
+
+
+def totals_tip(errors: list[str], load_issues: list[ParseIssue]) -> str:
+    """Подсказка строки итогов: ошибки карты и проблемы чтения старой карты .txt."""
     parts = []
     if errors:
-        parts.append("Errors: " + "; ".join(errors))
+        parts.append("Errors:\n" + "\n".join(errors))
     if load_issues:
-        parts.append(f"{load_issues} issue(s) when reading the .txt file (see the tooltip).")
-    return "\n".join(parts)
+        parts.append(f"{len(load_issues)} issue(s) when reading the .txt file:\n" + format_parse_issues(load_issues))
+    return "\n\n".join(parts)
+
+
+def badge_tip(note: int, notes: list[int]) -> str:
+    """Подсказка бейджа «+N»: остальные номера с этим именем."""
+    others = [n for n in notes if n != note]
+    return f"Also on note{'s' if len(others) > 1 else ''} {', '.join(map(str, others))}"
 
 
 def wrapped_tooltip(text: str) -> str:
