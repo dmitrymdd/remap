@@ -23,10 +23,16 @@ EDIT_TIP = "Double-click or type to edit a name · Empty name: remove the note �
 UNNAMED_GROUP = "\0unnamed"  # служебный ключ группы нот без имени (не совпадёт с normalize_name инструмента)
 
 TEMPLATE_TIP = "Built-in template: read-only. Duplicate it to make your own map."
-TEMPLATE_CHIP, OLD_TXT_CHIP = "🔒 TEMPLATE · READ-ONLY", "LEGACY .TXT"
-TEMPLATE_CHIP_TIP = "Duplicate the template to edit a copy."
-OLD_TXT_CHIP_TIP = "Old REAPER .txt map. Saving converts it to JSON."
 NO_MAP_TITLE, NO_MAP_HINT = "No map selected", "Select a map on the left, or create one."
+
+# полоса: подсказки клавиш (подписи — из макета) и вопрос при первой попытке править шаблон
+NEW_TIP = "New map"
+IMPORT_TIP = "Import a REAPER note name map (.txt)"
+EXPORT_TIP = "Export the map to a REAPER .txt file"
+MORE_TIP = "Duplicate / Rename / Delete"
+SAVE_TIP = "Save map (Ctrl+S)"
+DUPLICATE_TO_EDIT = "Duplicate to My Maps to edit?"
+DUPLICATE_TO_EDIT_DETAILS = "Built-in templates are read-only. Your copy keeps the template's notes."
 
 
 @dataclass(frozen=True)

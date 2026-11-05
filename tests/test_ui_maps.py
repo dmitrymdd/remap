@@ -53,13 +53,36 @@ def test_manager_lists_templates_and_opens_read_only(window):
     idx = page.model.note_index(36, COL_NAME)
     assert not page.model.flags(idx) & Qt.ItemFlag.ItemIsEditable
     assert not page.model.setData(idx, "X")
-    assert not page.strip.rename_btn.isEnabled() and not page.strip.delete_btn.isEnabled()
-    assert page.strip.duplicate_btn.isEnabled()
+    assert not page.strip.rename_action.isEnabled() and not page.strip.delete_action.isEnabled()
+    assert page.strip.duplicate_action.isEnabled()
     assert not hasattr(page, "status_chip")  # статус карты в UI не показывается
     assert "verified" not in page.list.currentItem().toolTip().casefold()
-    # у шаблона нет Save/Revert, вместо них подсказка
-    assert page.strip.save_btn.isHidden() and page.strip.revert_btn.isHidden()
-    assert not page.strip.edit_copy_btn.isHidden() and page.strip.edit_copy_btn.text() == "Duplicate to edit"
+    # у шаблона сохранять нечего: Save недоступна; поле — TEMPLATE с замком, полное имя — в подсказке
+    assert not page.strip.save_btn.isEnabled() and not page.strip.revert_action.isEnabled()
+    field = page.strip.field
+    assert field.caption == "TEMPLATE" and field.locked and field.value == "Superior Drummer 3"
+    assert "Superior Drummer 3" in field.toolTip() and "read-only" in field.toolTip()
+
+
+def test_template_edit_attempt_offers_duplicate_once(window, app):
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QKeyEvent
+    page = window.maps_page
+    page.select(MapRef(TEMPLATE, "Superior Drummer 3"))
+    asked = []
+    page.confirm = lambda *a: asked.append(a[1]) or False
+    table = page.notes.table
+    table.setFocus()
+    for _ in range(2):
+        app.sendEvent(table, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_A, Qt.KeyboardModifier.NoModifier, "a"))
+    assert asked == ["Duplicate to My Maps to edit?"]  # один раз на открытие
+    assert page.current == MapRef(TEMPLATE, "Superior Drummer 3") and not page.dirty
+    # согласие — копия в My Maps
+    page.select(MapRef(TEMPLATE, "EZdrummer 3"))
+    page.confirm = lambda *a: True
+    page.answers["text"] = ["EZD copy"]
+    app.sendEvent(table, QKeyEvent(QEvent.Type.KeyPress, Qt.Key.Key_Delete, Qt.KeyboardModifier.NoModifier))
+    assert page.current == MapRef(USER, "EZD copy") and page.strip.field.caption == "MY MAP"
 
 
 def test_duplicate_edit_save_reload(window, storage, app):
@@ -68,14 +91,15 @@ def test_duplicate_edit_save_reload(window, storage, app):
     page.answers["text"] = ["My EZD3"]
     page.duplicate()
     assert page.current == MapRef(USER, "My EZD3") and not page.model.read_only
-    assert not page.strip.save_btn.isHidden() and not page.strip.save_btn.isEnabled() and page.strip.edit_copy_btn.isHidden()
+    assert not page.strip.save_btn.isEnabled() and not page.strip.field.locked
     assert page.work.meta.notes.endswith("Based on template EZdrummer 3")
     assert page.work.meta.status == "verified"
 
     # правка имени — unverified
     assert page.model.setData(page.model.note_index(38, COL_NAME), "  Snare: Center X  ")
     assert page.dirty and window.nav_maps.text() == "Maps"  # у вкладки нет отметки «не сохранено»
-    assert page.save()
+    assert page.strip.save_btn.isEnabled() and page.strip.revert_action.isEnabled()
+    page._shortcuts[0].activated.emit()  # Ctrl+S
     assert not page.dirty
     saved, _ = storage.load_map("My EZD3")
     assert saved.names[38] == "Snare: Center X" and saved.meta.status == "unverified"
@@ -204,8 +228,8 @@ def test_revert(window, storage):
     page.reload_list()
     page.select(MapRef(USER, "A"))
     page.model.set_name(37, "Stick")
-    page.revert()
-    assert not page.dirty and page.work.names == {36: "Kick"}
+    page.strip.revert_action.trigger()  # «…» → Revert changes
+    assert not page.dirty and page.work.names == {36: "Kick"} and not page.strip.save_btn.isEnabled()
 
 
 def test_new_rename_delete(window, storage):
@@ -241,7 +265,7 @@ def test_legacy_txt_map_marked_and_saved_as_json(window, storage):
                 if page.list.item(i).data(REF_ROLE) == MapRef(USER, "Old"))
     assert "legacy" in item.data(Qt.ItemDataRole.UserRole + 1)
     page.select(MapRef(USER, "Old"))
-    assert page.legacy and not page.strip.kind_chip.isHidden() and page.strip.kind_chip.text() == "LEGACY .TXT"
+    assert page.legacy and "Legacy REAPER .txt map" in page.strip.field.toolTip()
     n = next(iter(page.work.names))
     page.model.set_name(n, "Renamed note")
     assert page.save()
@@ -274,10 +298,9 @@ def test_export_full_map(window, storage, tmp_path):
     page.select(MapRef(USER, "Kit"))
     full = tmp_path / "full.txt"
     page.choose_save_file = lambda name: str(full)
-    assert page.strip.export_btn.menu() is None  # «Write to notes only» убран — кнопка сразу экспортирует
     page.strip.export_btn.click()
     assert parse_notenames(full.read_text(encoding="utf-8"), "x")[0].names.keys() == {35, 36, 38, 51, 59}
-    assert page.strip.status.text() == f"Exported to {full}."
+    assert page.status.text() == f"Exported to {full}."
 
 
 def test_maps_tab_disables_convert_shortcuts(window):

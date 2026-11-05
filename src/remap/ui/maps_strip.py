@@ -1,83 +1,101 @@
-"""Кнопки и надписи управления картой на вкладке Maps (старые виджеты на QSS): действия со списком карт, заголовок
-открытой карты с отметками «шаблон» / «старый .txt» и «есть правки», строка статуса, Revert и Save.
+"""Полоса Maps на каркасе `StripFrame`: [новая][импорт][экспорт][…] | поле MY MAP / TEMPLATE [Save]. Только виджеты и
+размеры из макета; действия, доступность и подсказки подключает страница.
 
-Сигналы подключает страница; раскладку она берёт готовой: `actions` — сетка кнопок под списком карт, `head` — строка
-над таблицей, `bottom` — строка статуса с Revert и Save."""
+Меню «…»: Duplicate, Rename, Delete, Revert changes (отмены на Maps нет). Save доступна только при правках, точки нет."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QGridLayout, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtCore import QPoint, QRectF
+from PySide6.QtGui import QPainter
+from PySide6.QtWidgets import QHBoxLayout, QMenu, QWidget
 
-from .maps_text import NO_MAP_TITLE
-from .theme import repolish
+from . import text, theme
+from .field import BezelField, FaceSlot, row_spacing
+from .icons import ICONS, draw_icon
+from .keys import MAP, SQUARE, Key, key_margins, key_row_spacing
+from .strip import SLOT_H, StripFrame, StripSeparator
+
+MY_MAP, TEMPLATE_CAPTION = "MY MAP", "TEMPLATE"
+LOCK_GAP = 6  # от подписи TEMPLATE до значка замка
 
 
-class MapsStrip:
-    """Виджеты управления картой; родителя им даёт раскладка страницы."""
+class MapField(BezelField):
+    """Статическое поле открытой карты: подпись MY MAP / TEMPLATE (у шаблона — с замком) и имя карты."""
 
-    def __init__(self) -> None:
-        self.new_btn = QPushButton("New")
-        self.import_btn = QPushButton("Import .txt…")
-        self.duplicate_btn = QPushButton("Duplicate")
-        self.rename_btn = QPushButton("Rename")
-        self.delete_btn = QPushButton("Delete")
-        self.export_btn = QPushButton("Export .txt")
-        self.new_btn.setToolTip("Create an empty map")
-        self.import_btn.setToolTip("Import a REAPER MIDI note name map (.txt)")
-        self.duplicate_btn.setToolTip("Copy the selected map. This is the only way to edit a built-in template")
-        self.export_btn.setToolTip("Export the map as it is shown in the editor to a REAPER .txt file")
-        self.actions = QGridLayout()
-        self.actions.setSpacing(6)
-        for i, b in enumerate((self.new_btn, self.import_btn, self.duplicate_btn, self.rename_btn,
-                               self.delete_btn, self.export_btn)):
-            self.actions.addWidget(b, i // 2, i % 2)
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent=parent, caption=MY_MAP)
+        self.locked = False
 
-        self.title = QLabel(NO_MAP_TITLE)
-        self.title.setObjectName("mapTitle")
-        self.kind_chip = QLabel()
-        self.kind_chip.setObjectName("chip")
-        self.dirty_label = QLabel("● Unsaved changes")
-        self.dirty_label.setObjectName("dirty")
-        self.edit_copy_btn = QPushButton("Duplicate to edit")
-        self.edit_copy_btn.setObjectName("primary")
-        self.edit_copy_btn.setToolTip("Built-in templates are read-only. Make your own copy to edit it")
-        self.head = QHBoxLayout()
-        self.head.addWidget(self.title, stretch=1)
-        self.head.addWidget(self.edit_copy_btn)
-        self.head.addWidget(self.dirty_label)
-        self.head.addWidget(self.kind_chip)
+    def set_map(self, name: str, *, locked: bool) -> None:
+        self.locked = locked
+        self.set_texts(name, TEMPLATE_CAPTION if locked else MY_MAP)
 
-        self.revert_btn = QPushButton("Revert")
-        self.save_btn = QPushButton("Save")
-        self.save_btn.setObjectName("primary")
-        self.status = QLabel()
-        self.status.setObjectName("status")
-        self.status.setWordWrap(True)
-        self.bottom = QHBoxLayout()
-        self.bottom.addWidget(self.status, stretch=1)
-        self.bottom.addWidget(self.revert_btn)
-        self.bottom.addWidget(self.save_btn)
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        if not (self.locked and self.value):
+            return
+        # замок — справа от подписи, по центру её строки (блок подписи и значения — по центру лица, как в paint_field_text)
+        spec, content = self._specs.caption, self.content_rect()
+        cap_h = text.line_height(spec)
+        top = content.center().y() - (cap_h + 1 + text.line_height(self._specs.value)) / 2
+        icon = ICONS["lock"]
+        x = content.left() + text.text_width(self.caption, spec) + LOCK_GAP
+        p = QPainter(self)
+        draw_icon(p, "lock", QRectF(x, top + (cap_h - icon.h) / 2, icon.w, icon.h), theme.FIELD_CAPTION)
+
+
+class MapsStrip(StripFrame):
+    """`new_btn`, `import_btn`, `export_btn`, `more_btn` (меню `menu`: `duplicate_action`, `rename_action`,
+    `delete_action`, `revert_action`) | `field` | `save_btn`."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.new_btn = Key(icon="map-new", spec=MAP)
+        self.import_btn = Key(icon="map-import", spec=MAP)
+        self.export_btn = Key(icon="map-export", spec=MAP)
+        self.more_btn = Key(icon="map-more", spec=MAP)
+        self.field = MapField()
+        self.save_btn = Key(icon="save", spec=SQUARE)
+
+        self.menu = QMenu(self)
+        self.duplicate_action = self.menu.addAction("Duplicate")
+        self.rename_action = self.menu.addAction("Rename")
+        self.delete_action = self.menu.addAction("Delete")
+        self.menu.addSeparator()
+        self.revert_action = self.menu.addAction("Revert changes")
+        self.more_btn.clicked.connect(
+            lambda: self.menu.popup(self.more_btn.mapToGlobal(QPoint(0, self.more_btn.height()))))
+
+        km, sm, fm = key_margins(MAP), key_margins(SQUARE), self.field.margins()
+        left = QWidget()
+        lay = QHBoxLayout(left)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(key_row_spacing(theme.STRIP_GAP_KEYS, MAP))
+        for key in (self.new_btn, self.import_btn, self.export_btn, self.more_btn):
+            lay.addWidget(FaceSlot(key, SLOT_H))
+        lay.addStretch(1)
+        left.setFixedWidth(theme.STRIP_LEFT_W + km.left() + km.right())
+
+        right = QWidget()
+        rlay = QHBoxLayout(right)
+        rlay.setContentsMargins(0, 0, 0, 0)
+        rlay.setSpacing(0)
+        rlay.addWidget(FaceSlot(self.field, SLOT_H), 1)
+        rlay.addSpacing(row_spacing(theme.STRIP_GAP_KEYS, self.field, self.save_btn))
+        rlay.addWidget(FaceSlot(self.save_btn, SLOT_H))
+        right.setFixedWidth(theme.STRIP_RIGHT_W + fm.left() + sm.right())
+
+        self.set_face_inset(km.left(), sm.right())
+        self.panel.body.addWidget(left)
+        self.panel.body.addWidget(StripSeparator(km.right(), fm.left()))
+        self.panel.body.addWidget(right)
+        self.panel.body.addStretch(1)
 
     def show_state(self, *, has_map: bool, read_only: bool, dirty: bool) -> None:
-        """Доступность кнопок. У шаблона сохранять нечего: вместо Save/Revert — кнопка «Duplicate to edit»."""
-        self.dirty_label.setVisible(dirty)
+        """Доступность: Save и Revert changes — только при правках; Rename и Delete — у своих карт."""
         self.save_btn.setEnabled(dirty)
-        self.revert_btn.setEnabled(dirty)
-        self.save_btn.setHidden(read_only)
-        self.revert_btn.setHidden(read_only)
-        self.edit_copy_btn.setVisible(read_only)
-        self.duplicate_btn.setEnabled(has_map)
+        self.revert_action.setEnabled(dirty)
         self.export_btn.setEnabled(has_map)
-        self.rename_btn.setEnabled(has_map and not read_only)
-        self.delete_btn.setEnabled(has_map and not read_only)
-
-    def set_kind(self, text: str, tip: str) -> None:
-        """Отметка у заголовка («шаблон» / «старый .txt»); пустой текст — скрыта."""
-        self.kind_chip.setVisible(bool(text))
-        if text:
-            self.kind_chip.setText(text)
-            self.kind_chip.setToolTip(tip)
-
-    def set_status(self, text: str, state: str = "") -> None:
-        self.status.setText(text)
-        repolish(self.status, "state", state)
-
+        self.duplicate_action.setEnabled(has_map)
+        self.rename_action.setEnabled(has_map and not read_only)
+        self.delete_action.setEnabled(has_map and not read_only)
+        self.field.setEnabled(has_map)

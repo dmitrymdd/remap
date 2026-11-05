@@ -1,9 +1,13 @@
 """Менеджер и редактор карт нот (PySide6): список шаблонов и карт пользователя, таблица нот 0–127.
 
 Здесь — состояние вкладки и действия. Логики карт нет — только вызовы remap.core (duplicate_map, finalize_edit,
-validate_map, экспорт) и remap.storage. Вид: `maps_strip.py` (кнопки, заголовок, статус), `maps_list.py` (список карт),
-`maps_table.py` (таблица нот), тексты — `maps_text.py`. Диалоги вынесены в методы ask_*/choose_*/show_error, чтобы
+validate_map, экспорт) и remap.storage. Вид: `maps_strip.py` (верхняя полоса: клавиши, меню «…», поле карты, Save),
+`maps_list.py` (список карт), `maps_table.py` (таблица нот), тексты — `maps_text.py`. Статус — во временной нижней
+полосе, как на Convert. Диалоги вынесены в методы ask_*/choose_*/show_error, чтобы
 тесты могли их подменить.
+
+Шаблон только читается: первая попытка правки (ввод, Delete, двойной клик по ноте) один раз на открытие спрашивает,
+сделать ли копию в My Maps. Отмены нет; «Revert changes» в меню «…» возвращает сохранённое состояние.
 
 Write to (primary) на вкладке Maps не правится: его выбирают в профиле, в копии целевой карты.
 В JSON карты primary остаётся (старые файлы читаются). Имя на нескольких нотах — бейдж «+N» рядом с именем.
@@ -13,9 +17,11 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLineEdit, QListWidgetItem, QMessageBox, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidgetItem, QMessageBox, QSizePolicy, QVBoxLayout,
+    QWidget,
 )
 
 from ..core.notemap import NoteMap, duplicate_map, finalize_edit, validate_map
@@ -27,10 +33,14 @@ from .maps_list import REF_ROLE, MapList
 from .maps_strip import MapsStrip
 from .maps_table import NoteFilter, NotesPanel, NoteTableModel
 from .maps_text import (
-    OLD_TXT_CHIP, OLD_TXT_CHIP_TIP, NO_MAP_HINT, NO_MAP_TITLE, TEMPLATE, TEMPLATE_CHIP, TEMPLATE_CHIP_TIP, TEMPLATE_TIP,
-    USER, MapRef, format_parse_issues, group_rows, issues_text, legacy_tip, map_info, map_tooltip, subtitle,
+    DUPLICATE_TO_EDIT, DUPLICATE_TO_EDIT_DETAILS, EXPORT_TIP, IMPORT_TIP, MORE_TIP, NEW_TIP, NO_MAP_HINT, NO_MAP_TITLE,
+    SAVE_TIP, TEMPLATE, TEMPLATE_TIP, USER, MapRef, format_parse_issues, group_rows, issues_text, legacy_tip, map_info,
+    map_tooltip, subtitle,
 )
 from .theme import repolish
+from .tips import tip
+
+SAVE_KEYS = ("Ctrl+S",)
 
 
 # --- страница ---
@@ -51,6 +61,7 @@ class MapsPage(QWidget):
         self._templates: dict[str, NoteMap] = {}
         self._user_ids: list[str] = []
         self._dirty = False
+        self._asked_duplicate = False  # шаблон: вопрос «Duplicate to edit?» уже задан (один раз на открытие)
         self._build_ui()
         self.reload_list()
         self._update_state()
@@ -58,30 +69,28 @@ class MapsPage(QWidget):
     # --- построение UI ---
 
     def _build_ui(self) -> None:
-        root = QHBoxLayout(self)
-        root.setContentsMargins(theme.PAGE_MARGIN, 10, theme.PAGE_MARGIN, 16)
-        root.setSpacing(16)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 0)
+        root.setSpacing(0)
         self.strip = strip = MapsStrip()
-        strip.new_btn.clicked.connect(self.new_map)
-        strip.import_btn.clicked.connect(self.import_txt)
-        strip.duplicate_btn.clicked.connect(self.duplicate)
-        strip.rename_btn.clicked.connect(self.rename)
-        strip.delete_btn.clicked.connect(self.delete)
-        strip.export_btn.clicked.connect(self.export)
-        strip.edit_copy_btn.clicked.connect(self.duplicate)
-        strip.revert_btn.clicked.connect(self.revert)
-        strip.save_btn.clicked.connect(self.save)
+        for key, slot, text in ((strip.new_btn, self.new_map, NEW_TIP), (strip.import_btn, self.import_txt, IMPORT_TIP),
+                                (strip.export_btn, self.export, EXPORT_TIP), (strip.save_btn, self.save, SAVE_TIP)):
+            key.clicked.connect(lambda _=False, slot=slot: slot())
+            key.setToolTip(tip(text))
+        strip.more_btn.setToolTip(tip(MORE_TIP))
+        strip.duplicate_action.triggered.connect(lambda: self.duplicate())
+        strip.rename_action.triggered.connect(lambda: self.rename())
+        strip.delete_action.triggered.connect(lambda: self.delete())
+        strip.revert_action.triggered.connect(lambda: self.revert())
+        root.addWidget(strip)
+        root.addSpacing(theme.STRIP_GAP)
+        # Ctrl+S — на всё окно, пока видна вкладка (у скрытой страницы сочетание не срабатывает)
+        self._shortcuts = [QShortcut(QKeySequence(k), self, activated=self._save_if_dirty,
+                                     context=Qt.ShortcutContext.WindowShortcut) for k in SAVE_KEYS]
 
-        left = QVBoxLayout()
-        left.setSpacing(8)
         self.list = MapList()
+        self.list.setFixedWidth(theme.POOL_W)
         self.list.currentItemChanged.connect(self._on_current_changed)
-        left.addWidget(self.list, stretch=1)
-        left.addLayout(strip.actions)
-        left_box = QWidget()
-        left_box.setLayout(left)
-        left_box.setFixedWidth(290)
-        root.addWidget(left_box)
 
         self.model = NoteTableModel()
         self.model.edited.connect(self._update_state)
@@ -91,13 +100,25 @@ class MapsPage(QWidget):
         self.notes.search.textChanged.connect(self._apply_filter)
         self.notes.named_only.toggled.connect(self._apply_filter)
         self.notes.table.horizontalHeader().sectionClicked.connect(self.sort_by)
+        self.notes.edit_blocked.connect(self._edit_blocked)
 
-        right = QVBoxLayout()
-        right.setSpacing(6)
-        right.addLayout(strip.head)
-        right.addWidget(self.notes, stretch=1)
-        right.addLayout(strip.bottom)
-        root.addLayout(right, stretch=1)
+        screens = QHBoxLayout()
+        screens.setContentsMargins(0, 0, 0, 0)
+        screens.setSpacing(theme.SCREEN_GAP)
+        screens.addWidget(self.list)
+        screens.addWidget(self.notes, stretch=1)
+        root.addLayout(screens, stretch=1)
+
+        # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Convert
+        self.status = QLabel()
+        self.status.setObjectName("status")
+        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        band = QWidget()
+        band.setFixedHeight(theme.BAND_H)
+        band_box = QHBoxLayout(band)
+        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
+        band_box.addWidget(self.status, stretch=1)
+        root.addWidget(band)
 
     # --- диалоги (тесты подменяют эти методы) ---
 
@@ -205,6 +226,7 @@ class MapsPage(QWidget):
             self.show_error(f"Cannot open the map:\n\n{e}")
             return False
         self.current, self.base, self.load_issues = ref, m, issues
+        self._asked_duplicate = False
         self.legacy = not ref.read_only and not (self.storage.maps_dir / f"{ref.id}.json").is_file()
         self.work = copy.deepcopy(m)
         self.model.set_map(self.work, ref.read_only)
@@ -281,6 +303,18 @@ class MapsPage(QWidget):
         self.set_status(f'Saved "{out.name}".', "ok")
         return True
 
+    def _save_if_dirty(self) -> None:
+        if self.dirty:
+            self.save()
+
+    def _edit_blocked(self) -> None:
+        """Попытка править шаблон: один раз на открытие предложить копию в My Maps."""
+        if self._asked_duplicate or self.current is None or not self.current.read_only:
+            return
+        self._asked_duplicate = True
+        if self.confirm("Built-in template", DUPLICATE_TO_EDIT, DUPLICATE_TO_EDIT_DETAILS):
+            self.duplicate()
+
     def revert(self) -> None:
         if self.base is None:
             return
@@ -300,17 +334,16 @@ class MapsPage(QWidget):
         self.strip.show_state(has_map=has_map, read_only=read_only, dirty=dirty)
         self.notes.search.setEnabled(has_map)
         self.notes.named_only.setEnabled(has_map)
+        field = self.strip.field
         if not has_map:
-            self.strip.set_kind("", "")
-            self.strip.title.setText(NO_MAP_TITLE)
+            field.set_map(NO_MAP_TITLE, locked=False)
+            field.setToolTip("")
             self.notes.source_label.setText(NO_MAP_HINT)
             self.notes.issues_label.setText("")
             return
-        if read_only:
-            self.strip.set_kind(TEMPLATE_CHIP, TEMPLATE_CHIP_TIP)
-        else:
-            self.strip.set_kind(OLD_TXT_CHIP if self.legacy else "", OLD_TXT_CHIP_TIP)
-        self.strip.title.setText(self.work.name)
+        field.set_map(self.work.name, locked=read_only)
+        extra = TEMPLATE_TIP if read_only else legacy_tip(f"{ref.id}.txt") if self.legacy else ""
+        field.setToolTip(tip(extra, title=self.work.name) if extra else tip(self.work.name))
         self.notes.source_label.setText(map_info(self.work))
         self._update_issues()
 
@@ -445,4 +478,5 @@ class MapsPage(QWidget):
         self.set_status(f"Exported to {path}.", "ok")
 
     def set_status(self, text: str, state: str = "") -> None:
-        self.strip.set_status(text, state)
+        self.status.setText(text)
+        repolish(self.status, "state", state)

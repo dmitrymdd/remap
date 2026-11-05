@@ -289,12 +289,18 @@ class NoteFilter(QSortFilterProxyModel):
         return q == pitch_name(n).casefold() or (name is not None and q in normalize_name(name))
 
 
+TYPING_MODIFIERS = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.KeypadModifier  # ввод текста, не сочетание
+
+
 class NotesPanel(QWidget):
     """Правая колонка без заголовка и кнопок: сведения о карте, поиск и «только с именем», таблица нот, ошибки.
 
     Модель и фильтр принадлежат странице (это её состояние); панель — только вид. Delete в таблице (не в режиме правки
-    ячейки) стирает имена выделенных нот.
+    ячейки) стирает имена выделенных нот. У шаблона попытка правки (ввод, Delete, двойной клик по ноте) —
+    сигнал `edit_blocked`.
     """
+
+    edit_blocked = Signal()
 
     def __init__(self, model: NoteTableModel, proxy: NoteFilter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -337,6 +343,7 @@ class NotesPanel(QWidget):
         header.setSectionResizeMode(COL_NAME, QHeaderView.ResizeMode.Stretch)
         self.table.setItemDelegateForColumn(COL_NAME, NameDelegate(self.table))
         self.table.installEventFilter(self)
+        self.table.doubleClicked.connect(self._double_clicked)
         for sig in (proxy.modelReset, proxy.layoutChanged, proxy.rowsInserted, proxy.rowsRemoved):
             sig.connect(lambda *_: update_spans(self.table, len(COLUMNS)))
         box.addWidget(self.table, stretch=1)
@@ -365,7 +372,19 @@ class NotesPanel(QWidget):
             self.table.setCurrentIndex(index)
             self.table.scrollTo(index, QAbstractItemView.ScrollHint.PositionAtCenter)
 
+    def _locked(self) -> bool:
+        return self.model.read_only and self.model.map is not None
+
+    def _double_clicked(self, index) -> None:
+        if self._locked() and self.model.note_at(self.proxy.mapToSource(index).row()) is not None:
+            self.edit_blocked.emit()
+
     def eventFilter(self, obj, event) -> bool:
+        if obj is self.table and event.type() == QEvent.Type.KeyPress and self._locked() and (
+                event.key() == Qt.Key.Key_Delete or (event.text().isprintable() and event.text().strip()
+                                                    and not event.modifiers() & ~TYPING_MODIFIERS)):
+            self.edit_blocked.emit()
+            return True
         if (obj is self.table and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Delete
                 and self.table.state() != QAbstractItemView.State.EditingState and not self.model.read_only):
             rows = {self.proxy.mapToSource(i).row() for i in self.table.selectionModel().selectedRows()}
