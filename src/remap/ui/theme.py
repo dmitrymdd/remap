@@ -94,7 +94,7 @@ CABLE, CABLE_WIDTH, CABLE_SELECTED_WIDTH = "#82BC98", 1.5, 1.6
 CABLE_PORT_RADIUS, CABLE_TANGENT = 2.6, 60  # точка кабеля; плечо Безье: горизонтальные касательные концов
 
 # --- Статусы: светодиод, текст, рамка, фон ---
-OK_LED, OK_TEXT, OK_BORDER = "#62D69A", "#8FC7A3", "#477A5C"
+OK_LED, OK_TEXT = "#62D69A", "#8FC7A3"
 WARN_LED, WARN_TEXT, WARN_BORDER, WARN_BG = "#E3D36B", "#E6DA8E", "#6F7748", (227, 211, 107, 0.06)
 ERR_LED, ERR_TEXT, ERR_BORDER, ERR_BG = "#F0646E", "#F2939A", "#7C4248", (240, 100, 110, 0.07)
 OK_BG: RGBA = (110, 190, 140, 0.07)
@@ -458,23 +458,12 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
                                                                      background: {t['surface']}; }}
     QCheckBox::indicator:checked:disabled, QTableWidget::indicator:checked:disabled {{
         background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
-    QPushButton#iconButton {{ font-size: 14pt; padding: 1px 12px; color: {t['text_muted']}; }}
-    QPushButton#iconButton:hover {{ color: {t['text']}; }}
-    QPushButton#iconButton::menu-indicator {{ image: none; width: 0; }}
     QFrame#suggestBar {{ background: {t['surface']}; border: 1px dashed {t['accent_muted']}; border-radius: 6px; }}
     QFrame#suggestBar QLabel {{ background: transparent; color: {t['text_muted']}; }}
     QPushButton#link {{ background: transparent; border: none; padding: 3px 6px; color: {t['accent']};
                         font-weight: 600; }}
     QPushButton#link:hover {{ color: {t['accent_hover']}; }}
     QPushButton#link:disabled {{ color: {t['text_faint']}; }}
-    QLabel#mapTitle {{ font-size: 14pt; font-weight: 600; }}
-    QLabel#chip {{ border: 1px solid {CHIP_BORDER}; border-radius: 9px; padding: 1px 8px; font-size: 8pt;
-                   font-weight: 700; color: {t['text_muted']}; }}
-    QLabel#chip[state="ok"] {{ color: {OK_TEXT}; border-color: {OK_BORDER}; }}
-    QLabel#chip[state="warn"] {{ color: {WARN_TEXT}; border-color: {WARN_BORDER}; }}
-    QLabel#dirty {{ color: {t['accent']}; font-weight: 600; }}
-    QLabel#issues {{ color: {WARN_TEXT}; }}
-    QLabel#issues[state="error"] {{ color: {ERR_TEXT}; }}
     """
 
 

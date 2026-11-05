@@ -9,9 +9,9 @@ from __future__ import annotations
 from PySide6.QtCore import (
     QAbstractTableModel, QEvent, QModelIndex, QPersistentModelIndex, QPointF, QRectF, QSortFilterProxyModel, Qt, Signal,
 )
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPalette
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import (
-    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QSizePolicy, QStyle, QStyledItemDelegate, QTableView,
+    QAbstractItemView, QHBoxLayout, QHeaderView, QLineEdit, QSizePolicy, QStyledItemDelegate, QTableView,
     QToolTip, QWidget,
 )
 
@@ -25,6 +25,7 @@ from .maps_text import (
     SEARCH_PLACEHOLDER, LayoutRow, badge_tip, group_rows, sort_tip,
 )
 from .metal import RecessedBlock
+from .selection import Selection
 from .tips import tip
 
 OTHERS_ROLE = Qt.ItemDataRole.UserRole + 4  # сколько ещё нот карты с этим именем (бейдж «+N»)
@@ -186,6 +187,13 @@ class NoteTableModel(QAbstractTableModel):
         self._changed()
         return True
 
+    def clear_names(self, notes: list[int]) -> bool:
+        """Стереть имена нот одним шагом (одно обновление вида и одна отметка правки)."""
+        changed = [n for n in notes if set_note_name(self.map, n, "")]
+        if changed:
+            self._changed()
+        return bool(changed)
+
     def _changed(self) -> None:
         self.refresh()  # меняются счётчики и подсветка всех нот затронутых артикуляций
         self.edited.emit()
@@ -285,7 +293,7 @@ class NoteDelegate(QStyledItemDelegate):
             name = model.map.names.get(row.note, "")
             others = model.data(model.note_index(row.note, COL_NAME), OTHERS_ROLE)
             editing = self.edit_index is not None and self.edit_index.row() == index.row()
-            selected = bool(option.state & QStyle.StateFlag.State_Selected)
+            selected = view.selection.is_selected(row.note)
             state = "editing" if editing else "selected" if selected else "hover" if hover else "normal"
             plates.paint_note_row(p, full, str(row.note), name, state=state, dim=not name,
                                   badge=f"+{others}" if others else "", field=False)
@@ -331,16 +339,26 @@ class NoteDelegate(QStyledItemDelegate):
         self._view.viewport().update()
 
 
+NAV_KEYS = (Qt.Key.Key_Up, Qt.Key.Key_Down, Qt.Key.Key_PageUp, Qt.Key.Key_PageDown, Qt.Key.Key_Home, Qt.Key.Key_End)
+
+
 class NotesView(QTableView):
     """Таблица без рамки, фона, сетки и заголовков; заголовки групп — на всю ширину, высоты строк — из макета. Клик по
     заголовку группы сворачивает или раскрывает её; правка идёт всегда в колонке имени; подсказки — свои (номер — высота
-    ноты, бейдж — остальные номера с этим именем, обрезанное имя — целиком)."""
+    ноты, бейдж — остальные номера с этим именем, обрезанное имя — целиком).
+
+    Выделение — `selection` (`ui/selection.py`, ключи — номера нот, как в Проводнике): клик / Ctrl / Shift / Ctrl+Shift,
+    Ctrl+A — все видимые ноты (заголовки и ноты свёрнутых групп не входят), клик по пустому месту и Esc — снять. Стрелки
+    двигают текущую строку и выделяют её (с Shift — диапазон). Своё выделение Qt выключено; текущая строка (`currentIndex`)
+    — та, что правится по двойному клику, Enter и F2. После сортировки и фильтра выделение остаётся у видимых нот."""
 
     group_clicked = Signal(str)
+    selection_changed = Signal()
 
     def __init__(self, proxy: NoteFilter, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.hover_row = -1
+        self.selection = Selection()
         self.setModel(proxy)
         self.setFrameShape(QTableView.Shape.NoFrame)
         self.setShowGrid(False)
@@ -356,7 +374,7 @@ class NotesView(QTableView):
         self.setPalette(pal)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        self.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked
                              | QAbstractItemView.EditTrigger.EditKeyPressed
                              | QAbstractItemView.EditTrigger.AnyKeyPressed)
@@ -388,6 +406,29 @@ class NotesView(QTableView):
             else:
                 self.setRowHeight(r, theme.NOTE_ROW_H)
         self.hover_row = -1
+        self.selection.set_items(self.proxy.note_rows())
+
+    def _note_at(self, pos) -> int | None:
+        index = self.indexAt(pos)
+        row = self.proxy.source_row(index.row()) if index.isValid() else None
+        return row.note if row is not None else None
+
+    def _selection_done(self) -> None:
+        self.viewport().update()
+        self.selection_changed.emit()
+
+    def select_all(self) -> None:
+        self.selection.select_all()
+        self._selection_done()
+
+    def clear_selection(self) -> None:
+        self.selection.clear()
+        self._selection_done()
+
+    def select_note(self, note: int, ctrl: bool = False, shift: bool = False) -> None:
+        """Как щелчок по строке ноты с модификаторами (нота должна быть видна)."""
+        self.selection.press(note, ctrl=ctrl, shift=shift)
+        self._selection_done()
 
     def edit(self, index, *args):
         """Правка — всегда в колонке имени, по какой бы ячейке строки ни щёлкнули."""
@@ -407,6 +448,44 @@ class NotesView(QTableView):
                 self.group_clicked.emit(row.group)
             return
         super().mousePressEvent(event)
+        if event.button() == Qt.MouseButton.LeftButton:
+            note = self._note_at(event.position().toPoint())
+            if note is None:
+                self.clear_selection()
+            else:
+                mods = event.modifiers()
+                self.select_note(note, ctrl=bool(mods & Qt.KeyboardModifier.ControlModifier),
+                                 shift=bool(mods & Qt.KeyboardModifier.ShiftModifier))
+
+    def keyPressEvent(self, event) -> None:
+        if event.matches(QKeySequence.StandardKey.SelectAll):
+            self.select_all()
+            return
+        if event.key() == Qt.Key.Key_Escape and self.state() != QAbstractItemView.State.EditingState:
+            self.clear_selection()
+            return
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and self.state() != QAbstractItemView.State.EditingState:
+            if self.currentIndex().isValid():
+                self.edit(self.currentIndex(), QAbstractItemView.EditTrigger.EditKeyPressed, event)
+            return
+        before = self.currentIndex()
+        super().keyPressEvent(event)
+        current = self.currentIndex()
+        # заголовки групп не бывают текущими: стрелка проходит их (свёрнутые группы — несколько подряд)
+        while event.key() in NAV_KEYS and current.isValid() and current.row() != before.row() \
+                and self.proxy.source_row(current.row()).is_header:
+            step = current
+            super().keyPressEvent(event)
+            current = self.currentIndex()
+            if current.row() == step.row():  # край таблицы — вернуться на прежнюю строку ноты
+                self.setCurrentIndex(before)
+                current = before
+                break
+        if event.key() in NAV_KEYS and current.isValid() and current.row() != before.row():
+            note = self.proxy.source_row(current.row()).note
+            if note is not None:
+                shift = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                self.select_note(note, shift=shift)
 
     def mouseDoubleClickEvent(self, event) -> None:
         if self._header_at(event.position().toPoint()) is not None:
@@ -551,6 +630,7 @@ class TotalsBar(QWidget):
 
 
 TYPING_MODIFIERS = Qt.KeyboardModifier.ShiftModifier | Qt.KeyboardModifier.KeypadModifier  # ввод текста, не сочетание
+EDIT_KEYS = (Qt.Key.Key_Delete, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_F2)  # у шаблона — попытка правки
 
 
 class NotesScreen(RecessedBlock):
@@ -587,6 +667,7 @@ class NotesScreen(RecessedBlock):
         self.header.tip_for = lambda col: model.headerData(col, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole)
         box.addWidget(self.header)
         self.table = NotesView(proxy)
+        self.selection = self.table.selection
         self.table.group_clicked.connect(self._toggle_group)
         self.table.installEventFilter(self)
         self.table.doubleClicked.connect(self._double_clicked)
@@ -640,15 +721,13 @@ class NotesScreen(RecessedBlock):
 
     def eventFilter(self, obj, event) -> bool:
         if obj is self.table and event.type() == QEvent.Type.KeyPress and self._locked() and (
-                event.key() == Qt.Key.Key_Delete or (event.text().isprintable() and event.text().strip()
-                                                    and not event.modifiers() & ~TYPING_MODIFIERS)):
+                event.key() in EDIT_KEYS or (event.text().isprintable() and event.text().strip()
+                                             and not event.modifiers() & ~TYPING_MODIFIERS)):
             self.edit_blocked.emit()
             return True
         if (obj is self.table and event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Delete
                 and self.table.state() != QAbstractItemView.State.EditingState and not self.model.read_only):
-            rows = {self.proxy.mapToSource(i).row() for i in self.table.selectionModel().selectedRows()}
-            for n in sorted(n for n in map(self.model.note_at, rows) if n is not None):
-                self.model.set_name(n, "")
+            self.model.clear_names(self.selection.selected)
             return True
         return super().eventFilter(obj, event)
 

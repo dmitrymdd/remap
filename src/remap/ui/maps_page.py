@@ -240,6 +240,7 @@ class MapsPage(QWidget):
         self._asked_duplicate = False
         self.legacy = not ref.read_only and not (self.storage.maps_dir / f"{ref.id}.json").is_file()
         self.work = copy.deepcopy(m)
+        self.notes.table.clear_selection()  # другая карта — те же номера, но другие ноты
         self.model.set_map(self.work, ref.read_only)
         self._apply_filter()
         self._update_state()
@@ -251,6 +252,7 @@ class MapsPage(QWidget):
         self.list.set_current(None)
         self.load_issues = []
         self.legacy = False
+        self.notes.table.clear_selection()
         self.model.set_map(None, True)
         self._update_state()
 
