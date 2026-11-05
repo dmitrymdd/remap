@@ -404,7 +404,9 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QPushButton#primary:disabled {{ background: {key}; color: {t['text_faint']};
                                     border: 1px solid {KEY_BORDER}; font-weight: 400; }}
     QComboBox {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 6px;
-                 padding: 5px 24px 5px 10px; font-family: {mono}; font-size: 12px; }}
+                 padding: 5px 24px 5px 10px; }}
+    /* без font-size: шрифт в px из QSS при открытии списка даёт «QFont::setPointSize: Point size <= 0»; текст
+       комбо рисует ui/combo.py */
     QComboBox:hover {{ border-color: {t['accent']}; }}
     /* стрелку рисует ui/combo.py (ComboBox): у ::drop-down своей рамки нет — иначе справа двойная граница */
     QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 20px;

@@ -149,3 +149,17 @@ def test_results_reset_only_on_profile_direction_or_folder_change(window, tmp_pa
     page.convert()
     page.reload_profiles()  # тот же профиль (сохранили другой профиль на Profiles) — результаты остаются
     assert len(page.results) == 2
+
+
+def test_results_reset_when_current_profile_is_resaved_with_other_rules(window, tmp_path):
+    page = window.convert_page
+    converted(window, tmp_path, "a.mid")
+    profile_id = page.profile_combo.currentData()
+    profile = window.storage.load_profile(profile_id)
+    page.reload_profiles()  # пересохранили без изменений — результаты остаются
+    assert len(page.results) == 1
+    profile.rules.pop(next(iter(profile.rules)))
+    window.storage.save_profile(profile, profile_id=profile_id, overwrite=True)
+    page.reload_profiles()  # так Profiles сообщает о сохранении (profiles_changed)
+    assert page.profile_combo.currentData() == profile_id
+    assert page.results == {}  # тот же профиль с другими правилами — как смена профиля

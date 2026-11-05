@@ -86,7 +86,8 @@ class ConvertPage(QWidget):
         self.results: dict[Path, FileResult] = {}  # результаты последней конвертации по исходному файлу
         self.report_head = ""             # «Profile: … » — заголовок окна Details
         self.output_dir: Path | None = None  # None — результаты рядом с исходниками
-        self._converted_with: tuple | None = None  # (профиль, направление, папка) последней конвертации
+        self._converted_with: tuple | None = None  # (профиль, его содержимое, направление, папка) последней конвертации
+        self._profile_stamp = ""          # JSON текущего профиля: тот же профиль, пересохранённый иначе, — другой ключ
         saved = self.settings.value(DIRECTION_KEY)
         self.direction = saved if saved in (FORWARD, REVERSE) else FORWARD
         self._build_ui()
@@ -246,9 +247,12 @@ class ConvertPage(QWidget):
                                       else tip(CREATE_PROFILE))
         source = target = NO_VALUE
         no_target = False
+        self._profile_stamp = ""
         if profile_id is not None:
             try:
-                profile = self.storage.load_profile(profile_id).oriented(self.direction)
+                stored = self.storage.load_profile(profile_id)
+                self._profile_stamp = stored.to_json()
+                profile = stored.oriented(self.direction)
                 source, target = map_summary(profile.source_map), map_summary(profile.target_map)
                 no_target = profile.target_map is None
             except (OSError, ValueError) as e:
@@ -280,11 +284,11 @@ class ConvertPage(QWidget):
     # --- файлы ---
 
     def _results_key(self) -> tuple:
-        """От чего зависят результаты: профиль, направление и папка."""
-        return self.profile_combo.currentData(), self.direction, self.output_dir
+        """От чего зависят результаты: профиль (и его содержимое), направление и папка."""
+        return self.profile_combo.currentData(), self._profile_stamp, self.direction, self.output_dir
 
     def _reset_results_if_stale(self) -> None:
-        """Сменились профиль, направление или папка — прежние результаты больше не про текущие настройки."""
+        """Сменились профиль (или его правила), направление или папка — прежние результаты больше не про текущие настройки."""
         if self.results and self._results_key() != self._converted_with:
             self.results = {}
             self._show_files()
@@ -479,6 +483,7 @@ class ConvertPage(QWidget):
             self.show_error(f"Conversion failed:\n\n{exc}")
             self.set_status("Conversion failed.", "error")
             return
+        self._profile_stamp = profile.to_json()  # конвертируем тем, что в файле сейчас
         result = convert_batch(self.sources, profile, self.direction, self.output_dir)
         self.results = {f.src: f for f in result.files}
         self._converted_with = self._results_key()
