@@ -13,6 +13,13 @@ from .theme import qcolor
 SLOT_H = theme.STRIP_H - 2 * theme.RECESS_PAD  # высота панели: полоса, по центру которой стоят лица
 
 
+def section_width(block_w: int) -> int:
+    """Ширина секции полосы (от лица первого виджета до лица последнего) над блоком экрана шириной block_w: по 21 px с
+    каждой стороны — у края полосы это поле блока и панели, у прорези — половина её лишней ширины
+    (STRIP_SEP_W = SCREEN_GAP + 2 × STRIP_INSET)."""
+    return block_w - 2 * theme.STRIP_INSET
+
+
 class StripSeparator(QWidget):
     """Вертикальная прорезь панели: тёмная линия 1 px и светлая справа от неё; сверху и снизу по 10 px."""
 

@@ -217,6 +217,7 @@ COL_FROM, COL_GAP, COL_TO = 200, 122, 200  # колонки сцены
 BAND_H = 30  # нижняя полоса под экранами (между винтами)
 BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # панель подсказок и статус: на линии центров нижних винтов
 STRIP_PAD_X = 15  # поля панели в полосе
+STRIP_INSET = RECESS_PAD + STRIP_PAD_X  # 21: от края лица блока экрана до лица крайнего виджета секции полосы над ним
 STRIP_LEFT_W, STRIP_SEP_W, STRIP_RIGHT_W = 218, 54, 522
 STRIP_GAP_KEYS = 8
 # полоса Convert (лица): профиль | прорезь | SOURCE ⇄ TARGET в левой части 514 | прорезь 54 | OUTPUT
