@@ -223,7 +223,7 @@ class Fuzz:
         return "write_to", None
 
     def op_map(self, q):
-        from remap.ui.maps_page import TEMPLATE, MapRef
+        from remap.ui.maps_text import TEMPLATE, MapRef
         self.page.choose_map(self.rng.choice(("source", "target")), MapRef(TEMPLATE, self.rng.choice(TEMPLATES)))
         return "map", None
 

@@ -18,7 +18,7 @@ from remap.storage import sanitize_id
 from remap.templates import load_map_template
 from remap.ui import cable_view, plates, theme
 from remap.ui.main_window import PAGE_CONVERT, PAGE_PROFILES, MainWindow
-from remap.ui.maps_page import TEMPLATE, USER, MapRef
+from remap.ui.maps_text import TEMPLATE, USER, MapRef
 from remap.ui.profiles_page import ID_ROLE
 
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "midi" / "Groove 01.mid"
@@ -536,7 +536,7 @@ def test_write_to_choice_shows_numbers_only(window, monkeypatch):
 
 
 def test_hotkeys_in_tooltips_and_short_status(window, tmp_path):
-    from remap.ui.maps_page import COL_NAME
+    from remap.ui.maps_text import COL_NAME
     window.show_page(PAGE_CONVERT)
     assert "Add .mid files" in window.convert_page.convert_btn.toolTip()  # файлов нет — подсказка, что сделать
     assert "Ctrl+C" in window.convert_page.output_screen.copy_btn.toolTip()

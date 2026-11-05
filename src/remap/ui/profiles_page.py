@@ -48,7 +48,7 @@ from ..core.suggest import apply_suggested, plan_suggestions, suggestion_targets
 from ..storage import Storage, id_taken
 from ..templates import list_map_templates, load_map_template
 from .cable_view import CableEditor
-from .maps_page import TEMPLATE, USER, MapRef, wrapped_tooltip
+from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
 from .profile_strip import MapCombo, ProfileStrip
 from .tips import tip
 from .settings import ui_settings

@@ -375,7 +375,7 @@ def test_visible_part_of_a_long_scene_repaints_quickly(app):
 
 
 # --- руками нарисованный код без своих цветов ---
-@pytest.mark.parametrize("module", ["cable_view", "maps_page", "profiles_page", "main_window", "plates", "keys", "combo", "field",
+@pytest.mark.parametrize("module", ["cable_view", "maps_page", "maps_list", "maps_table", "maps_strip", "profiles_page", "main_window", "plates", "keys", "combo", "field",
                                     "glass", "text", "cable_layout"])
 def test_hand_painted_modules_have_no_hex_colours_or_legacy_tokens(module):
     source = (SRC / f"{module}.py").read_text(encoding="utf-8")

@@ -14,7 +14,9 @@ from remap.core.pitch import pitch_name
 from remap.core.notenames import parse_notenames
 from remap.templates import load_map_template
 from remap.ui.main_window import PAGE_MAPS, MainWindow
-from remap.ui.maps_page import COL_NAME, COL_NOTE, OTHERS_ROLE, REF_ROLE, TEMPLATE, USER, MapRef
+from remap.ui.maps_list import REF_ROLE
+from remap.ui.maps_table import OTHERS_ROLE
+from remap.ui.maps_text import COL_NAME, COL_NOTE, TEMPLATE, USER, MapRef
 
 FIXTURE = Path(__file__).parent / "fixtures" / "reaper_custom_with_order.txt"
 
@@ -51,13 +53,13 @@ def test_manager_lists_templates_and_opens_read_only(window):
     idx = page.model.note_index(36, COL_NAME)
     assert not page.model.flags(idx) & Qt.ItemFlag.ItemIsEditable
     assert not page.model.setData(idx, "X")
-    assert not page.rename_btn.isEnabled() and not page.delete_btn.isEnabled()
-    assert page.duplicate_btn.isEnabled()
+    assert not page.strip.rename_btn.isEnabled() and not page.strip.delete_btn.isEnabled()
+    assert page.strip.duplicate_btn.isEnabled()
     assert not hasattr(page, "status_chip")  # статус карты в UI не показывается
     assert "verified" not in page.list.currentItem().toolTip().casefold()
     # у шаблона нет Save/Revert, вместо них подсказка
-    assert page.save_btn.isHidden() and page.revert_btn.isHidden()
-    assert not page.edit_copy_btn.isHidden() and page.edit_copy_btn.text() == "Duplicate to edit"
+    assert page.strip.save_btn.isHidden() and page.strip.revert_btn.isHidden()
+    assert not page.strip.edit_copy_btn.isHidden() and page.strip.edit_copy_btn.text() == "Duplicate to edit"
 
 
 def test_duplicate_edit_save_reload(window, storage, app):
@@ -66,7 +68,7 @@ def test_duplicate_edit_save_reload(window, storage, app):
     page.answers["text"] = ["My EZD3"]
     page.duplicate()
     assert page.current == MapRef(USER, "My EZD3") and not page.model.read_only
-    assert not page.save_btn.isHidden() and not page.save_btn.isEnabled() and page.edit_copy_btn.isHidden()
+    assert not page.strip.save_btn.isHidden() and not page.strip.save_btn.isEnabled() and page.strip.edit_copy_btn.isHidden()
     assert page.work.meta.notes.endswith("Based on template EZdrummer 3")
     assert page.work.meta.status == "verified"
 
@@ -114,13 +116,13 @@ def test_same_name_badge(window, storage, app):
     assert "On notes 35, 36" in m.data(m.note_index(35, COL_NAME), Qt.ItemDataRole.ToolTipRole)
     # дубли без Write to больше не подсвечиваются и не попадают в замечания
     assert m.data(m.note_index(36, COL_NAME), Qt.ItemDataRole.BackgroundRole) is None
-    assert "Write to" not in page.issues_label.text()
-    from remap.ui.maps_page import NameDelegate
-    assert isinstance(page.table.itemDelegateForColumn(COL_NAME), NameDelegate)
+    assert "Write to" not in page.notes.issues_label.text()
+    from remap.ui.maps_table import NameDelegate
+    assert isinstance(page.notes.table.itemDelegateForColumn(COL_NAME), NameDelegate)
     window.resize(1000, 700)
     window.show()
     app.processEvents()
-    assert not page.table.grab().isNull()  # бейдж рисуется без ошибок
+    assert not page.notes.table.grab().isNull()  # бейдж рисуется без ошибок
 
 
 def test_filter_named_only_and_search(window):
@@ -128,13 +130,13 @@ def test_filter_named_only_and_search(window):
     page.select(MapRef(TEMPLATE, "Superior Drummer 3"))
     n_named = len(page.work.names)
     assert len(page.proxy.note_rows()) == n_named
-    page.named_only.setChecked(False)
+    page.notes.named_only.setChecked(False)
     assert sorted(page.proxy.note_rows()) == list(range(128))
-    page.search.setText("36")
+    page.notes.search.setText("36")
     assert page.proxy.note_rows() == [36] and page.proxy.rowCount() == 2  # нота + заголовок её группы
-    page.search.setText("c1")  # название высоты
+    page.notes.search.setText("c1")  # название высоты
     assert page.proxy.note_rows() == [36]
-    page.search.setText("kick")
+    page.notes.search.setText("kick")
     assert 0 < len(page.proxy.note_rows()) < n_named
     # пустые группы скрыты: видимые заголовки — только группы найденных нот
     headers = [page.model.row_at(page.proxy.mapToSource(page.proxy.index(r, 0)).row())
@@ -210,7 +212,7 @@ def test_new_rename_delete(window, storage):
     page = window.maps_page
     page.answers["text"] = ["Fresh"]
     page.new_map()
-    assert page.current == MapRef(USER, "Fresh") and not page.named_only.isChecked()
+    assert page.current == MapRef(USER, "Fresh") and not page.notes.named_only.isChecked()
 
     storage.save_map(NoteMap("Taken"))
     page.reload_list()
@@ -239,7 +241,7 @@ def test_legacy_txt_map_marked_and_saved_as_json(window, storage):
                 if page.list.item(i).data(REF_ROLE) == MapRef(USER, "Old"))
     assert "legacy" in item.data(Qt.ItemDataRole.UserRole + 1)
     page.select(MapRef(USER, "Old"))
-    assert page.legacy and not page.kind_chip.isHidden() and page.kind_chip.text() == "LEGACY .TXT"
+    assert page.legacy and not page.strip.kind_chip.isHidden() and page.strip.kind_chip.text() == "LEGACY .TXT"
     n = next(iter(page.work.names))
     page.model.set_name(n, "Renamed note")
     assert page.save()
@@ -272,10 +274,10 @@ def test_export_full_map(window, storage, tmp_path):
     page.select(MapRef(USER, "Kit"))
     full = tmp_path / "full.txt"
     page.choose_save_file = lambda name: str(full)
-    assert page.export_btn.menu() is None  # «Write to notes only» убран — кнопка сразу экспортирует
-    page.export_btn.click()
+    assert page.strip.export_btn.menu() is None  # «Write to notes only» убран — кнопка сразу экспортирует
+    page.strip.export_btn.click()
     assert parse_notenames(full.read_text(encoding="utf-8"), "x")[0].names.keys() == {35, 36, 38, 51, 59}
-    assert page.status.text() == f"Exported to {full}."
+    assert page.strip.status.text() == f"Exported to {full}."
 
 
 def test_maps_tab_disables_convert_shortcuts(window):
@@ -285,7 +287,7 @@ def test_maps_tab_disables_convert_shortcuts(window):
 
 
 def test_columns_without_write_to(window, storage):
-    from remap.ui.maps_page import COLUMNS
+    from remap.ui.maps_text import COLUMNS
     page = window.maps_page
     page.select(MapRef(TEMPLATE, "EZdrummer 3"))
     assert COLUMNS == ("NOTE", "NAME") and page.model.columnCount() == 2  # высоты (C#1) нет — только в подсказке
@@ -315,7 +317,7 @@ def test_rows_grouped_by_instrument(window):
             assert instrument_group(page.work.names[r.note]) == current
     # строка-заголовок на всю ширину и не выделяется
     h = page.proxy.index(0, 0)
-    assert page.table.columnSpan(0, 0) == 2
+    assert page.notes.table.columnSpan(0, 0) == 2
     assert not page.proxy.flags(h) & Qt.ItemFlag.ItemIsSelectable
     # General MIDI — группы по ключевым словам (префиксов нет)
     page.select(MapRef(TEMPLATE, "General MIDI"))
@@ -339,12 +341,12 @@ def test_note_table_sort_cycle_every_column(window, app):
     """Клик по заголовку: по возрастанию → по убыванию → снова группы; стрелка показывает состояние."""
     page = window.maps_page
     page.select(MapRef(TEMPLATE, "Superior Drummer 3"))
-    m, header = page.model, page.table.horizontalHeader()
+    m, header = page.model, page.notes.table.horizontalHeader()
     assert m.grouped and m.sort is None and not header.isSortIndicatorShown()
-    page.table.setCurrentIndex(page.proxy.mapFromSource(m.note_index(38, COL_NAME)))
+    page.notes.table.setCurrentIndex(page.proxy.mapFromSource(m.note_index(38, COL_NAME)))
 
     def current():
-        return m.note_at(page.proxy.mapToSource(page.table.currentIndex()).row())
+        return m.note_at(page.proxy.mapToSource(page.notes.table.currentIndex()).row())
 
     names = page.work.names
     for col in (COL_NOTE,):  # колонки PITCH нет
@@ -369,7 +371,7 @@ def test_note_table_sort_cycle_every_column(window, app):
     header.sectionClicked.emit(COL_NOTE)
     assert m.grouped and current() == 38
     # ноты без имени — в конце при любом направлении
-    page.named_only.setChecked(False)
+    page.notes.named_only.setChecked(False)
     header.sectionClicked.emit(COL_NAME)
     header.sectionClicked.emit(COL_NAME)
     rows = page.proxy.note_rows()

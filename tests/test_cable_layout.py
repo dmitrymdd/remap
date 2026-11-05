@@ -589,7 +589,7 @@ def test_group_order_same_in_pool_and_target_both_directions():
 
 
 def test_group_order_maps_table_matches():
-    from remap.ui.maps_page import group_rows
+    from remap.ui.maps_text import group_rows
     sd3 = load_map_template("Superior Drummer 3")
     heads = [r.label for r in group_rows(sd3.names, list(range(128))) if r.is_header]
     lay = build_layout(RemapProfile("p", None, sd3), no_collapse(), show_all=initial_show_all(RemapProfile("p", None, sd3)))
