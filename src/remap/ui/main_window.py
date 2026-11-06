@@ -8,7 +8,7 @@ from __future__ import annotations
 import os
 import sys
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QByteArray, QRect, Qt, QTimer
 from PySide6.QtWidgets import QApplication, QButtonGroup, QHBoxLayout, QMainWindow, QStackedWidget, QVBoxLayout, QWidget
 
 from ..core import legacy_profile
@@ -30,7 +30,16 @@ from .tutorial import TutorialOverlay, profiles_resolver
 PAGE_CONVERT, PAGE_PROFILES, PAGE_MAPS = 0, 1, 2
 
 TUTORIAL_KEY = "tutorial/profiles"  # ui.ini: обучение Profiles уже показано (при первом заходе на вкладку)
+GEOMETRY_KEY = "window/geometry"  # ui.ini: saveGeometry() (размер, положение, развёрнутость)
 NO_TUTORIAL_ENV = "REMAP_NO_TUTORIAL"  # не показывать обучение само (тесты)
+
+
+def screen_areas() -> list[QRect]:
+    """Доступные области всех экранов; основной — первый."""
+    screens = QApplication.screens()
+    primary = QApplication.primaryScreen()
+    ordered = ([primary] if primary in screens else []) + [s for s in screens if s is not primary]
+    return [s.availableGeometry() for s in ordered] or [QRect(0, 0, *theme.WINDOW_SIZE)]
 
 
 class MainWindow(QMainWindow):
@@ -55,13 +64,32 @@ class MainWindow(QMainWindow):
             self.convert_page.set_status(seed_error, "error")
 
     def _default_size(self) -> None:
-        """900×800, но не больше 90 % доступной области экрана (и не меньше минимального размера)."""
+        """900×800, но не больше 90 % доступной области экрана (и не меньше минимального размера), по центру."""
         width, height = theme.WINDOW_SIZE
-        screen = self.screen() or QApplication.primaryScreen()
-        if screen is not None:
-            area = screen.availableGeometry()
-            width, height = min(width, int(area.width() * 0.9)), min(height, int(area.height() * 0.9))
+        area = screen_areas()[0]
+        width, height = min(width, int(area.width() * 0.9)), min(height, int(area.height() * 0.9))
         self.resize(max(width, self.minimumWidth()), max(height, self.minimumHeight()))
+        frame = self.frameGeometry()
+        frame.moveCenter(area.center())
+        self.move(frame.topLeft())
+
+    def restore_window_geometry(self) -> None:
+        """Размер и положение прошлого запуска. Нет сохранённого, окно вне всех экранов или больше экрана —
+        размер по умолчанию, по центру."""
+        data = self.settings.value(GEOMETRY_KEY, QByteArray(), type=QByteArray)
+        if data.isEmpty() or not self.restoreGeometry(data) or not self._geometry_fits():
+            self.setWindowState(Qt.WindowState.WindowNoState)
+            self._default_size()
+
+    def _geometry_fits(self) -> bool:
+        """Обычная (не развёрнутая) геометрия: центр окна на каком-то экране и размер не больше его доступной области
+        (экран меньше минимума окна не считается: окно меньше минимума не бывает)."""
+        rect = self.normalGeometry() if self.isMaximized() else self.geometry()
+        area = next((a for a in screen_areas() if a.contains(rect.center())), None)
+        if area is None:
+            return False
+        return (rect.width() <= max(area.width(), self.minimumWidth())
+                and rect.height() <= max(area.height(), self.minimumHeight()))
 
     # --- построение UI ---
 
@@ -156,6 +184,7 @@ class MainWindow(QMainWindow):
                 if not page.maybe_leave():
                     event.ignore()
                     return
+        self.settings.setValue(GEOMETRY_KEY, self.saveGeometry())
         super().closeEvent(event)
 
 
@@ -178,6 +207,7 @@ def main() -> int:
     load_fonts()  # до стилей: они берут имена семейств
     install_app_font()
     window = MainWindow()
+    window.restore_window_geometry()
     window.show()
     return app.exec()
 
