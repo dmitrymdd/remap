@@ -2,7 +2,7 @@
 
 Здесь — состояние вкладки и действия. Логики карт нет — только вызовы remap.core (duplicate_map, finalize_edit,
 validate_map, экспорт) и remap.storage. Вид: `maps_strip.py` (верхняя полоса: клавиши, меню «…», поле карты, Save),
-`maps_list.py` (список карт), `maps_table.py` (таблица нот), тексты — `maps_text.py`. Статус — во временной нижней
+`maps_list.py` (список карт), `maps_table.py` (таблица нот) — в ряду `SplitRow` (ширина списка — в ui.ini), тексты — `maps_text.py`. Статус — во временной нижней
 полосе, как на Convert. Диалоги вынесены в методы ask_*/choose_*/show_error, чтобы
 тесты могли их подменить.
 
@@ -38,11 +38,14 @@ from .maps_text import (
     subtitle, totals_text, totals_tip,
 )
 from .settings import ui_settings
+from .split import SplitRow
+from .strip import section_width
 from .theme import repolish
 from .tips import tip
 
 SAVE_KEYS = ("Ctrl+S",)
 NAMED_ONLY_KEY = "maps/named_only"
+SIDE_KEY = "layout/maps_side"  # ширина списка карт
 
 
 # --- страница ---
@@ -108,12 +111,12 @@ class MapsPage(QWidget):
         self.notes.header.clicked.connect(self.sort_by)
         self.notes.edit_blocked.connect(self._edit_blocked)
 
-        screens = QHBoxLayout()
-        screens.setContentsMargins(0, 0, 0, 0)
-        screens.setSpacing(theme.SCREEN_GAP)
-        screens.addWidget(self.list)
-        screens.addWidget(self.notes, stretch=1)
-        root.addLayout(screens, stretch=1)
+        # список карт — боковая колонка (ширина в ui.ini), таблица нот забирает остальное; секции полосы — над ними
+        self.split = SplitRow(self.notes, self.list, side_first=True, side_min=theme.POOL_W, main_min=theme.SCENE_W,
+                              settings=self.settings, key=SIDE_KEY)
+        self.split.layout_changed.connect(
+            lambda: strip.set_sections(section_width(self.list.width()), section_width(self.notes.width())))
+        root.addWidget(self.split, stretch=1)
 
         # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Convert
         self.status = QLabel()

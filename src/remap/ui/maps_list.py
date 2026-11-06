@@ -180,7 +180,7 @@ class MapListScreen(RecessedBlock):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self.setFixedWidth(theme.POOL_W)
+        self.setMinimumWidth(theme.POOL_W)  # ширину задаёт ряд экранов (SplitRow)
         self.sections: list[MapSection] = []
         self.current: MapRef | None = None
         self.screen = Screen()

@@ -1,5 +1,5 @@
-"""Каркас верхней полосы вкладки: утопленный блок 836×64 (лицо в 32 px от краёв окна, сразу под шапкой), внутри —
-панель в 6 px от краёв блока, лица виджетов — в 15 px от краёв панели. Одна геометрия у полос всех вкладок; что
+"""Каркас верхней полосы вкладки: утопленный блок 836×64 (лицо в 32 px от краёв окна, сразу под шапкой; с `stretch` —
+на всю ширину страницы, не уже 836), внутри — панель в 6 px от краёв блока, лица виджетов — в 15 px от краёв панели. Одна геометрия у полос всех вкладок; что
 лежит в панели, решает наследник. Только виджеты и размеры из макета."""
 
 from PySide6.QtCore import QMargins, QRectF, QSize
@@ -44,9 +44,16 @@ class StripSeparator(QWidget):
 class StripFrame(RecessedBlock):
     """Блок полосы с панелью: `panel` (её `panel.body` — горизонтальный layout для содержимого)."""
 
-    def __init__(self, parent: QWidget | None = None) -> None:
+    def __init__(self, parent: QWidget | None = None, *, stretch: bool = False) -> None:
+        """stretch — полоса тянется на ширину страницы (секции ставит наследник по ряду экранов под ней)."""
         super().__init__(parent)
-        self.setFixedSize(theme.STRIP_W, theme.STRIP_H + theme.RECESS_EDGE_TOP + theme.RECESS_EDGE_BOTTOM)
+        height = theme.STRIP_H + theme.RECESS_EDGE_TOP + theme.RECESS_EDGE_BOTTOM
+        if stretch:
+            self.setFixedHeight(height)
+            self.setMinimumWidth(theme.STRIP_W)
+            self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        else:
+            self.setFixedSize(theme.STRIP_W, height)
         self.panel = Panel()
         self.body.addWidget(self.panel)
 
