@@ -60,11 +60,12 @@ from ..core.pitch import note_tip
 from ..core.profile import FORWARD, NO_RULE, REVERSE, RemapProfile, names_differ, validate_profile
 from .cable_layout import (
     DELETE, KEEP, MIXED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Cable, CableLayout, Header, RowMetrics, Ruler,
-    SourceRow, TargetRow, build_layout, initial_show_all, target_group_keys,
+    SourceRow, TargetRow, build_layout, initial_show_all, scene_columns, target_group_keys,
 )
 from . import plates, text, theme
 from .field import ScreenButton
 from .glass import Screen
+from .split import SplitRow
 from .metal import RecessedBlock
 from .tips import tip
 
@@ -72,6 +73,7 @@ POOL_ROWS = RowMetrics(*theme.POOL_ROWS)
 SCENE_ROWS = RowMetrics(*theme.SCENE_ROWS)
 RADIUS = 5
 PAD = 8             # поля сцены
+SIDE_KEY = "layout/profiles_side"  # ширина пула
 MARK_W = 24
 BADGE_W = 32        # бейдж «+N» строки цели (кликабельный)
 CHEVRON_W = 18      # шеврон раскрытия алиасов справа в строке
@@ -411,9 +413,11 @@ class _HeaderItem(QGraphicsItem):
     """Заголовок группы: шеврон, имя, число; клик — свернуть или развернуть (у цели — сменить режим)."""
 
     def __init__(self, rect: QRectF, header: Header, on_toggle: Callable[[str], None], tooltip: str,
-                 variant: str = "pool", zone: QRectF | None = None) -> None:
+                 variant: str = "pool", zone: QRectF | None = None,
+                 cols: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)) -> None:
         super().__init__()
         self.rect, self.header, self.variant = rect, header, variant
+        self.cols = cols  # колонки сцены (`_scene_columns()`): у заголовка сцены подпись слева, число — над «to»
         self.zone = rect.united(zone) if zone is not None else QRectF(rect)  # клик и drop: с зазорами до соседних плашек
         self._on_toggle = on_toggle
         self._hover = False
@@ -444,7 +448,7 @@ class _HeaderItem(QGraphicsItem):
 
     def label_room(self) -> float:
         """Ширина под подпись, px (справа — место под число): заголовок сцены идёт через обе колонки, подпись — в левой."""
-        right = self.rect.left() + theme.COL_FROM if self.variant == "scene" else self.rect.right()
+        right = self.rect.left() + self.cols[2] if self.variant == "scene" else self.rect.right()
         return max(0.0, right - self.label_x() - 48)
 
     def label_width(self) -> float:
@@ -473,7 +477,7 @@ class _HeaderItem(QGraphicsItem):
         # треугольник — режим группы, а не видимость строк: ▸ — группа что-то скрывает, ▾ — показывает всё
         plates.paint_group_header(p, self.rect, h.label, count, h.collapsed, variant=self.variant, state=state,
                                   inset=theme.HEADER_INSET, label_room=self.label_room(),
-                                  twin_x=theme.COL_FROM + theme.COL_GAP + theme.HEADER_INSET if self.variant == "scene"
+                                  twin_x=self.cols[1] - self.cols[0] + theme.HEADER_INSET if self.variant == "scene"
                                   else None)
 
 
@@ -749,7 +753,7 @@ class _PoolHeader(QWidget):
 
 
 class CableEditor(QWidget):
-    """Пул | сцена: подключённые и цель (QSplitter) + слой для кабелей-превью поверх всего."""
+    """Пул | сцена (ряд `SplitRow`): подключённые и цель + слой для кабелей-превью поверх всего."""
 
     connect_requested = Signal(list, str)   # ноты, строка цели (slot): map — решает страница (Write to и т.п.)
     group_drop_requested = Signal(list, list)  # ноты, ноты группы цели: n → n для совпавших номеров
@@ -759,7 +763,8 @@ class CableEditor(QWidget):
     same_number_requested = Signal(list)    # двойной клик по строке Unassigned: ноты — на те же номера
     note_drop_requested = Signal(list, int)  # drop на номер строки цели (или выбор в меню бейджа): ровно на ноту
 
-    def __init__(self, parent=None) -> None:
+    def __init__(self, parent=None, *, settings=None) -> None:
+        """settings — ui.ini: ширина пула (боковая колонка ряда `split`, ключ SIDE_KEY)."""
         super().__init__(parent)
         self.pool = _ColumnView(self._draw_pool)
         self.view = _ColumnView(self._draw_scene)
@@ -776,14 +781,15 @@ class CableEditor(QWidget):
                 screen.body.addWidget(head)
             screen.body.addWidget(view, stretch=1)
             screen.attach(view)
+        self.pool_block, self.scene_block = RecessedBlock(), RecessedBlock()
+        self.pool_block.body.addWidget(self.pool_screen)
+        self.scene_block.body.addWidget(self.scene_screen)
+        # пул — боковая колонка слева (ширина в ui.ini), сцена забирает остальное; ширины макета — минимум
+        self.split = SplitRow(self.scene_block, self.pool_block, side_first=True, side_min=theme.POOL_W,
+                              main_min=theme.SCENE_W, settings=settings, key=SIDE_KEY, parent=self)
         box = QHBoxLayout(self)
         box.setContentsMargins(0, 0, 0, 0)
-        box.setSpacing(theme.SCREEN_GAP)
-        for screen, width in ((self.pool_screen, theme.POOL_W), (self.scene_screen, theme.SCENE_W)):
-            block = RecessedBlock()
-            block.body.addWidget(screen)
-            block.setFixedWidth(width)
-            box.addWidget(block)
+        box.addWidget(self.split)
         self.overlay = CableOverlay(self)
 
         self.pool_ruler = Ruler(0, (), POOL_ROWS)    # строки раскладки -> px, по текущей раскладке
@@ -1540,10 +1546,10 @@ class CableEditor(QWidget):
 
     # --- колонки сцены ---
 
-    @staticmethod
-    def _scene_columns() -> tuple[float, float, float, float]:
-        """x колонки «from», x колонки «to», ширины колонок «from» и «to» (ширины фиксированы макетом)."""
-        return PAD, PAD + theme.COL_FROM + theme.COL_GAP, float(theme.COL_FROM), float(theme.COL_TO)
+    def _scene_columns(self) -> tuple[float, float, float, float]:
+        """x колонки «from», x колонки «to», ширины колонок «from» и «to»: по ширине сцены (`scene_columns()`)."""
+        x_from, x_to, w_from, w_to = scene_columns(self.view.width_px() - 2 * PAD)
+        return PAD + x_from, PAD + x_to, w_from, w_to
 
     # --- полные имена в подсказках ---
 
@@ -1600,7 +1606,8 @@ class CableEditor(QWidget):
             head_rect = QRectF(lx, PAD + ruler.top(h.y), rx + col3 - lx, m.head)
             top, bottom = ruler.head_zone(h.y)
             zone = QRectF(lx, PAD + top, head_rect.width(), bottom - top)
-            item = _HeaderItem(head_rect, h, self.toggle_target, text, "scene", zone)
+            item = _HeaderItem(head_rect, h, self.toggle_target, text, "scene", zone,
+                               (lx, rx, col2, col3))
             self._full_label(item, self.view)
             self.scene_headers[h.key] = item
             scene.addItem(item)

@@ -1,10 +1,11 @@
-"""Полоса профиля: каркас `StripFrame` (блок 836×64 с панелью). Слева — профиль, «…» и сохранение, справа — исходная карта,
+"""Полоса профиля: каркас `StripFrame` на всю ширину страницы, секции — над блоками пула и сцены (`set_sections()`). Слева — профиль, «…» и сохранение, справа — исходная карта,
 «⇄» и целевая. Только виджеты и размеры из макета; логику (сигналы, подсказки, меню) подключает страница."""
 
 from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QWidget
 
 from . import theme
+from .cable_layout import scene_columns
 from .combo import ComboBox
 from .field import FaceSlot, row_spacing
 from .keys import SQUARE, SWAP, Key, key_margins, key_row_spacing
@@ -50,7 +51,7 @@ class ProfileStrip(StripFrame):
     В ← страница меняет подписи полей местами (`set_caption`)."""
 
     def __init__(self, parent: QWidget | None = None) -> None:
-        super().__init__(parent)
+        super().__init__(parent, stretch=True)
         self.combo = ComboBox()
         self.dots_btn = Key(icon="dots", spec=SQUARE)
         self.save_btn = Key(icon="save", spec=SQUARE)
@@ -60,7 +61,7 @@ class ProfileStrip(StripFrame):
         slot = SLOT_H
 
         km, fm = key_margins(SQUARE), self.combo.margins()
-        left = QWidget()
+        self._left = left = QWidget()
         lay = QHBoxLayout(left)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(0)
@@ -69,26 +70,40 @@ class ProfileStrip(StripFrame):
         lay.addWidget(FaceSlot(self.dots_btn, slot))
         lay.addSpacing(key_row_spacing(theme.STRIP_GAP_KEYS, SQUARE))
         lay.addWidget(FaceSlot(self.save_btn, slot))
-        left.setFixedWidth(theme.STRIP_LEFT_W + fm.left() + km.right())
 
-        right = QWidget()
+        self._right = right = QWidget()
         rlay = QHBoxLayout(right)
         rlay.setContentsMargins(0, 0, 0, 0)
         rlay.setSpacing(0)
-        for w in (self.from_btn, self.to_btn):
-            w.setFixedWidth(theme.COL_FROM + w.margins().left() + w.margins().right())
         rlay.addWidget(FaceSlot(self.from_btn, slot))
         rlay.addStretch(1)
         rlay.addWidget(FaceSlot(self.direction_btn, slot))
         rlay.addStretch(1)
         rlay.addWidget(FaceSlot(self.to_btn, slot))
-        right.setFixedWidth(theme.STRIP_RIGHT_W + self.from_btn.margins().left() + self.to_btn.margins().right())
+        self._extra = (fm.left() + km.right(), self.from_btn.margins().left() + self.to_btn.margins().right())
+        self.set_sections(theme.STRIP_LEFT_W, theme.STRIP_RIGHT_W)
 
         self.set_face_inset(fm.left(), fm.right())
         self.panel.body.addWidget(left)
         self.panel.body.addWidget(StripSeparator(km.right(), self.from_btn.margins().left()))
         self.panel.body.addWidget(right)
         self.panel.body.addStretch(1)
+
+    def set_sections(self, left: int, right: int) -> None:
+        """Ширины секций от лица первого виджета до лица последнего (`strip.section_width()` блоков экранов): слева
+        лишнее забирает комбо профиля, справа SOURCE / TARGET — над колонками сцены (`scene_columns(right)`), ⇄ — по
+        центру промежутка."""
+        _x_from, _x_to, w_from, w_to = scene_columns(right)
+        for w, width in ((self.from_btn, w_from), (self.to_btn, w_to)):
+            w.setFixedWidth(round(width) + w.margins().left() + w.margins().right())
+        self._left.setFixedWidth(left + self._extra[0])
+        self._right.setFixedWidth(right + self._extra[1])
+        # сразу, изнутри наружу, а не по отложенному LayoutRequest: полоса идёт вслед за ручкой ряда
+        for w in (self.from_btn.parentWidget(), self.to_btn.parentWidget(), self._right, self.panel):
+            w.layout().activate()
+
+    def section_widths(self) -> tuple[int, int]:
+        return self._left.width() - self._extra[0], self._right.width() - self._extra[1]
 
     def set_actions_menu(self, menu: QMenu) -> None:
         """Меню «…»: открывается по нажатию под клавишей."""

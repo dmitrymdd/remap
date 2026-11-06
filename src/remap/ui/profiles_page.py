@@ -51,6 +51,7 @@ from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
 from .profile_strip import MapCombo, ProfileStrip
 from .tips import tip
 from .settings import ui_settings
+from .strip import section_width
 from . import theme
 from .theme import repolish
 
@@ -207,6 +208,11 @@ class ProfilesPage(QWidget):
 
     # --- построение UI ---
 
+    def _place_strip(self) -> None:
+        """Секции полосы — над блоками пула и сцены, прорезь — над зазором между ними."""
+        self.strip.set_sections(section_width(self.cables.pool_block.width()),
+                                section_width(self.cables.scene_block.width()))
+
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
         root.setContentsMargins(theme.PAGE_MARGIN, 0, theme.PAGE_MARGIN, 0)
@@ -238,7 +244,8 @@ class ProfilesPage(QWidget):
         root.addWidget(self.strip)
         root.addSpacing(theme.STRIP_GAP)
 
-        self.cables = CableEditor()
+        self.cables = CableEditor(settings=self.settings)
+        self.cables.split.layout_changed.connect(self._place_strip)
         self.cables.connect_requested.connect(self.connect_to)
         self.cables.group_drop_requested.connect(self.group_drop)
         self.cables.disconnect_requested.connect(self.clear_rules)

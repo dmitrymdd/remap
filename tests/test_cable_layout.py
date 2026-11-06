@@ -5,12 +5,14 @@ import sys
 from itertools import pairwise
 from pathlib import Path
 
+import pytest
+
 from remap.core.notemap import NoteMap, articulations, normalize_name
 from remap.core.profile import RemapProfile, Rule
 from remap.templates import load_map_template
 from remap.ui.cable_layout import (
-    DELETE, KEEP, MAPPED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Placement, RowMetrics, Ruler, TargetRow, build_layout,
-    initial_show_all, placement, slot_key, target_group_keys,
+    CABLE_GAP, DELETE, KEEP, MAPPED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Placement, RowMetrics, Ruler, TargetRow, build_layout,
+    initial_show_all, placement, scene_columns, slot_key, target_group_keys,
 )
 
 SRC = NoteMap("Src", {36: "Kick: Hit", 37: "Kick: Soft", 38: "Snare: Center", 40: "Snare: Rim",
@@ -641,3 +643,15 @@ def test_target_header_collapsed_is_the_group_mode():
     assert kick.collapsed and not kick.shown   # ни одной строки
     lay = build_layout(p, no_collapse(), show_all={TARGET_PREFIX + "kick"})
     assert not lay.header(TARGET_PREFIX + "kick").collapsed
+
+
+def test_scene_columns_at_mockup_width():
+    assert scene_columns(522) == (0, 322, 200, 200)
+    assert CABLE_GAP == 122
+
+
+@pytest.mark.parametrize("width", [522, 523, 700, 1121, 1122])
+def test_scene_columns_grow_equally_with_fixed_gap(width):
+    x_from, x_to, w_from, w_to = scene_columns(width)
+    assert x_from == 0 and x_to - w_from == CABLE_GAP and x_to + w_to == width
+    assert w_to - w_from in (0, 1)  # нечётный px — колонке «to»

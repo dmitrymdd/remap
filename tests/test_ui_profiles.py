@@ -1444,7 +1444,7 @@ def test_switching_profile_in_combo_asks_about_unsaved(window, app):
 
 
 def test_scene_columns_are_fixed(window, app):
-    """Колонки сцены 200 / 122 / 200 и ширины экранов не зависят от окна; границы мышью не тянутся."""
+    """Колонки сцены 200 / 122 / 200 при 900; границы колонок мышью не тянутся."""
     from PySide6.QtCore import QEvent, QPointF
     from PySide6.QtGui import QMouseEvent
     from remap.ui.cable_view import PORT
@@ -1466,9 +1466,10 @@ def test_scene_columns_are_fixed(window, app):
         QApplication.sendEvent(vp, QMouseEvent(kind, pos, QPointF(vp.mapToGlobal(pos.toPoint())),
                                                Qt.MouseButton.LeftButton, buttons, Qt.KeyboardModifier.NoModifier))
     assert ed._scene_columns() == (lx, rx, col2, col3) and page.work.rules == rules and not ed.dragging
-    window.resize(1200, 900)  # окно шире — колонки те же
+    window.resize(1200, 900)  # окно шире — обе колонки растут поровну, промежуток под кабели тот же
     app.processEvents()
-    assert ed._scene_columns() == (lx, rx, col2, col3)
+    lx2, rx2, col2b, col3b = ed._scene_columns()
+    assert lx2 == lx and col2b == col3b == 200 + (1200 - 900) / 2 and rx2 - lx2 - col2b == 122
 
 
 def test_truncated_names_in_tooltips(window, app):

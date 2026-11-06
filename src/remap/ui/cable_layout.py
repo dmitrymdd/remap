@@ -59,6 +59,15 @@ MIXED = "mixed"  # заголовок раскрытых алиасов, у но
 POOL_PREFIX, TARGET_PREFIX = UNASSIGNED + "/", "target/"  # ключи групп пула и цели
 # служебные ключи групп (не совпадут с normalize_name настоящего инструмента)
 MISSING = "\0missing"
+CABLE_GAP = 122  # промежуток сцены под кабели между колонками «from» и «to» (не растёт)
+
+
+def scene_columns(width: float) -> tuple[float, float, float, float]:
+    """Колонки сцены шириной width (от левого края «from» до правого края «to»): x «from», x «to», ширины «from» и
+    «to». Лишнюю ширину колонки делят поровну, промежуток CABLE_GAP постоянный; нечётный px — колонке «to»."""
+    room = max(0, int(width) - CABLE_GAP)
+    w_from = room // 2
+    return 0.0, float(w_from + CABLE_GAP), float(w_from), float(room - w_from)
 
 
 @dataclass(frozen=True)
