@@ -5,6 +5,7 @@ QSS не умеет ограничивать ширину подсказки, а
 подсказка не раздувается до полной ширины. Внешний вид (фон, рамка, поля, шрифт) — `QToolTip` в `theme.stylesheet()`.
 """
 
+from functools import lru_cache
 from html import escape
 
 from PySide6.QtGui import QFontMetricsF
@@ -14,7 +15,14 @@ from . import theme
 
 def tip(text: str, title: str | None = None) -> str:
     """HTML подсказки: экранирует `<`, `&`, переводы строк — в `<br>`, заголовок `title` — жирной первой строкой.
-    Нужен QGuiApplication (измеряется шрифт подсказки)."""
+    Нужен QGuiApplication (измеряется шрифт подсказки). Готовый HTML запоминается: сцена Profiles при каждой
+    перестройке заново задаёт сотни одинаковых подсказок, а замер шрифта дорог."""
+    return _tip(text, title, theme.FONT_GENERATION)
+
+
+@lru_cache(maxsize=4096)
+def _tip(text: str, title: str | None, _generation: int) -> str:
+    """`tip()` по ключу с поколением шрифтов: до `load_fonts()` под тем же именем меряется запасной шрифт."""
     metrics = QFontMetricsF(theme.mono_font(theme.TOOLTIP_PX))
     lines = ([title] if title else []) + text.split("\n")
     widest = max(metrics.horizontalAdvance(line) for line in lines)

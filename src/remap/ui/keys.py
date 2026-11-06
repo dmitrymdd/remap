@@ -82,18 +82,38 @@ def _gradient(top: str, bottom: str, rect: QRectF) -> QBrush:
     return QBrush(g)
 
 
-def paint_key(p: QPainter, face: QRectF, spec: KeySpec, state: str, dpr: float, origin: QPoint) -> None:
+def _snapped_face(face: QRectF, dpr: float) -> QRectF:
+    """Границы лица — по сетке пикселей устройства (DPR 1.25, 1.5)."""
+    def snap(v: float) -> float:
+        return round(v * dpr) / dpr
+
+    return QRectF(QPointF(snap(face.left()), snap(face.top())), QPointF(snap(face.right()), snap(face.bottom())))
+
+
+def _face_inner(face: QRectF, spec: KeySpec, dpr: float) -> tuple[QRectF, float]:
+    """Лицо внутри рамки (снапнутое) и его радиус: под градиент и текстуру."""
+    border = max(1, round(dpr)) / dpr
+    return _snapped_face(face, dpr).adjusted(border, border, -border, -border), spec.radius - border
+
+
+def paint_key_texture(p: QPainter, face: QRectF, spec: KeySpec, dpr: float, origin: QPoint) -> None:
+    """Текстура металла на лице клавиши от `origin` — последний слой `paint_key` (отдельно: при сдвиге клавиши без смены
+    размера кладётся заново только она)."""
+    inner, r_in = _face_inner(face, spec, dpr)
+    paint_metal(p, inner, r_in, origin)  # над фоном и inset-тенями, под подписью — как `.tx` в макете
+
+
+def paint_key(p: QPainter, face: QRectF, spec: KeySpec, state: str, dpr: float, origin: QPoint,
+              texture: bool = True) -> None:
     """Лицо клавиши в прямоугольнике `face` (с рамкой): внешняя тень, рамка 1 px, градиент, inset-линии (или тень
-    внутрь у нажатой), текстура металла от `origin`. Без подписи и значка — их рисует виджет.
+    внутрь у нажатой), текстура металла от `origin` (`texture=False` — без неё, см. `paint_key_texture`). Без подписи
+    и значка — их рисует виджет.
     Состояния: normal, hover (светлее; в макете не задано), pressed (нажата и включена — один вид)."""
     if state not in STATES:
         raise ValueError(state)
-
-    def snap(v: float) -> float:  # границы лица и рамка — по сетке пикселей устройства (DPR 1.25, 1.5)
-        return round(v * dpr) / dpr
-
-    face = QRectF(QPointF(snap(face.left()), snap(face.top())), QPointF(snap(face.right()), snap(face.bottom())))
-    r, border = spec.radius, max(1, round(dpr)) / dpr
+    inner, r_in = _face_inner(face, spec, dpr)
+    face = _snapped_face(face, dpr)
+    r = spec.radius
     pressed = state == "pressed"
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -104,8 +124,6 @@ def paint_key(p: QPainter, face: QRectF, spec: KeySpec, state: str, dpr: float, 
     p.setPen(Qt.PenStyle.NoPen)
     p.setBrush(qcolor(theme.KEY_BORDER))
     p.drawRoundedRect(face, r, r)
-    inner = face.adjusted(border, border, -border, -border)
-    r_in = r - border
     top, bottom = {
         "normal": (theme.KEY_GO_TOP, theme.KEY_GO_BOTTOM) if spec.go else (theme.KEY_TOP, theme.KEY_BOTTOM),
         "hover": (theme.KEY_HOVER_TOP, theme.KEY_HOVER_BOTTOM),
@@ -120,8 +138,9 @@ def paint_key(p: QPainter, face: QRectF, spec: KeySpec, state: str, dpr: float, 
         dark, dark_dy = (theme.KEY_GO_INSET_DARK, -2) if spec.go else (theme.KEY_INSET_DARK, -1)
         inner_shadow(p, inner, r_in, dpr, 1, 0, light[3], rgb=light[:3])
         inner_shadow(p, inner, r_in, dpr, dark_dy, 0, dark[3], rgb=dark[:3])
-    paint_metal(p, inner, r_in, origin)  # текстура над фоном и inset-тенями, под подписью — как `.tx` в макете
     p.restore()
+    if texture:
+        paint_key_texture(p, face, spec, dpr, origin)
 
 
 class Key(QAbstractButton):
@@ -226,9 +245,12 @@ class Key(QAbstractButton):
         face = self.face_rect()
 
         def compose(p: QPainter, _rect: QRect, origin: QPoint) -> None:
-            paint_key(p, face, self.spec, state, p.device().devicePixelRatioF(), origin)
+            paint_key(p, face, self.spec, state, p.device().devicePixelRatioF(), origin, texture=False)
 
-        return self._faces[state].get(self, compose)
+        def texture(p: QPainter, _rect: QRect, origin: QPoint) -> None:
+            paint_key_texture(p, face, self.spec, p.device().devicePixelRatioF(), origin)
+
+        return self._faces[state].get(self, compose, texture)
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)

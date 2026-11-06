@@ -1,5 +1,6 @@
 """Плашки (`ui/plates.py`): состояния, метрики и тексты по эталону макета, кэш растров, заголовки, бейдж, Maps."""
 import re
+from math import ceil
 import time
 from pathlib import Path
 
@@ -383,3 +384,56 @@ def test_hand_painted_modules_have_no_hex_colours_or_legacy_tokens(module):
     assert not re.search(r"[\"']#[0-9A-Fa-f]{6}[\"']", code), module
     assert "TOKENS" not in source and "LEGACY" not in source.replace("LEGACY .TXT", ""), module
     assert Qt is not None
+
+
+# --- фон плашки нарезкой: побайтно как прямое рисование ---
+
+@pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])
+def test_sliced_box_is_byte_equal_on_every_width(dpr):
+    """Геометрия фона (углы, рамка) одна у всех стилей: каждая ширина до BOX_SLICE_MAX_W у обычной плашки, у остальных
+    стилей и высот — выборочно. Шире BOX_SLICE_MAX_W и пунктир — без нарезки."""
+    plates._BOXES.clear()
+    normal = plates.plate_style("normal")
+    for w in range(1, plates.BOX_SLICE_MAX_W + 1):
+        box = plates._sliced_box(normal, w, 28, dpr)
+        if box is not None:
+            assert box == plates._box_image(normal, w, 28, dpr), f"w {w}"
+    for state in ("selected", "deleted", "hover", "warn", "error", "drop"):
+        style = plates.plate_style(state)
+        for h in (28, 30, 66):
+            for w in range(30, plates.BOX_SLICE_MAX_W + 1, 37):
+                box = plates._sliced_box(style, w, h, dpr)
+                assert box is not None and box == plates._box_image(style, w, h, dpr), f"{state} {w}×{h}"
+    assert plates._sliced_box(plates.plate_style("suggested"), 300, 28, dpr) is None
+    assert plates._sliced_box(normal, plates.BOX_SLICE_MAX_W + 1, 28, dpr) is None
+
+
+def _plate_image(dpr, w, h, sliced, monkeypatch, **kw) -> QImage:
+    plates._PLATES.clear()
+    img = QImage(ceil(w * dpr) + 4, ceil(h * dpr) + 4, QImage.Format.Format_ARGB32_Premultiplied)
+    img.setDevicePixelRatio(dpr)
+    img.fill(QColor(10, 20, 15))
+    with monkeypatch.context() as m:
+        if not sliced:
+            m.setattr(plates, "_sliced_box", lambda *_a: None)
+        p = QPainter(img)
+        plates.paint_plate(p, QRectF(1, 1, w, h), **kw)
+        p.end()
+    return img
+
+
+@pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])
+def test_sliced_plate_is_byte_equal_to_direct(dpr, monkeypatch):
+    """Целая плашка: фон нарезкой, номера и имя — поверх без растяжения; совпадает с прямым рисованием до байта."""
+    cases = [
+        {"state": "normal", "numbers": ((0, "38"),), "name": "Snare: Center Hit"},
+        {"state": "selected", "numbers": ((0, "42"),), "name": "Hi-Hat: Closed Edge Tight Long Name That Is Elided"},
+        {"state": "deleted", "numbers": ((0, "7"),), "name": "Kick", "text_deleted": True},
+        {"state": "warn", "numbers": ((0, "36"), (36, "35")), "name": "Kick: Hit", "line_h": 30.0},
+        {"state": "normal", "name": "Toms", "italic": True, "dim_name": True},
+    ]
+    for kw in cases:
+        for w, h in ((237, 28), (238, 30), (611, 30), (612, 66)):
+            sliced = _plate_image(dpr, w, h, True, monkeypatch, **kw)
+            assert plates._BOXES
+            assert sliced == _plate_image(dpr, w, h, False, monkeypatch, **kw), f"{kw['state']} {w}×{h}"

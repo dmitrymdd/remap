@@ -80,3 +80,18 @@ def test_tooltip_uses_theme_font_colours_and_square_corners(app, styled):
     inner = img.pixelColor(img.width() // 2, 4)
     assert inner.name().upper() == theme.TOOLTIP_BG
     assert "border-radius" not in theme.stylesheet().split("QToolTip")[1].split("}")[0]
+
+
+def test_tip_is_cached_per_font_generation(app, monkeypatch):
+    """Готовый HTML запоминается (сцена Profiles задаёт сотни одинаковых подсказок), но не через смену шрифтов:
+    в ключе — поколение, как у кэшей текста; результат тот же, что без кэша."""
+    from remap.ui import tips
+    html = tip(LONG, "Match by number")
+    assert html == tips._tip.__wrapped__(LONG, "Match by number", theme.FONT_GENERATION)
+    hits = tips._tip.cache_info().hits
+    assert tip(LONG, "Match by number") is html
+    assert tips._tip.cache_info().hits == hits + 1
+    misses = tips._tip.cache_info().misses
+    monkeypatch.setattr(theme, "FONT_GENERATION", theme.FONT_GENERATION + 1)
+    tip(LONG, "Match by number")
+    assert tips._tip.cache_info().misses == misses + 1

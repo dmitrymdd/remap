@@ -1,7 +1,7 @@
 """Металл корпуса: плитки текстур, paint_metal, MetalBody (винты), RecessedBlock (поля, тени)."""
 import itertools
 import logging
-from math import erfc, sqrt
+from math import ceil, erfc, sqrt
 
 import pytest
 from PySide6.QtCore import QPoint, QRect, QRectF, Qt
@@ -282,3 +282,130 @@ def test_inner_shadow_without_blur_is_a_hard_line_clipped_to_shape(app):
     assert img.pixelColor(20, 5).red() == pytest.approx(0.11 * 255, abs=2)  # верхняя строка внутри фигуры
     assert img.pixelColor(20, 6).red() == 0
     assert img.pixelColor(20, 4).alpha() == 0  # снаружи не рисуется
+
+
+# --- тень внутри большой фигуры по заготовке: не дальше 2/255 от прямого построения ---
+
+BAND_CASES = [  # (фигура, радиус, параметры тени)
+    (QRectF(1, 1, 1238, 638), theme.SCREEN_RADIUS - 1, theme.SCREEN_SHADOW),  # стекло экрана
+    (QRectF(1, 1, 233, 517), theme.SCREEN_RADIUS - 1, theme.SCREEN_SHADOW),
+    (QRectF(0, 1, 1261, 660), theme.RECESS_RADIUS,
+     {"dy": theme.RECESS_SHADOW_DY, "blur": theme.RECESS_SHADOW_BLUR, "alpha": theme.RECESS_SHADOW_ALPHA}),
+    (QRectF(7.2, 3.6, 263.2, 67.2), 5, theme.KEY_PRESSED_SHADOW),  # дробное начало (снап под DPR)
+    (QRectF(2, 2, 91, 41), 0, theme.TUT_DOT_FUTURE_SHADOW),
+]
+
+
+def _shadow_canvas(shape, radius, dpr, params) -> QImage:
+    img = QImage(ceil((shape.right() + 8) * dpr), ceil((shape.bottom() + 8) * dpr),
+                 QImage.Format.Format_ARGB32_Premultiplied)
+    img.setDevicePixelRatio(dpr)
+    img.fill(QColor(40, 44, 48))
+    p = QPainter(img)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    inner_shadow(p, shape, radius, dpr, **params)
+    p.end()
+    return img
+
+
+def _max_channel_diff(a: QImage, b: QImage) -> int:
+    assert a.size() == b.size()
+    da, db = memoryview(a.constBits()).tobytes(), memoryview(b.constBits()).tobytes()
+    if da == db:
+        return 0
+    return max(abs(x - y) for x, y in zip(da, db, strict=True) if x != y)
+
+
+@pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])
+@pytest.mark.parametrize("case", range(len(BAND_CASES)))
+def test_inner_shadow_from_template_matches_direct(app, monkeypatch, dpr, case):
+    """Тень большой фигуры, собранная из заготовки, отличается от построенной целиком не больше чем на 2/255 в канале;
+    при расширении на 1..5 px — тоже."""
+    shape, radius, params = BAND_CASES[case]
+    for grow in range(6):
+        s = shape.adjusted(0, 0, grow, grow // 2)
+        metal._SLICE_TEMPLATES.clear()
+        sliced = _shadow_canvas(s, radius, dpr, params)
+        if s.width() > 200:
+            assert metal._SLICE_TEMPLATES, "большая фигура должна собираться из заготовки"
+        with monkeypatch.context() as m:
+            m.setattr(metal, "_sliced", lambda build, shape_, _origin, size, *_a: build(shape_, size))
+            direct = _shadow_canvas(s, radius, dpr, params)
+        assert _max_channel_diff(sliced, direct) <= 2, f"{s} dpr {dpr}"
+
+
+# --- основа отдельно от текстуры: сдвиг без смены размера кладёт заново только текстуру ---
+
+def _layers(w: int, h: int, dpr: float, paint) -> QImage:
+    pm = QPixmap(ceil(w * dpr), ceil(h * dpr))
+    pm.setDevicePixelRatio(dpr)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    paint(p)
+    p.end()
+    return pm.toImage()
+
+
+def _split_layers(w: int, h: int, dpr: float, base, texture) -> QImage:
+    """Как `_Backdrop` при сдвиге: копия готовой основы, поверх — текстура."""
+    pm = QPixmap(ceil(w * dpr), ceil(h * dpr))
+    pm.setDevicePixelRatio(dpr)
+    pm.fill(Qt.GlobalColor.transparent)
+    p = QPainter(pm)
+    base(p)
+    p.end()
+    copy = QPixmap(pm)
+    p = QPainter(copy)
+    texture(p)
+    p.end()
+    return copy.toImage()
+
+
+@pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])
+@pytest.mark.parametrize("state", ["normal", "hover", "pressed"])
+@pytest.mark.parametrize(("name", "origin"), [("TAB", QPoint(-37, -5)), ("SQUARE", QPoint(-411, -63)),
+                                              ("GO", QPoint(-1290, -700))])
+def test_key_face_base_plus_texture_is_byte_equal_to_one_pass(app, dpr, state, name, origin):
+    from remap.ui import keys
+    spec = getattr(keys, name)
+    face = QRectF(6, 3, spec.w or 120, spec.h)
+    size = (int(face.right()) + 8, int(face.bottom()) + 10)
+    one = _layers(*size, dpr, lambda p: keys.paint_key(p, face, spec, state, dpr, origin))
+    two = _split_layers(*size, dpr, lambda p: keys.paint_key(p, face, spec, state, dpr, origin, texture=False),
+                        lambda p: keys.paint_key_texture(p, face, spec, dpr, origin))
+    assert one == two
+
+
+@pytest.mark.parametrize("dpr", [1.0, 1.25, 1.5, 2.0])
+def test_recessed_block_base_plus_texture_is_byte_equal_to_one_pass(app, dpr):
+    block = RecessedBlock()
+    rect, origin = QRect(0, 0, 437, 291), QPoint(-288, -96)
+
+    def both(p):
+        block._compose(p, rect, origin)
+        block._texture(p, rect, origin)
+
+    one = _layers(rect.width(), rect.height(), dpr, both)
+    two = _split_layers(rect.width(), rect.height(), dpr, lambda p: block._compose(p, rect, origin),
+                        lambda p: block._texture(p, rect, origin))
+    assert one == two
+
+
+def test_backdrop_keeps_base_on_pure_move(app):
+    """Сдвиг блока без смены размера: основа (тень, градиент) не строится заново, только текстура."""
+    host = QWidget()
+    host.resize(600, 400)
+    block = RecessedBlock(host)
+    block.setGeometry(10, 10, 300, 200)
+    calls = []
+    compose = block._compose
+    block._compose = lambda *a: (calls.append(1), compose(*a))
+    block._backdrop.get(block, block._compose, block._texture)
+    block.move(40, 30)
+    moved = block._backdrop.get(block, block._compose, block._texture)
+    assert len(calls) == 1 and block._backdrop.rebuilds == 2
+    fresh = metal._Backdrop().get(block, lambda p, r, o: (compose(p, r, o), block._texture(p, r, o)))
+    assert moved.toImage() == fresh.toImage()
+    block.resize(310, 200)
+    block._backdrop.get(block, block._compose, block._texture)
+    assert len(calls) == 2

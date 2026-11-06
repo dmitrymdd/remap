@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from functools import cache
 from math import ceil
 
-from PySide6.QtCore import QPointF, QRectF, Qt
-from PySide6.QtGui import QFont, QPainter, QPainterPath, QPen, QPixmap
+from PySide6.QtCore import QPointF, QRect, QRectF, Qt
+from PySide6.QtGui import QFont, QImage, QPainter, QPainterPath, QPen, QPixmap
 
 from . import text, theme
 from .icons import ICONS, draw_icon
@@ -90,14 +90,16 @@ _PLATES_MAX = 400  # растров плашек целиком (по ~20 КБ �
 
 
 def _plate_direct(p: QPainter, rect: QRectF, state: str, numbers, name: str, name_room: float | None, italic: bool,
-                  text_deleted: bool, dim_name: bool, line_h: float | None) -> float:
+                  text_deleted: bool, dim_name: bool, line_h: float | None, box: bool = True) -> float:
+    """Плашка целиком; `box=False` — только номера и имя (фон уже лежит в растре, см. `_sliced_box`)."""
     style = plate_style(state)
     deleted = state == "deleted" or text_deleted
     number_color = theme.PLATE_DELETED_NUM if deleted else style.number
     name_color = theme.PLATE_DELETED_NAME if deleted or dim_name else style.name
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    _paint_box(p, rect, style)
+    if box:
+        _paint_box(p, rect, style)
     line = line_h if line_h is not None else rect.height()
     x = rect.left() + theme.PLATE_PAD_X
     for dy, number in numbers:
@@ -109,6 +111,58 @@ def _plate_direct(p: QPainter, rect: QRectF, state: str, numbers, name: str, nam
                        LEFT_MID, Qt.TextElideMode.ElideRight)
     p.restore()
     return name_x
+
+
+# Фон плашки — нарезкой: левый край с углами, повтор одного столбца середины, правый край. Растр заготовки — по стилю,
+# высоте и DPR (ширина — наименьшая с той же долей пикселя справа: разница ширин кратна периоду DPR), номера и имя
+# рисуются поверх как раньше, без растяжения. Растеризатор Qt не инвариантен к сдвигу на сотни px, поэтому нарезка
+# — только в проверенном тестом диапазоне ширин (`BOX_SLICE_MAX_W`); пунктир и прочее — прямое рисование.
+_BOXES: dict[tuple, QImage] = {}
+BOX_CAP = theme.PLATE_RADIUS + 3  # край плашки (скругление и рамка), дальше — одинаковые столбцы
+BOX_SLICE_MAX_W = 1024
+
+
+def _dpr_period(dpr: float) -> int:
+    """Наименьшее целое q (до 8), при котором q·dpr — целое; 0 — такого нет."""
+    return next((q for q in range(1, 9) if abs(q * dpr - round(q * dpr)) < 1e-9), 0)
+
+
+def _box_image(style: PlateStyle, w: int, h: int, dpr: float) -> QImage:
+    img = QImage(ceil(w * dpr), ceil(h * dpr), QImage.Format.Format_ARGB32_Premultiplied)
+    img.setDevicePixelRatio(dpr)
+    img.fill(Qt.GlobalColor.transparent)
+    q = QPainter(img)
+    q.setRenderHint(QPainter.RenderHint.Antialiasing)
+    _paint_box(q, QRectF(0, 0, w, h), style)
+    q.end()
+    return img
+
+
+def _sliced_box(style: PlateStyle, w: int, h: int, dpr: float) -> QImage | None:
+    """Фон плашки w×h, собранный из заготовки, или None — нарезка здесь не точна (рисовать прямо)."""
+    q = _dpr_period(dpr)
+    if not q or style.dashed or w > BOX_SLICE_MAX_W:
+        return None
+    k = int((w - (2 * BOX_CAP + 2)) // q) * q
+    if k <= 0:
+        return None
+    key = (style, w - k, h, dpr)
+    tpl = _BOXES.get(key)
+    if tpl is None:
+        tpl = _BOXES[key] = _box_image(style, w - k, h, dpr)
+        tpl.setDevicePixelRatio(1)
+    cx, dx = ceil(BOX_CAP * dpr), round(k * dpr)
+    tw, th = tpl.width(), tpl.height()
+    out = QImage(tw + dx, th, QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+    p.drawImage(QRect(0, 0, cx, th), tpl, QRect(0, 0, cx, th))
+    p.drawImage(QRect(cx, 0, dx, th), tpl, QRect(cx, 0, 1, th))
+    p.drawImage(QRect(cx + dx, 0, tw - cx, th), tpl, QRect(cx, 0, tw - cx, th))
+    p.end()
+    out.setDevicePixelRatio(dpr)
+    return out
 
 
 def paint_plate(p: QPainter, rect: QRectF, state: str = "normal", *, numbers: list[tuple[float, str]] | tuple = (),
@@ -138,11 +192,17 @@ def paint_plate(p: QPainter, rect: QRectF, state: str = "normal", *, numbers: li
     if pm is None:
         if len(_PLATES) >= _PLATES_MAX:
             _PLATES.clear()
-        pm = QPixmap(ceil(w * dpr), ceil(h * dpr))
-        pm.setDevicePixelRatio(dpr)
-        pm.fill(Qt.GlobalColor.transparent)
+        box = _sliced_box(plate_style(state), int(w), int(h), dpr)
+        if box is not None:  # фон — копией заготовки, номера и имя — поверх
+            pm = QPixmap.fromImage(box)
+            pm.setDevicePixelRatio(dpr)
+        else:
+            pm = QPixmap(ceil(w * dpr), ceil(h * dpr))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.GlobalColor.transparent)
         q = QPainter(pm)
-        _plate_direct(q, QRectF(0, 0, w, h), state, numbers, name, name_room, italic, text_deleted, dim_name, line_h)
+        _plate_direct(q, QRectF(0, 0, w, h), state, numbers, name, name_room, italic, text_deleted, dim_name, line_h,
+                      box=box is None)
         q.end()
         _PLATES[key] = pm
     if opacity != 1.0:

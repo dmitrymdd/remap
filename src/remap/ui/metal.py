@@ -79,25 +79,45 @@ def paint_metal(painter: QPainter, shape: QRect | QRectF | QPainterPath, radius:
 
 class _Backdrop:
     """Кэш готового фона виджета: пересобирается только при смене размера, DPR или положения в окне. Положение важно
-    лишь тексту металла (`textured`); у стекла и полей без текстуры сдвиг виджета фон не трогает."""
+    лишь тексту металла (`textured`); у стекла и полей без текстуры сдвиг виджета фон не трогает.
+
+    `get(w, compose, texture)`: если текстура рисуется отдельным шагом `texture(p, rect, origin)` поверх основы
+    `compose(p, rect, origin)`, основа запоминается по размеру и DPR, и при сдвиге без смены размера (клавиши полосы,
+    блоки при протяжке ручки) заново кладётся только текстура на копию основы — те же слои в том же порядке."""
 
     def __init__(self, textured: bool = True) -> None:
         self._key: tuple | None = None
         self._pixmap: QPixmap | None = None
+        self._base_key: tuple | None = None
+        self._base: QPixmap | None = None
         self._textured = textured
         self.rebuilds = 0
 
-    def get(self, w: QWidget, compose) -> QPixmap:
+    def _new(self, w: QWidget, dpr: float, paint) -> QPixmap:
+        pm = QPixmap(ceil(w.width() * dpr), ceil(w.height() * dpr))
+        pm.setDevicePixelRatio(dpr)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        paint(p)
+        p.end()
+        return pm
+
+    def get(self, w: QWidget, compose, texture=None) -> QPixmap:
         dpr, origin = w.devicePixelRatioF(), window_origin(w) if self._textured else QPoint(0, 0)
+        rect = QRect(0, 0, w.width(), w.height())
         key = (w.width(), w.height(), dpr, origin.x(), origin.y())
         if key != self._key or self._pixmap is None:
-            pm = QPixmap(ceil(w.width() * dpr), ceil(w.height() * dpr))
-            pm.setDevicePixelRatio(dpr)
-            pm.fill(Qt.GlobalColor.transparent)
-            p = QPainter(pm)
-            compose(p, QRect(0, 0, w.width(), w.height()), origin)
-            p.end()
-            self._key, self._pixmap = key, pm
+            if texture is None:
+                self._pixmap = self._new(w, dpr, lambda p: compose(p, rect, origin))
+            else:
+                if key[:3] != self._base_key or self._base is None:
+                    self._base_key, self._base = key[:3], self._new(w, dpr, lambda p: compose(p, rect, origin))
+                pm = QPixmap(self._base)
+                p = QPainter(pm)  # рисование отделяет копию от основы
+                texture(p, rect, origin)
+                p.end()
+                self._pixmap = pm
+            self._key = key
             self.rebuilds += 1
         return self._pixmap
 
@@ -202,18 +222,19 @@ def _gauss_alpha(distance: float, sigma: float, alpha: float) -> float:
     return alpha * 0.5 * erfc(distance / (sigma * sqrt(2)))
 
 
-def _stacked_levels(p: QPainter, bounds: QRectF, dpr: float, levels: list[tuple[QPainterPath, QColor]]) -> QImage:
+def _stacked_levels(origin: QPointF, size: tuple[int, int], dpr: float,
+                    levels: list[tuple[QPainterPath, QColor]]) -> QImage:
     """Рисует вложенные области `levels` (от большей к меньшей) в временное изображение с режимом Source: каждая меньшая
-    заменяет, а не накладывается, поэтому швов антиалиасинга нет. Изображение — на `bounds` в координатах painter."""
-    img = QImage(ceil(bounds.width() * dpr) + 1, ceil(bounds.height() * dpr) + 1,
-                 QImage.Format.Format_ARGB32_Premultiplied)
+    заменяет, а не накладывается, поэтому швов антиалиасинга нет. Левый верхний угол изображения — `origin` в
+    координатах рисования, размер `size` — в пикселях устройства."""
+    img = QImage(*size, QImage.Format.Format_ARGB32_Premultiplied)
     img.setDevicePixelRatio(dpr)
     img.fill(Qt.GlobalColor.transparent)
     q = QPainter(img)
     q.setRenderHint(QPainter.RenderHint.Antialiasing)
     q.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
     q.setPen(Qt.PenStyle.NoPen)
-    q.translate(-bounds.topLeft())
+    q.translate(-origin)
     for path, color in levels:
         q.setBrush(color)
         q.drawPath(path)
@@ -237,14 +258,72 @@ def _hard_shadow(p: QPainter, shape: QRectF, radius: float, dy: float, color: QC
     p.restore()
 
 
-def inner_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: float, blur: float, alpha: float,
-                 rgb: tuple[int, int, int] = (0, 0, 0)) -> None:
-    """Тень внутри фигуры, эквивалент `inset 0 DYpx BLURpx rgba(rgb, alpha)`: размытый гауссом край «окна», сдвинутого
-    на DY (вниз при DY > 0). Альфа в точке — A·½·erfc(x / σ√2), x — расстояние внутрь от сдвинутого края (σ = BLUR/2).
-    Считается вложенными областями во временном изображении. BLUR = 0 — резкая линия."""
-    if blur <= 0:
-        _hard_shadow(p, shape, radius, dy, qcolor((*rgb, alpha)), inside=True)
-        return
+# --- тень внутри большой фигуры: полоса у края по заготовке ---
+# Тень считается кольцами вложенных областей, и у большой фигуры (экран 0 0 18px) это 80 колец по всему периметру. Вдоль
+# прямого края она одинакова в каждом столбце (строке), меняются только углы, а середина вообще не тронута. Поэтому
+# тень строится один раз для малой фигуры с тем же началом и теми же параметрами (заготовка в кэше), а для большой
+# собирается копированием: углы как есть, полоса у края — повтором одного столбца (строки), середина пустая. Разница
+# размеров кратна периоду DPR (k·dpr — целое число пикселей устройства). Растеризатор Qt не инвариантен к сдвигу на
+# сотни px: в дальних углах единичные пиксели расходятся с прямым построением на 1/255 (тест: не больше 2/255).
+# Фигура мала или у DPR нет короткого периода — прямое построение.
+
+_SLICE_TEMPLATES: dict[tuple, QImage] = {}
+_SLICE_TEMPLATES_MAX = 64
+
+
+def _dpr_period(dpr: float) -> int:
+    """Наименьшее целое q (до 8), при котором q·dpr — целое; 0 — такого нет (нарезка невозможна)."""
+    return next((q for q in range(1, 9) if abs(q * dpr - round(q * dpr)) < 1e-9), 0)
+
+
+def _slice_margin(radius: float, dy: float, blur: float) -> int:
+    """Поле от края фигуры, за которым тень вдоль края уже одинакова: радиус, размытие с запасом и сдвиг."""
+    return ceil(radius + 2 * blur + 2 * abs(dy) + 6)
+
+
+def _sliced(build, shape: QRectF, origin: QPointF, size: tuple[int, int], dpr: float, margin: int,
+            key: tuple) -> QImage:
+    """Изображение `build(shape, size)` (левый верхний угол — `origin`, размер `size` в пикселях устройства), собранное
+    из заготовки малой фигуры. Середина фигуры — всё дальше `margin` от краёв."""
+    q = _dpr_period(dpr)
+
+    def excess(length: float) -> int:
+        room = length - (2 * margin + 2)
+        return int(room // q) * q if q and room >= q else 0
+
+    kx, ky = excess(shape.width()), excess(shape.height())
+    if kx == 0 and ky == 0:
+        return build(shape, size)
+    dx, dy = round(kx * dpr), round(ky * dpr)
+    small = QRectF(shape.left(), shape.top(), shape.width() - kx, shape.height() - ky)
+    tkey = (*key, small.left(), small.top(), small.width(), small.height(), origin.x(), origin.y(), dpr)
+    tpl = _SLICE_TEMPLATES.get(tkey)
+    if tpl is None:
+        if len(_SLICE_TEMPLATES) >= _SLICE_TEMPLATES_MAX:
+            _SLICE_TEMPLATES.clear()
+        tpl = _SLICE_TEMPLATES[tkey] = build(small, (size[0] - dx, size[1] - dy))
+        tpl.setDevicePixelRatio(1)  # дальше — только копирование пикселей устройства
+    cx = ceil((shape.left() - origin.x() + margin) * dpr)  # столбец и строка середины (повторяются)
+    cy = ceil((shape.top() - origin.y() + margin) * dpr)
+    w, h = tpl.width(), tpl.height()
+    # (куда, сколько, откуда, сколько): до середины — как есть, середина — повтор, дальше — со сдвигом
+    cols = [(0, cx, 0, cx), (cx, dx, cx, 1), (cx + dx, w - cx, cx, w - cx)]
+    rows = [(0, cy, 0, cy), (cy, dy, cy, 1), (cy + dy, h - cy, cy, h - cy)]
+    out = QImage(w + dx, h + dy, QImage.Format.Format_ARGB32_Premultiplied)
+    out.fill(Qt.GlobalColor.transparent)
+    p = QPainter(out)
+    p.setCompositionMode(QPainter.CompositionMode.CompositionMode_Source)
+    for tx, tw, sx, sw in cols:
+        for ty, th, sy, sh in rows:
+            if min(tw, th, sw, sh) > 0:
+                p.drawImage(QRect(tx, ty, tw, th), tpl, QRect(sx, sy, sw, sh))
+    p.end()
+    out.setDevicePixelRatio(dpr)
+    return out
+
+
+def _inner_shadow_image(shape: QRectF, size: tuple[int, int], radius: float, dpr: float, dy: float, blur: float,
+                        alpha: float, rgb: tuple[int, int, int]) -> QImage:
     sigma, step = blur / 2, 0.5
     edge = shape.translated(0, dy)
     levels = []
@@ -258,21 +337,37 @@ def inner_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: floa
         region.addRect(shape.adjusted(-4, -4, 4, 4))
         region.addRoundedRect(inner, max(radius - x, 0), max(radius - x, 0))
         levels.append((region, qcolor((*rgb, _gauss_alpha(x - step / 2, sigma, alpha)))))
-    img = _stacked_levels(p, QRectF(0, 0, shape.right(), shape.bottom()), dpr, levels)
+    return _stacked_levels(QPointF(0, 0), size, dpr, levels)
+
+
+def inner_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: float, blur: float, alpha: float,
+                 rgb: tuple[int, int, int] = (0, 0, 0)) -> None:
+    """Тень внутри фигуры, эквивалент `inset 0 DYpx BLURpx rgba(rgb, alpha)`: размытый гауссом край «окна», сдвинутого
+    на DY (вниз при DY > 0). Альфа в точке — A·½·erfc(x / σ√2), x — расстояние внутрь от сдвинутого края (σ = BLUR/2).
+    Считается вложенными областями во временном изображении (у большой фигуры — нарезкой, `_sliced`).
+    BLUR = 0 — резкая линия."""
+    if blur <= 0:
+        _hard_shadow(p, shape, radius, dy, qcolor((*rgb, alpha)), inside=True)
+        return
+    shape = QRectF(shape)
+    size = (ceil(shape.right() * dpr) + 1, ceil(shape.bottom() * dpr) + 1)  # изображение — от начала координат
+    img = _sliced(lambda s, sz: _inner_shadow_image(s, sz, radius, dpr, dy, blur, alpha, rgb), shape, QPointF(0, 0),
+                  size, dpr, _slice_margin(radius, dy, blur), ("inner", radius, dy, blur, alpha, tuple(rgb)))
     p.save()
     p.setClipPath(_shape_path(shape, radius), Qt.ClipOperation.IntersectClip)
     p.drawImage(0, 0, img)
     p.restore()
 
 
-def outer_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: float, blur: float, alpha: float,
-                 rgb: tuple[int, int, int] = (0, 0, 0)) -> None:
-    """Тень снаружи фигуры, эквивалент `0 DYpx BLURpx rgba(rgb, alpha)`; под самой фигурой тени нет (как у box-shadow).
-    Тот же метод, что у `inner_shadow`: альфа — A·½·erfc(d / σ√2), d — расстояние наружу от сдвинутого края. Тень
-    выходит за фигуру на BLUR (вбок), BLUR − DY (вверх) и BLUR + DY (вниз): так считаются поля виджетов-клавиш."""
-    if blur <= 0:
-        _hard_shadow(p, shape, radius, dy, qcolor((*rgb, alpha)), inside=False)
-        return
+def _outer_bounds(shape: QRectF, dpr: float, dy: float, blur: float) -> QRectF:
+    """Область изображения внешней тени: фигура с полями под размытие и сдвиг, угол — по сетке пикселей устройства."""
+    pad = blur + 1 + abs(dy) + 1
+    bounds = shape.adjusted(-pad, -pad, pad, pad)
+    return QRectF(floor(bounds.left() * dpr) / dpr, floor(bounds.top() * dpr) / dpr, bounds.width(), bounds.height())
+
+
+def _outer_shadow_image(shape: QRectF, origin: QPointF, size: tuple[int, int], radius: float, dpr: float, dy: float,
+                        blur: float, alpha: float, rgb: tuple[int, int, int]) -> QImage:
     sigma, step = blur / 2, 0.5
     edge = shape.translated(0, dy)
     reach = blur + 1
@@ -286,17 +381,29 @@ def outer_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: floa
         path = QPainterPath()
         path.addRoundedRect(grown, max(radius + d, 0), max(radius + d, 0))
         levels.append((path, qcolor((*rgb, _gauss_alpha(d - step / 2, sigma, alpha)))))
-    pad = reach + abs(dy) + 1
-    bounds = shape.adjusted(-pad, -pad, pad, pad)
-    bounds = QRectF(floor(bounds.left() * dpr) / dpr, floor(bounds.top() * dpr) / dpr, bounds.width(), bounds.height())
-    img = _stacked_levels(p, bounds, dpr, levels)
+    return _stacked_levels(origin, size, dpr, levels)
+
+
+def outer_shadow(p: QPainter, shape: QRectF, radius: float, dpr: float, dy: float, blur: float, alpha: float,
+                 rgb: tuple[int, int, int] = (0, 0, 0)) -> None:
+    """Тень снаружи фигуры, эквивалент `0 DYpx BLURpx rgba(rgb, alpha)`; под самой фигурой тени нет (как у box-shadow).
+    Тот же метод, что у `inner_shadow`: альфа — A·½·erfc(d / σ√2), d — расстояние наружу от сдвинутого края. Тень
+    выходит за фигуру на BLUR (вбок), BLUR − DY (вверх) и BLUR + DY (вниз): так считаются поля виджетов-клавиш."""
+    if blur <= 0:
+        _hard_shadow(p, shape, radius, dy, qcolor((*rgb, alpha)), inside=False)
+        return
+    shape = QRectF(shape)
+    bounds = _outer_bounds(shape, dpr, dy, blur)
+    origin = bounds.topLeft()
+    size = (ceil(bounds.width() * dpr) + 1, ceil(bounds.height() * dpr) + 1)
+    img = _outer_shadow_image(shape, origin, size, radius, dpr, dy, blur, alpha, rgb)
     outside = QPainterPath()
     outside.setFillRule(Qt.FillRule.OddEvenFill)
     outside.addRect(bounds)
     outside.addPath(_shape_path(shape, radius))
     p.save()
     p.setClipPath(outside, Qt.ClipOperation.IntersectClip)
-    p.drawImage(bounds.topLeft(), img)
+    p.drawImage(origin, img)
     p.restore()
 
 
@@ -325,10 +432,15 @@ class RecessedBlock(QFrame):
         p.drawRoundedRect(shape, r, r)
         inner_shadow(p, shape, r, p.device().devicePixelRatioF(), theme.RECESS_SHADOW_DY, theme.RECESS_SHADOW_BLUR,
                      theme.RECESS_SHADOW_ALPHA)
-        paint_metal(p, shape, r, origin)  # текстура поверх тени, как в макете
+
+    @staticmethod
+    def _texture(p: QPainter, rect: QRect, origin: QPoint) -> None:
+        top = theme.RECESS_EDGE_TOP
+        shape = QRectF(0, top, rect.width(), rect.height() - top - theme.RECESS_EDGE_BOTTOM)
+        paint_metal(p, shape, theme.RECESS_RADIUS, origin)  # текстура поверх тени, как в макете
 
     def paintEvent(self, _event) -> None:
-        QPainter(self).drawPixmap(0, 0, self._backdrop.get(self, self._compose))
+        QPainter(self).drawPixmap(0, 0, self._backdrop.get(self, self._compose, self._texture))
 
 
 class Panel(QFrame):
