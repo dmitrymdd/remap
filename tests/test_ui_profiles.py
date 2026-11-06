@@ -2625,7 +2625,10 @@ def test_shell_header_follows_the_mockup(window, app):
     window.show()
     app.processEvents()
     brand = window.centralWidget().findChild(BrandBlock)
-    assert brand.mapTo(window, QPoint(0, 0)).x() == 40 and brand.sizeHint().width() > 144 + 2 * 14
+    logo = brand.logo  # лицо логотипа — в 40 px от края; блок левее на поле под свечение
+    assert logo.face_rect().translated(logo.mapTo(window, QPoint(0, 0))).left() == 40
+    assert brand.mapTo(window, QPoint(0, 0)).x() == 40 - theme.LOGO_GLOW_PAD
+    assert brand.sizeHint().width() > theme.LOGO_GLOW_PAD + 144 + 2 * 14
     faces = [k.face_rect().translated(k.mapTo(window, QPoint(0, 0)))
              for k in (window.nav_convert, window.nav_profiles, window.nav_maps)]
     assert all(f.size().toTuple() == (118, 36) and f.top() == 14 for f in faces)  # по центру шапки 64

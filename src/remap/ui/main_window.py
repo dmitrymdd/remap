@@ -1,5 +1,5 @@
 """Главное окно REMAP на PySide6: корпус, шапка, вкладки Convert (ui/convert_page.py), Profiles
-(ui/profiles_page.py) и Maps (ui/maps_page.py), обучение Profiles и закрытие окна с несохранёнными правками.
+(ui/profiles_page.py) и Maps (ui/maps_page.py), логотип и About (ui/about.py), обучение Profiles и закрытие окна с несохранёнными правками.
 
 Запуск: python -m remap
 """
@@ -14,6 +14,7 @@ from PySide6.QtWidgets import QApplication, QButtonGroup, QHBoxLayout, QMainWind
 from ..core import legacy_profile
 from ..storage import Storage
 from . import theme
+from .about import AboutOverlay
 from .convert_page import ConvertPage
 from .field import FaceSlot
 from .keys import HELP, TAB, Key, key_margins, key_row_spacing
@@ -74,9 +75,11 @@ class MainWindow(QMainWindow):
         self.nav_profiles = Key("Profiles", "tab-profiles", spec=TAB, checkable=True)
         self.nav_maps = Key("Maps", "tab-maps", spec=TAB, checkable=True)
         head = QHBoxLayout()
-        head.setContentsMargins(theme.HEADER_PAD_X, 0, theme.HEADER_PAD_X - key_margins(TAB).right(), 0)  # лицо — в 40 px от края
+        # лица — в 40 px от краёв; блок логотипа начинается левее лица на поле под свечение
+        head.setContentsMargins(theme.HEADER_PAD_X - theme.LOGO_GLOW_PAD, 0, theme.HEADER_PAD_X - key_margins(TAB).right(), 0)
         head.setSpacing(key_row_spacing(theme.KEY_TAB_GAP))
-        head.addWidget(BrandBlock())
+        self.brand = BrandBlock()
+        head.addWidget(self.brand)
         head.addStretch(1)
         self.help_btn = Key("?", spec=HELP)
         self.help_btn.setToolTip(tip("Show the tutorial"))
@@ -110,6 +113,14 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         self.tutorial = TutorialOverlay(central, profiles_resolver(self))
         self.tutorial.finished.connect(self._tutorial_finished)
+        self.about = AboutOverlay(central)
+        self.brand.logo.clicked.connect(self.show_about)
+        self.about.closed.connect(lambda: setattr(self.brand.logo, "on", False))
+
+    def show_about(self) -> None:
+        """About поверх корпуса; логотип подсвечен, пока он открыт (`.logo-btn.on` макета)."""
+        self.brand.logo.on = True
+        self.about.open()
 
 
     # --- вкладки ---

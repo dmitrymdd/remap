@@ -3,7 +3,7 @@ import re
 from pathlib import Path
 
 import pytest
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QImage
 
 from remap.ui import theme
 
@@ -52,8 +52,14 @@ def test_stylesheet_builds():
     assert "{t[" not in css and "{{" not in css and "None" not in css
 
 
-def test_logo_path_constant_does_not_require_file():
-    assert theme.LOGO_PNG.name == "logo.png" and theme.LOGO_PNG.parent.name == "assets"
+def test_logo_files_are_packaged_for_every_scale():
+    w, h = theme.LOGO_SIZE
+    pad = theme.LOGO_GLOW_PAD
+    for n in theme.LOGO_SCALES:
+        for kind, size in (("logo", (w, h)), ("logo_hover", (w, h)), ("logo_glow", (w + 2 * pad, h + 2 * pad))):
+            path = theme.logo_png(kind, n)
+            assert path.parent.name == "assets" and path.is_file(), path
+            assert QImage(str(path)).size().toTuple() == (size[0] * n, size[1] * n)
 
 
 def test_font_files_are_packaged():

@@ -4,3 +4,4 @@ pyinstaller>=6.22
 ruff>=0.17
 vulture>=2.16
 radon>=6.0
+pillow>=11  # только tools/build_logo.py

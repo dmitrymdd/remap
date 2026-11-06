@@ -206,7 +206,11 @@ PANEL_EDGE_LIGHT: RGBA = (255, 255, 255, 0.06)
 # --- Раскладка окна (макет 900×800): шапка, полоса профиля, экраны, нижняя полоса ---
 WINDOW_SIZE = (900, 800)
 HEADER_H, HEADER_PAD_X, HEADER_GAP = 64, 40, 14  # шапка: высота, поля, зазор между логотипом, разделителем и надписью
-LOGO_SIZE = (144, 22)  # место под логотип (сам логотип позже)
+LOGO_SIZE = (144, 22)  # слот логотипа (кнопка About); картинки — assets/logo*@Nx.png (tools/build_logo.py)
+LOGO_GLOW = {"blur": 5, "alpha": 0.25, "rgb": (255, 255, 255)}  # hover: drop-shadow 0 0 5px белый; в макете .45, приглушено
+LOGO_HOVER_BRIGHTNESS = 1.15  # hover: brightness(1.15)
+LOGO_GLOW_PAD = 10  # свечение выходит за слот с каждой стороны (2σ = blur, хвост гаусса — до ~4σ)
+LOGO_FOCUS_OFFSET, LOGO_FOCUS_RADIUS = 4, 4  # :focus-visible — outline 1px KEY_FOCUS_RING, offset 4px; border-radius 4px
 BRAND_DIVIDER_H, BRAND_DIVIDER, BRAND_DIVIDER_SHADOW = 28, "#34383C", (0, 0, 0, 0.5)
 BRAND_FONT, BRAND_SPACING, BRAND_LINE = 11.5, 0.14, 1.2  # шелкография «DRUM MIDI / NOTE REMAPPER»
 PAGE_MARGIN = 32  # поля страницы слева и справа
@@ -281,12 +285,42 @@ TUT_DOT_PAST, TUT_DOT_FUTURE = "#6B7379", "#0B0C0D"  # текущая — ACCENT
 TUT_DOT_FUTURE_SHADOW = {"dy": 1, "blur": 1, "alpha": 0.8}  # inset 0 1px 1px rgba(0,0,0,.8)
 TUT_DOT_GLOW = {"dy": 0, "blur": 4, "alpha": 1.0, "rgb": (98, 214, 154)}  # текущая: 0 0 4px ACCENT
 
+# --- About: слой поверх корпуса (Convert.dc.html, showAbout) ---
+ABOUT_DIM: RGBA = (4, 5, 6, 0.62)  # затемнение корпуса
+ABOUT_W, ABOUT_RADIUS = 480, 14  # плашка: ширина с рамкой 1 px KEY_BORDER
+ABOUT_PAD_TOP, ABOUT_PAD_X, ABOUT_PAD_BOTTOM = 22, 24, 24  # padding 22px 24px 24px
+ABOUT_OFFSET_Y = -14  # в макете плашка 432 px на 170, выше середины окна 800 на 14
+ABOUT_STOPS = ((0.0, "#212327"), (0.5, "#1A1C1F"), (1.0, "#16181A"))
+ABOUT_INSET_LIGHT: RGBA = (255, 255, 255, 0.13)  # inset 0 1px 0
+ABOUT_INSET_DARK: RGBA = (0, 0, 0, 0.6)  # inset 0 -1px 0
+ABOUT_SHADOW = {"dy": 24, "blur": 60, "alpha": 0.75}  # 0 24px 60px rgba(0,0,0,.75)
+ABOUT_HEAD_H, ABOUT_HEAD_GAP = 36, 14  # строка «ABOUT» + CLOSE; отступ до блока
+ABOUT_TITLE, ABOUT_TITLE_FONT, ABOUT_TITLE_SPACING = "#AEB5BB", 20, 0.2
+ABOUT_RECESS_PAD = 5  # поля блока вокруг экрана (у блока в макете радиус 11, у RecessedBlock 12)
+ABOUT_SCREEN_PAD_TOP, ABOUT_SCREEN_PAD_X, ABOUT_SCREEN_PAD_BOTTOM = 22, 22, 18
+ABOUT_GLOW_RY = 0.80  # radial-gradient(ellipse 120% 80% at 50% 0%), сетки нет
+ABOUT_ROW_GAP = 16  # между строками экрана
+ABOUT_NAME_FONT, ABOUT_NAME_SPACING, ABOUT_VERSION_FONT = 20, 0.06, 11  # «REMAP» 20/600; версия акцентом
+ABOUT_DESC, ABOUT_DESC_FONT, ABOUT_DESC_LINE = "#CBE3D3", 11.5, 1.55
+ABOUT_AUTHOR_FONT, ABOUT_AUTHOR_PAD, ABOUT_AUTHOR_GAP = 12, 14, 10  # над строкой — линия SCREEN_DIVIDER и 14 px
+ABOUT_AUTHOR_DOT, ABOUT_AUTHOR_NAME = "#5F8A70", "#7FA58C"  # «dmitry.mdd» — SCREEN_TEXT
+ABOUT_LINK_H, ABOUT_LINK_GAP, ABOUT_LINK_PAD = 38, 6, 10  # строка-ссылка: плашка CHIP_BG / CHIP_BORDER, радиус 5
+ABOUT_LINK_COLS, ABOUT_LINK_COL_GAP = (22, 78, 14), 8  # значок | подпись | значение (1fr) | стрелка
+ABOUT_LINK_LABEL_FONT, ABOUT_LINK_LABEL_SPACING, ABOUT_LINK_VALUE_FONT = 10, 0.1, 11.5  # подпись — SCREEN_TEXT_3
+ABOUT_LICENSE_FONT, ABOUT_LICENSE_LINE = 10.5, 1.5  # строки лицензии под ссылками — SCREEN_TEXT_3; в макете нет
+ABOUT_COPIED_MS = 2000  # Discord: «COPIED» вместо значения
+
 # --- Винты корпуса: квадрат 14 px, левый верхний угол в 11 px от углов окна ---
 SCREW_SIZE, SCREW_INSET = 14, 11
 
 # --- Ресурсы ---
 ASSETS = resources.files("remap") / "assets"
-LOGO_PNG = Path(str(ASSETS / "logo.png"))  # 2170×725 RGBA, используется позже; может отсутствовать
+LOGO_SCALES = (1, 2, 3)  # логотип пререндерен под DPR: logo@Nx.png, logo_hover@Nx.png, logo_glow@Nx.png
+
+
+def logo_png(kind: str, scale: int) -> Path:
+    """Файл логотипа: `kind` — "logo", "logo_hover" или "logo_glow"."""
+    return Path(str(ASSETS / f"{kind}@{scale}x.png"))
 
 
 # Временный слой: старые ключи → новая палитра, чтобы страницы работали до перестройки. Убирается в шагах 3–5.
