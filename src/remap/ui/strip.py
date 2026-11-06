@@ -42,7 +42,12 @@ class StripSeparator(QWidget):
 
 
 class StripFrame(RecessedBlock):
-    """Блок полосы с панелью: `panel` (её `panel.body` — горизонтальный layout для содержимого)."""
+    """Блок полосы с панелью: `panel` (её `panel.body` — горизонтальный layout для содержимого). Полоса с секциями
+    задаёт `_left` / `_right` (контейнеры секций в панели) и `_extra` (поля их крайних виджетов под тень и обод)."""
+
+    _left: QWidget
+    _right: QWidget
+    _extra: tuple[int, int]
 
     def __init__(self, parent: QWidget | None = None, *, stretch: bool = False) -> None:
         """stretch — полоса тянется на ширину страницы (секции ставит наследник по ряду экранов под ней)."""
@@ -60,3 +65,20 @@ class StripFrame(RecessedBlock):
     def set_face_inset(self, left: int, right: int) -> None:
         """left / right — поля крайних виджетов под тень и обод: их ЛИЦА встают в 15 px от краёв панели."""
         self.panel.body.setContentsMargins(QMargins(theme.STRIP_PAD_X - left, 0, theme.STRIP_PAD_X - right, 0))
+
+    def set_sections(self, left: int, right: int) -> None:
+        """Ширины секций от лица первого виджета до лица последнего (`section_width()` блоков экранов)."""
+        self.apply_sections(left, right)
+
+    def apply_sections(self, left: int, right: int, *inner: QWidget) -> None:
+        """Ширины секций и сразу их положение: layout'ы — изнутри наружу (`inner` — контейнеры внутри секций, чьё
+        содержимое поменялось), затем панель. Не по отложенному LayoutRequest: setFixedWidth меняет ширину секции
+        сразу, а x ей даёт только раскладка панели — до неё секция новой ширины стоит на старом месте, и полоса
+        дрожит за ручкой ряда и краем окна."""
+        self._left.setFixedWidth(left + self._extra[0])
+        self._right.setFixedWidth(right + self._extra[1])
+        for w in (*inner, self._left, self._right, self.panel):
+            w.layout().activate()
+
+    def section_widths(self) -> tuple[int, int]:
+        return self._left.width() - self._extra[0], self._right.width() - self._extra[1]

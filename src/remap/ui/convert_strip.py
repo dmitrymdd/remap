@@ -77,11 +77,3 @@ class ConvertStrip(StripFrame):
         body.addWidget(StripSeparator(tm.right(), om.left()))
         body.addWidget(self._right)
         body.addStretch(1)
-
-    def set_sections(self, left: int, right: int) -> None:
-        """Ширины секций от лица первого виджета до лица последнего (`strip.section_width()` блоков экранов)."""
-        self._left.setFixedWidth(left + self._extra[0])
-        self._right.setFixedWidth(right + self._extra[1])
-
-    def section_widths(self) -> tuple[int, int]:
-        return self._left.width() - self._extra[0], self._right.width() - self._extra[1]

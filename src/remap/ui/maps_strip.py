@@ -93,14 +93,6 @@ class MapsStrip(StripFrame):
         self.panel.body.addWidget(right)
         self.panel.body.addStretch(1)
 
-    def set_sections(self, left: int, right: int) -> None:
-        """Ширины секций от лица первого виджета до лица последнего (`strip.section_width()` блоков экранов)."""
-        self._left.setFixedWidth(left + self._extra[0])
-        self._right.setFixedWidth(right + self._extra[1])
-
-    def section_widths(self) -> tuple[int, int]:
-        return self._left.width() - self._extra[0], self._right.width() - self._extra[1]
-
     def show_state(self, *, has_map: bool, read_only: bool, dirty: bool) -> None:
         """Доступность: Save и Revert changes — только при правках; Rename и Delete — у своих карт."""
         self.save_btn.setEnabled(dirty)

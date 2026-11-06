@@ -147,3 +147,52 @@ def test_saved_width_restored_after_narrow_then_wide(app, storage):
         check_strip_over_blocks(again)
     finally:
         again.close()
+
+
+def strip_geometry(window):
+    """Секции полосы, прорезь, поле карты и Save в координатах окна."""
+    strip = window.maps_page.strip
+    return [rect(window, w) for w in (strip._left, strip.findChild(StripSeparator), strip._right, strip.field,
+                                      strip.save_btn)]
+
+
+def handle_event(handle, kind, start, dx):
+    """Событие мыши ручке в точке `start` (глобальная, нажатие) + dx."""
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+    glob = QPointF(start + QPoint(dx, 0))
+    local = QPointF(handle.mapFromGlobal(glob.toPoint()))
+    button = Qt.MouseButton.NoButton if kind == QEvent.Type.MouseMove else Qt.MouseButton.LeftButton
+    buttons = Qt.MouseButton.NoButton if kind == QEvent.Type.MouseButtonRelease else Qt.MouseButton.LeftButton
+    QApplication.sendEvent(handle, QMouseEvent(kind, local, glob, button, buttons,
+                                               Qt.KeyboardModifier.NoModifier))
+
+
+def test_handle_moves_place_strip_at_once(app, storage):
+    """Протяжка ручки: в проходе, где схлопнутое движение раскладывается, секции полосы уже на месте (без отложенного
+    LayoutRequest), Save у правого края не двигается ни в одном промежуточном состоянии; два движения до прохода —
+    одна раскладка по последнему."""
+    from PySide6.QtCore import QEvent
+    w = open_window(storage, 1300)
+    try:
+        page = w.maps_page
+        handle = page.split.handle
+        save_x = rect(w, page.strip.save_btn).x()
+        start = handle.mapToGlobal(QPoint(handle.width() // 2, handle.height() // 2))
+        handle_event(handle, QEvent.Type.MouseButtonPress, start, 0)
+        for moves in ((15,), (40,), (41,), (70,), (30,), (80, 90)):
+            for dx in moves:
+                handle_event(handle, QEvent.Type.MouseMove, start, dx)
+            assert rect(w, page.strip.save_btn).x() == save_x
+            handle._apply()  # проход цикла событий, в котором срабатывает схлопнутое движение (без processEvents)
+            assert page.split.saved == theme.POOL_W + moves[-1]
+            at_once = strip_geometry(w)
+            assert at_once[-1].x() == save_x
+            check_strip_over_blocks(w)
+            QApplication.processEvents()
+            assert strip_geometry(w) == at_once
+        handle_event(handle, QEvent.Type.MouseButtonRelease, start, 90)
+        QApplication.processEvents()
+        assert rect(w, page.strip.save_btn).x() == save_x
+    finally:
+        w.close()

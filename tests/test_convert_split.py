@@ -139,3 +139,32 @@ def test_saved_width_restored_after_narrow_then_wide(app, storage):
         check_layout(again)
     finally:
         again.close()
+
+
+def strip_geometry(window):
+    """Секции полосы, прорезь и поле OUTPUT в координатах окна."""
+    strip = window.convert_page.strip
+    sep = strip._left.parentWidget().layout().itemAt(1).widget()
+    return [rect(window, w) for w in (strip._left, sep, strip._right, strip.output_btn)]
+
+
+def test_window_resize_places_strip_at_once(app, storage):
+    """Колонка OUTPUT шире макета, окно сужается: секции полосы встают на место в самом resize(), без отложенного
+    LayoutRequest (иначе до следующего прохода цикла событий прорезь и OUTPUT стоят на старом x — дрожь при протяжке
+    края окна)."""
+    w = open_window(storage, theme.WINDOW_SIZE[0])  # окно открыто узким и расширено (так шаги ниже ловят сдвиг)
+    try:
+        resize(w, 1400)
+        page = w.convert_page
+        drag(page, -(600 - page.output_column.width()))  # колонка 600: шире, чем позволит узкое окно
+        for width in (1300, 1200, 1100, 1000, 900):
+            w.resize(width, 800)  # без processEvents
+            at_once = strip_geometry(w)
+            left, right, _sep = faces(w)
+            inp, col = rect(w, page.input), rect(w, page.output_column)
+            assert left == (inp.x() + theme.STRIP_INSET, inp.width() - 2 * theme.STRIP_INSET)
+            assert right == (col.x() + theme.STRIP_INSET, col.width() - 2 * theme.STRIP_INSET)
+            QApplication.processEvents()
+            assert strip_geometry(w) == at_once
+    finally:
+        w.close()

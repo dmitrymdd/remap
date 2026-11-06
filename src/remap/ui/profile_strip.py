@@ -96,14 +96,7 @@ class ProfileStrip(StripFrame):
         _x_from, _x_to, w_from, w_to = scene_columns(right)
         for w, width in ((self.from_btn, w_from), (self.to_btn, w_to)):
             w.setFixedWidth(round(width) + w.margins().left() + w.margins().right())
-        self._left.setFixedWidth(left + self._extra[0])
-        self._right.setFixedWidth(right + self._extra[1])
-        # сразу, изнутри наружу, а не по отложенному LayoutRequest: полоса идёт вслед за ручкой ряда
-        for w in (self.from_btn.parentWidget(), self.to_btn.parentWidget(), self._right, self.panel):
-            w.layout().activate()
-
-    def section_widths(self) -> tuple[int, int]:
-        return self._left.width() - self._extra[0], self._right.width() - self._extra[1]
+        self.apply_sections(left, right, self.from_btn.parentWidget(), self.to_btn.parentWidget())
 
     def set_actions_menu(self, menu: QMenu) -> None:
         """Меню «…»: открывается по нажатию под клавишей."""
