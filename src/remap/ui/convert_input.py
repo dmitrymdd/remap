@@ -367,7 +367,7 @@ class InputScreen(RecessedBlock):
         self._on_remove, self._on_details = on_remove, on_details
         self.selection = Selection()
         self.activated: Callable[[], None] | None = None  # клик по экрану: страница запоминает, куда идёт Ctrl+A
-        self.setFixedWidth(theme.CONVERT_INPUT_W)
+        self.setMinimumWidth(theme.CONVERT_INPUT_W)  # ширину задаёт ряд экранов (SplitRow)
         self.screen = Screen()
         self.body.addWidget(self.screen)
         self.clear_btn = ScreenButton("Clear all")

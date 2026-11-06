@@ -23,3 +23,22 @@ def app():
 @pytest.fixture
 def storage(tmp_path):
     return Storage(tmp_path / "store")
+
+
+@pytest.fixture(autouse=True)
+def _delete_closed_windows():
+    """После теста закрывает и удаляет окна верхнего уровня: без цикла событий deleteLater() не срабатывает,
+    окна копятся, и каждый следующий тест UI идёт медленнее. Qt не импортируется, если тест его не загрузил."""
+    yield
+    import sys
+    if "PySide6.QtWidgets" not in sys.modules:
+        return
+    from PySide6.QtCore import QCoreApplication, QEvent
+    from PySide6.QtWidgets import QApplication
+    if QApplication.instance() is None:
+        return
+    for widget in QApplication.topLevelWidgets():
+        widget.close()
+        widget.deleteLater()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    QCoreApplication.processEvents()

@@ -27,10 +27,13 @@ from .convert_strip import ConvertStrip
 from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details
 from .keys import GO, Key
 from .profiles_page import SWAP_TIP, map_summary
+from .split import SplitRow
+from .strip import section_width
 from .theme import repolish as _repolish
 from .tips import tip
 
 DIRECTION_KEY = "convert/direction"  # ui.ini: направление конвертации, общее для всех профилей
+SIDE_KEY = "layout/convert_side"  # ширина колонки OUTPUT
 NO_PROFILES = "NO PROFILES"
 CREATE_PROFILE = "No remap profiles yet: create one on the Profiles tab"
 NEXT_TO_SOURCES = "Next to source files"
@@ -147,7 +150,7 @@ class ConvertPage(QWidget):
         self.convert_btn.lit = True
         self.convert_btn.clicked.connect(lambda _=False: self.convert())
         right = QWidget()
-        right.setFixedWidth(theme.CONVERT_RIGHT_W)
+        right.setMinimumWidth(theme.CONVERT_RIGHT_W)  # ширину задаёт ряд экранов
         rbox = QVBoxLayout(right)
         rbox.setContentsMargins(0, 0, 0, theme.RECESS_EDGE_BOTTOM)  # низ клавиши — на одной линии с лицом INPUT
         rbox.setSpacing(0)
@@ -156,12 +159,13 @@ class ConvertPage(QWidget):
         rbox.addWidget(self.go_slot)
         for w in (self.go_slot, right):
             w.installEventFilter(self)
-        screens = QHBoxLayout()
-        screens.setContentsMargins(0, 0, 0, 0)
-        screens.setSpacing(theme.SCREEN_GAP)
-        screens.addWidget(self.input)
-        screens.addWidget(right)
-        root.addLayout(screens, stretch=1)
+        # колонка OUTPUT/CONVERT — боковая справа (ширина в ui.ini), INPUT забирает остальное; секции полосы — над ними
+        self.output_column = right
+        self.split = SplitRow(self.input, right, side_first=False, side_min=theme.CONVERT_RIGHT_W,
+                              main_min=theme.CONVERT_INPUT_W, settings=self.settings, key=SIDE_KEY)
+        self.split.layout_changed.connect(
+            lambda: self.strip.set_sections(section_width(self.input.width()), section_width(right.width())))
+        root.addWidget(self.split, stretch=1)
 
         # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Profiles
         self.status = QLabel("Supports .mid and .midi files.")
@@ -181,8 +185,10 @@ class ConvertPage(QWidget):
         return super().eventFilter(obj, event)
 
     def _place_go(self) -> None:
-        """Лицо клавиши CONVERT — ровно на месте `go_slot`, поля под тень — вокруг."""
-        face = QRect(self.go_slot.mapTo(self, QPoint(0, 0)), self.go_slot.size())
+        """Лицо клавиши CONVERT (размер — по макету) — в `go_slot` по центру колонки, поля под тень — вокруг."""
+        slot = QRect(self.go_slot.mapTo(self, QPoint(0, 0)), self.go_slot.size())
+        face = QRect(QPoint(0, 0), self.convert_btn.face_size())
+        face.moveCenter(slot.center())
         m = self.convert_btn.margins()
         self.convert_btn.setGeometry(face.adjusted(-m.left(), -m.top(), m.right(), m.bottom()))
         self.convert_btn.raise_()
