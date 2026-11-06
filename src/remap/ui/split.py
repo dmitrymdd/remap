@@ -7,11 +7,13 @@
 снова расширилось — колонка возвращается к saved.
 
 Ручка — сам зазор на всю высоту ряда, ничего не рисует (виден металл корпуса), только курсор. Двойной клик — ширина
-по умолчанию (макет). В ui.ini ширина пишется по отпусканию ручки и по двойному клику.
+по умолчанию (макет). В ui.ini ширина пишется по отпусканию ручки и по двойному клику. Движения ручки схлопываются:
+раскладка — не чаще раза за проход цикла событий, по последней позиции (иначе медленная перестройка экранов копит
+очередь движений, и колонка отстаёт от курсора).
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt, Signal
+from PySide6.QtCore import QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QWidget
 
@@ -25,6 +27,7 @@ class SplitHandle(QWidget):
         super().__init__(row)
         self._row = row
         self._press: tuple[float, int] | None = None  # (x курсора на экране, ширина колонки) в момент нажатия
+        self._pending: int | None = None  # ширина последнего движения, ещё не разложенная
         self.setCursor(Qt.CursorShape.SplitHCursor)
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
@@ -38,16 +41,24 @@ class SplitHandle(QWidget):
             return
         x0, width0 = self._press
         dx = round(event.globalPosition().x() - x0)
-        self._row.drag_to(width0 + dx if self._row.side_first else width0 - dx)
+        if self._pending is None:
+            QTimer.singleShot(0, self, self._apply)  # после уже пришедших событий: они только обновят _pending
+        self._pending = width0 + dx if self._row.side_first else width0 - dx
+
+    def _apply(self) -> None:
+        if self._pending is not None:
+            width, self._pending = self._pending, None
+            self._row.drag_to(width)
 
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton and self._press is not None:
             self._press = None
+            self._apply()
             self._row.store()
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            self._press = None
+            self._press = self._pending = None
             self._row.reset()
 
 

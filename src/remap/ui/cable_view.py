@@ -200,6 +200,7 @@ class _Row(QGraphicsItem):
         self._part: int | str | None = None  # плашка раскрытой цели под курсором: "head" или номер
         self.part_tips: dict[int | str, str] = {}
         self.tip_text = ""
+        self.base_tips: tuple[str, str | None] | None = None  # подсказки без полного имени (см. _full_name)
         self.setZValue(1)
         self.setAcceptHoverEvents(True)
         self.set_tip(tooltip)
@@ -208,6 +209,12 @@ class _Row(QGraphicsItem):
         """Подсказка (простой текст хранится в tip_text, Qt получает tip())."""
         self.tip_text = text
         self.setToolTip(tip(text) if text else "")
+
+    def set_rect(self, rect: QRectF) -> None:
+        """Новый слот (смена ширины колонки): элемент остаётся тем же."""
+        if rect != self.rect:
+            self.prepareGeometryChange()
+            self.rect = rect
 
     @property
     def notes(self) -> tuple[int, ...]:
@@ -412,13 +419,11 @@ class _Row(QGraphicsItem):
 class _HeaderItem(QGraphicsItem):
     """Заголовок группы: шеврон, имя, число; клик — свернуть или развернуть (у цели — сменить режим)."""
 
-    def __init__(self, rect: QRectF, header: Header, on_toggle: Callable[[str], None], tooltip: str,
-                 variant: str = "pool", zone: QRectF | None = None,
-                 cols: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)) -> None:
+    def __init__(self, header: Header, on_toggle: Callable[[str], None], tooltip: str, variant: str = "pool") -> None:
         super().__init__()
-        self.rect, self.header, self.variant = rect, header, variant
-        self.cols = cols  # колонки сцены (`_scene_columns()`): у заголовка сцены подпись слева, число — над «to»
-        self.zone = rect.united(zone) if zone is not None else QRectF(rect)  # клик и drop: с зазорами до соседних плашек
+        self.header, self.variant = header, variant
+        self.rect, self.zone = QRectF(), QRectF()  # место — set_geometry()
+        self.cols = (0.0, 0.0, 0.0, 0.0)  # колонки сцены (`_scene_columns()`): у заголовка сцены подпись слева, число — над «to»
         self._on_toggle = on_toggle
         self._hover = False
         self.highlighted = False
@@ -427,10 +432,19 @@ class _HeaderItem(QGraphicsItem):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tip_text = ""
         self.set_tip(tooltip)
+        self.base_tip = tooltip  # без полной подписи (см. _full_label)
 
     def set_tip(self, text: str) -> None:
         self.tip_text = text
         self.setToolTip(tip(text) if text else "")
+
+    def set_geometry(self, rect: QRectF, zone: QRectF | None = None,
+                     cols: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)) -> None:
+        """Место заголовка; zone — клик и drop с зазорами до соседних плашек."""
+        self.prepareGeometryChange()
+        self.rect, self.cols = rect, cols
+        self.zone = rect.united(zone) if zone is not None else QRectF(rect)
+        self.update()
 
     def set_highlighted(self, on: bool) -> None:
         if on != self.highlighted:
@@ -492,6 +506,11 @@ class _Bundle(QGraphicsItem):
 
     def boundingRect(self) -> QRectF:
         return self.rect.adjusted(-1, -1, 1, 1)
+
+    def set_rect(self, rect: QRectF) -> None:
+        if rect != self.rect:
+            self.prepareGeometryChange()
+            self.rect = rect
 
     def paint(self, p: QPainter, option, widget=None) -> None:
         p.setPen(QPen(theme.qcolor(theme.SCREEN_DIVIDER), 1))
@@ -634,13 +653,14 @@ class _ColumnView(QGraphicsView):
                 return
         super().keyPressEvent(event)
 
-    def begin(self, height: int) -> float:
-        """Очистить сцену (позиция прокрутки сохраняется в end()); вернуть ширину сцены."""
+    def begin(self) -> None:
+        """Очистить сцену (позиция прокрутки сохраняется в end())."""
         self._scroll = self.verticalScrollBar().value()
         self.scene().clear()
-        width = self.width_px()
-        self.scene().setSceneRect(0, 0, width, height + 2 * PAD)
-        return width
+
+    def fit(self, height: int) -> None:
+        """Размер сцены: ширина view и высота содержимого."""
+        self.scene().setSceneRect(0, 0, self.width_px(), height + 2 * PAD)
 
     def end(self) -> None:
         self.verticalScrollBar().setValue(self._scroll)
@@ -766,8 +786,8 @@ class CableEditor(QWidget):
     def __init__(self, parent=None, *, settings=None) -> None:
         """settings — ui.ini: ширина пула (боковая колонка ряда `split`, ключ SIDE_KEY)."""
         super().__init__(parent)
-        self.pool = _ColumnView(self._draw_pool)
-        self.view = _ColumnView(self._draw_scene)
+        self.pool = _ColumnView(self._reflow_pool)
+        self.view = _ColumnView(self._reflow_scene)
         self.pool.handler = self.view.handler = self
         # пул и сцена — экраны в утопленных блоках; view стоят с запасом PAD вокруг содержимого (см. docstring модуля)
         self.match_btn = ScreenButton("Match by number")
@@ -808,6 +828,7 @@ class CableEditor(QWidget):
         self.pool_rows: list[_Row] = []
         self.pool_headers: dict[str, _HeaderItem] = {}           # заголовки пула по ключу
         self.scene_rows: list[_Row] = []
+        self._bundles: list[tuple[_Bundle, bool, int, int]] = []  # рамки сцены: (рамка, в «from», строка, строк)
         self.target_items: dict[str, _Row] = {}                  # строки цели по slot
         self.scene_headers: dict[str, _HeaderItem] = {}          # заголовки групп цели по ключу
         self.hovered: _CableItem | None = None
@@ -1514,25 +1535,41 @@ class CableEditor(QWidget):
             self.pool.scene().clear()
             return
         view = self.pool
-        ruler = self.pool_ruler = Ruler(lay.pool.height, (h.y for h in lay.pool.headers), POOL_ROWS)
-        width = view.begin(ruler.total)
-        col = width - 2 * PAD
+        self.pool_ruler = Ruler(lay.pool.height, (h.y for h in lay.pool.headers), POOL_ROWS)
+        view.begin()
         scene = view.scene()
         for h in lay.pool.headers:
             text = ("Click to expand" if h.collapsed else "Click to collapse") + f"\n{GROUP_HINT}"
-            item = _HeaderItem(QRectF(PAD, PAD + ruler.top(h.y), col, POOL_ROWS.head), h, self.toggle_pool, text,
-                               "pool")
-            self._full_label(item, view)
+            item = _HeaderItem(h, self.toggle_pool, text, "pool")
             self.pool_headers[h.key] = item
             scene.addItem(item)
         for r in lay.pool.rows:
-            indent = INDENT if r.child else 0
-            slot = QRectF(PAD + indent, PAD + ruler.top(r.y) - POOL_ROWS.inset, col - indent, POOL_ROWS.pitch)
-            item = self._source_item(slot, r, POOL)
-            self._full_name(item, view)
+            item = self._source_item(QRectF(), r, POOL)
             self._register(item, self.pool_items, self.pool_rows)
             scene.addItem(item)
+        self._place_pool()
         view.end()
+
+    def _place_pool(self) -> None:
+        """Места строк и заголовков пула по ширине view (при смене ширины элементы не пересоздаются)."""
+        view, ruler = self.pool, self.pool_ruler
+        view.fit(ruler.total)
+        col = view.width_px() - 2 * PAD
+        for item in self.pool_headers.values():
+            item.set_geometry(QRectF(PAD, PAD + ruler.top(item.header.y), col, POOL_ROWS.head))
+            self._full_label(item)
+        for item in self.pool_rows:
+            r = item.model
+            indent = INDENT if r.child else 0
+            item.set_rect(QRectF(PAD + indent, PAD + ruler.top(r.y) - POOL_ROWS.inset, col - indent, POOL_ROWS.pitch))
+            self._full_name(item)
+
+    def _reflow_pool(self) -> None:
+        """Ширина пула поменялась: те же элементы на новых местах."""
+        if self.current is None:
+            self._draw_pool()
+        else:
+            self._place_pool()
 
     @staticmethod
     def _register(item: _Row, by_note: dict[int, _Row], rows: list[_Row]) -> None:
@@ -1554,19 +1591,27 @@ class CableEditor(QWidget):
     # --- полные имена в подсказках ---
 
     @staticmethod
-    def _full_name(item: _Row, view: _ColumnView) -> None:
-        """Имя не помещается в строку — полное имя первой строкой подсказки (у раскрытой цели — заголовка)."""
-        if item.name and plates.name_width(item.name, item.italic) > item.name_room():
-            if item.expanded:
-                item.part_tips["head"] = with_name(item.name, item.part_tips["head"])
+    def _full_name(item: _Row) -> None:
+        """Имя не помещается в строку — полное имя первой строкой подсказки (у раскрытой цели — заголовка). Повторный
+        вызов (новая ширина) начинает с подсказок без имени."""
+        if item.base_tips is None:
+            item.base_tips = (item.tip_text, item.part_tips.get("head"))
+        base, head = item.base_tips
+        cut = bool(item.name) and plates.name_width(item.name, item.italic) > item.name_room()
+        if item.expanded:
+            item.part_tips["head"] = with_name(item.name, head) if cut else head
+            if item._part in (None, "head"):
                 item.set_tip(item.part_tips["head"])
-            else:
-                item.set_tip(with_name(item.name, item.tip_text))
+        else:
+            text = with_name(item.name, base) if cut else base
+            if text != item.tip_text:
+                item.set_tip(text)
 
     @staticmethod
-    def _full_label(item: _HeaderItem, view: _ColumnView) -> None:
-        if item.label_width() > item.label_room():
-            item.set_tip(f"{item.header.label}\n{item.tip_text}")
+    def _full_label(item: _HeaderItem) -> None:
+        text = f"{item.header.label}\n{item.base_tip}" if item.label_width() > item.label_room() else item.base_tip
+        if text != item.tip_text:
+            item.set_tip(text)
 
     def _draw_scene(self) -> None:
         """Колонка «from» (подключённые строки, точка справа) и колонка «to» (строки цели, точка слева)."""
@@ -1579,21 +1624,10 @@ class CableEditor(QWidget):
             self.view.set_hint(None)
             return
         sc = lay.scene
-        m = SCENE_ROWS
-        ruler = self.scene_ruler = Ruler(sc.height, (h.y for h in sc.target_headers), m)
-        self.view.begin(ruler.total)
-        lx, rx, col2, col3 = self._scene_columns()
+        self.scene_ruler = Ruler(sc.height, (h.y for h in sc.target_headers), SCENE_ROWS)
+        self.view.begin()
         scene = self.view.scene()
-        # сцена совсем пуста (ни заголовков, ни строк — иначе подсказка ложится на них) — что делать; пул пуст —
-        # подсказывать нечего
-        empty = not (sc.source_rows or sc.target_rows or sc.target_headers) and bool(lay.pool.rows or lay.pool.headers)
-        self.view.set_hint((lx, col2, EMPTY_HINT.format(side=self.sides[1])) if empty else None)
-
-        def rect(x: float, y: int, h: int = 1) -> QRectF:
-            """Слот строк y..y+h-1 в колонке x."""
-            top = ruler.top(y) - m.inset
-            return QRectF(x, PAD + top, col2 if x == lx else col3, ruler.bottom(y, h) + m.inset - top)
-
+        self._bundles = []
         for h in sc.target_headers:
             if h.key in self.show_all:
                 text = "All articulations shown. Click to show connected only"
@@ -1603,44 +1637,83 @@ class CableEditor(QWidget):
                 text = f"{h.shown} of {h.count} connected\n{text}"
             if h.notes:
                 text += f"\n{TARGET_GROUP_HINT}"
-            head_rect = QRectF(lx, PAD + ruler.top(h.y), rx + col3 - lx, m.head)
-            top, bottom = ruler.head_zone(h.y)
-            zone = QRectF(lx, PAD + top, head_rect.width(), bottom - top)
-            item = _HeaderItem(head_rect, h, self.toggle_target, text, "scene", zone,
-                               (lx, rx, col2, col3))
-            self._full_label(item, self.view)
+            item = _HeaderItem(h, self.toggle_target, text, "scene")
             self.scene_headers[h.key] = item
             scene.addItem(item)
         solid = {c.target.slot for c in sc.cables if not c.suggested}
         dashed = {c.target.slot for c in sc.cables if c.suggested} - solid
         for t in sc.target_rows:
-            item = self._target_item(rect(rx, t.y, t.height), t, t.slot in solid | dashed, t.slot in dashed)
-            self._full_name(item, self.view)
+            item = self._target_item(QRectF(), t, t.slot in solid | dashed, t.slot in dashed)
             self.target_items[t.slot] = item
             scene.addItem(item)
             if t.expanded:  # рамка от заголовка до последнего номера — как у раскрытых алиасов слева
                 last = max(off for off, _ in t.lines)
-                scene.addItem(_Bundle(rect(rx, t.y, last + 1).adjusted(-3, 0, 3, 0)))
+                self._add_bundle(False, t.y, last + 1)
         for i, r in enumerate(sc.source_rows):
-            indent = INDENT if r.child else 0
-            item = self._source_item(rect(lx, r.y).adjusted(indent, 0, 0, 0), r, SOURCE)
-            self._full_name(item, self.view)
+            item = self._source_item(QRectF(), r, SOURCE)
             self._register(item, self.source_items, self.scene_rows)
             scene.addItem(item)
             if r.expanded:
                 children = next((k for k, c in enumerate(sc.source_rows[i + 1:]) if not c.child),
                                 len(sc.source_rows) - i - 1)
-                scene.addItem(_Bundle(rect(lx, r.y, 1 + children).adjusted(-3, 0, 3, 0)))
+                self._add_bundle(True, r.y, 1 + children)
         rows_by_y = {item.model.y: item for item in self.scene_rows}
         for c in sc.cables:
-            src = rows_by_y[c.src_y]
-            a = QPointF(src.rect.right(), src.line_center())
-            b = QPointF(rx, PAD + ruler.top(c.dst_y) + m.plate / 2)  # на свой номер в строке цели
             text = self._cable_text(c) if c.dst is not None else ""
-            item = _CableItem(cable_path(a, b), c, self, src, self.target_items[c.target.slot], text)
+            item = _CableItem(QPainterPath(), c, self, rows_by_y[c.src_y], self.target_items[c.target.slot], text)
             scene.addItem(item)
             (self.suggestion_items if c.suggested else self.cable_items).append(item)
+        self._place_scene()
         self.view.end()
+
+    def _add_bundle(self, left: bool, y: int, h: int) -> None:
+        bundle = _Bundle(QRectF())
+        self._bundles.append((bundle, left, y, h))
+        self.view.scene().addItem(bundle)
+
+    def _place_scene(self) -> None:
+        """Места заголовков, строк, рамок и кабелей сцены по ширине view (при смене ширины элементы не
+        пересоздаются)."""
+        lay = self.current
+        sc, m, ruler = lay.scene, SCENE_ROWS, self.scene_ruler
+        self.view.fit(ruler.total)
+        lx, rx, col2, col3 = self._scene_columns()
+        # сцена совсем пуста (ни заголовков, ни строк — иначе подсказка ложится на них) — что делать; пул пуст —
+        # подсказывать нечего
+        empty = not (sc.source_rows or sc.target_rows or sc.target_headers) and bool(lay.pool.rows or lay.pool.headers)
+        self.view.set_hint((lx, col2, EMPTY_HINT.format(side=self.sides[1])) if empty else None)
+
+        def rect(left: bool, y: int, h: int = 1) -> QRectF:
+            """Слот строк y..y+h-1 в колонке «from» (left) или «to»."""
+            top = ruler.top(y) - m.inset
+            return QRectF(lx if left else rx, PAD + top, col2 if left else col3, ruler.bottom(y, h) + m.inset - top)
+
+        for item in self.scene_headers.values():
+            y = item.header.y
+            head_rect = QRectF(lx, PAD + ruler.top(y), rx + col3 - lx, m.head)
+            top, bottom = ruler.head_zone(y)
+            item.set_geometry(head_rect, QRectF(lx, PAD + top, head_rect.width(), bottom - top), (lx, rx, col2, col3))
+            self._full_label(item)
+        for item in self.target_items.values():
+            item.set_rect(rect(False, item.model.y, item.model.height))
+            self._full_name(item)
+        for bundle, left, y, h in self._bundles:
+            bundle.set_rect(rect(left, y, h).adjusted(-3, 0, 3, 0))
+        for item in self.scene_rows:
+            indent = INDENT if item.model.child else 0
+            item.set_rect(rect(True, item.model.y).adjusted(indent, 0, 0, 0))
+            self._full_name(item)
+        for item in self.cable_items + self.suggestion_items:
+            a = QPointF(item.src.rect.right(), item.src.line_center())
+            b = QPointF(rx, PAD + ruler.top(item.cable.dst_y) + m.plate / 2)  # на свой номер в строке цели
+            item.setPath(cable_path(a, b))
+
+    def _reflow_scene(self) -> None:
+        """Ширина сцены поменялась: те же элементы на новых местах."""
+        if self.current is None:
+            self._draw_scene()
+        else:
+            self._place_scene()
 
     def _source_item(self, r: QRectF, row: SourceRow, role: str) -> _Row:
         chevron = None

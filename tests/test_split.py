@@ -156,3 +156,34 @@ def test_double_click_resets_to_layout_width(app, settings):
                       QPoint(6, H // 2))
     assert row.side_width() == row.saved == theme.POOL_W
     assert settings.value("layout/test_side", type=int) == theme.POOL_W
+
+
+def test_queued_handle_moves_lay_out_once_with_the_latest_position(app):
+    """Движения ручки, пришедшие за один проход цикла событий, дают одну раскладку — по последнему; отпускание
+    раскладывает то, что ещё не разложено."""
+    from PySide6.QtCore import QEvent, QPointF, QCoreApplication
+    from PySide6.QtGui import QMouseEvent
+    from PySide6.QtWidgets import QApplication
+
+    row = make_row(LEFT)
+    row.resize(WIDE_W, H)
+    calls = []
+    row.layout_changed.connect(lambda: calls.append(row.side_width()))
+    h, start = row.handle, QPointF(row.handle.width() / 2, H / 2)
+    origin = h.mapToGlobal(start)  # ручка переезжает вслед за курсором: глобальные точки — от места нажатия
+
+    def event(kind, dx, buttons=Qt.MouseButton.LeftButton):
+        pos = start + QPointF(dx, 0)
+        return QMouseEvent(kind, pos, origin + QPointF(dx, 0), Qt.MouseButton.LeftButton
+                           if kind != QEvent.Type.MouseMove else Qt.MouseButton.NoButton, buttons,
+                           Qt.KeyboardModifier.NoModifier)
+
+    QApplication.sendEvent(h, event(QEvent.Type.MouseButtonPress, 0))
+    for dx in (10, 20, 30, 40):
+        QCoreApplication.postEvent(h, event(QEvent.Type.MouseMove, dx))
+    for _ in range(3):  # движения, затем отложенная раскладка
+        QApplication.processEvents()
+    assert calls == [theme.POOL_W + 40]
+    QApplication.sendEvent(h, event(QEvent.Type.MouseMove, 55))
+    QApplication.sendEvent(h, event(QEvent.Type.MouseButtonRelease, 55, Qt.MouseButton.NoButton))
+    assert calls == [theme.POOL_W + 40, theme.POOL_W + 55]

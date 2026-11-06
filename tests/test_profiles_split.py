@@ -204,3 +204,34 @@ def test_drag_during_width_change_ends_cleanly(window):
     ed.cancel_drag()
     QApplication.processEvents()
     assert not ed.dragging
+
+
+def editor_state(ed):
+    """Снимок вида: пиксели обеих колонок и подсказки всех элементов."""
+    QApplication.processEvents()
+    pixels = [v.viewport().grab().toImage() for v in (ed.pool, ed.view)]
+    tips = [i.toolTip() for v in (ed.pool, ed.view) for i in v.scene().items()]
+    return pixels, sorted(tips)
+
+
+@pytest.mark.parametrize("dx", [180, -60])
+def test_width_change_moves_items_and_matches_full_rebuild(window, dx):
+    """Смена ширины не пересоздаёт элементы: те же строки, заголовки и кабели на новых местах — картинка и подсказки
+    как после полной перестройки при той же ширине, прокрутка на месте."""
+    resize(window, WIDE)
+    ed = window.profiles_page.cables
+    ed.set_selection({next(iter(ed.source_items))})
+    bar = ed.view.verticalScrollBar()
+    bar.setValue(bar.maximum() // 2)
+    QApplication.processEvents()
+    top = bar.value()
+    before = {id(i) for v in (ed.pool, ed.view) for i in v.scene().items()}
+    drag(window, dx)
+    assert {id(i) for v in (ed.pool, ed.view) for i in v.scene().items()} == before
+    assert bar.value() == top
+    moved = editor_state(ed)
+    ed._build(anchor=False)
+    assert bar.value() == top
+    rebuilt = editor_state(ed)
+    assert moved[1] == rebuilt[1]
+    assert all(a == b for a, b in zip(moved[0], rebuilt[0], strict=True))
