@@ -352,9 +352,6 @@ class ConvertPage(QWidget):
         self.set_sources([])
         self.set_status("Cleared.")
 
-    def remove_source(self, path: Path) -> None:
-        self.remove_sources([path])
-
     def remove_sources(self, paths: list[Path]) -> None:
         """«×» и Delete: убрать файлы из списка."""
         gone = set(paths)

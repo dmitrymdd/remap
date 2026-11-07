@@ -157,9 +157,9 @@ def test_several_files_list_remove_and_clear(window, tmp_path):
     assert [(c.path.name, c.ready) for c in cards(window)] == [
         ("a_remapped.mid", False), ("b_remapped.mid", False), ("c_remapped.mid", False)]
     assert cards(window)[0].path.parent == a.resolve().parent  # будущие — рядом с исходниками
-    window.convert_page.remove_source(b.resolve())
+    window.convert_page.remove_sources([b.resolve()])
     assert window.convert_page.sources == [a.resolve(), c.resolve()] and screen.header.count == "2 FILES"
-    window.convert_page.remove_source(a.resolve())
+    window.convert_page.remove_sources([a.resolve()])
     assert [r.path.name for r in rows(window)] == ["c.mid"] and screen.header.count == "1 FILE"
     window.convert_page._accept_files([a, b])
     screen.clear_btn.click()
@@ -261,7 +261,7 @@ def test_convert_several_files_with_one_failure(window, tmp_path):
     assert QApplication.clipboard().text() == dlg.view.toPlainText()  # Copy — весь текст
     assert window.convert_page.details_dialog(bad.resolve()).view.toPlainText() == NOT_MIDI_DETAILS
     assert [(c.path.name, c.ready) for c in cards(window)] == [("a_remapped.mid", True), ("c_remapped.mid", True)]
-    window.convert_page.remove_source(c.resolve())  # убрали файл — пропали только его результат и карточка
+    window.convert_page.remove_sources([c.resolve()])  # убрали файл — пропали только его результат и карточка
     assert list(window.convert_page.results) == [a.resolve(), bad.resolve()] and window.convert_page.outputs == [tmp_path / "a_remapped.mid"]
     assert [r.state for r in rows(window)][1] == "error" and [c.path.name for c in cards(window)] == ["a_remapped.mid"]
     # добавление файлов результаты не сбрасывает: у нового — «Ready», у прежних — их итог

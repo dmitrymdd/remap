@@ -53,7 +53,6 @@ TUT = KeySpec(None, theme.KEY_TUT_HEIGHT, font_px=theme.KEY_TUT_FONT, spacing=th
               pad=theme.KEY_TUT_PAD)
 GO = KeySpec(*theme.KEY_GO_SIZE, radius=theme.KEY_GO_RADIUS, font_px=theme.KEY_GO_FONT, spacing=theme.KEY_GO_SPACING,
              gap=theme.KEY_GO_GAP, go=True, icon_after=True)
-PRESETS = {"tab": TAB, "help": HELP, "square": SQUARE, "swap": SWAP, "map": MAP, "close": CLOSE, "tut": TUT, "go": GO}
 
 
 def key_margins(spec: KeySpec) -> QMargins:

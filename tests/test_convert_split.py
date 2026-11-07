@@ -5,7 +5,6 @@ from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from remap.storage import Storage
 from remap.ui import theme
 from remap.ui.convert_page import SIDE_KEY
 from remap.ui.main_window import PAGE_CONVERT, MainWindow
@@ -14,11 +13,6 @@ from remap.ui.settings import ui_settings
 pytestmark = pytest.mark.ui
 
 WIDE = 1600
-
-
-@pytest.fixture
-def storage(tmp_path):
-    return Storage(tmp_path / "store")
 
 
 def open_window(storage, width):

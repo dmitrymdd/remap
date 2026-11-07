@@ -1964,10 +1964,6 @@ def test_reverse_suggestions_bar(window, app):
     assert page.direction == REVERSE and page._suggest[REVERSE] and page.work.reverse_overrides == {}
 
 
-def _scene_cables(ed):
-    return {ends(c) for c in ed.cable_items}
-
-
 def test_undo_redo_switch_to_direction_of_the_step(window, app):
     from remap.core.profile import FORWARD, REVERSE
     page, ed = reverse_page(window)

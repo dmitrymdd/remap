@@ -97,7 +97,6 @@ CABLE_PORT_RADIUS, CABLE_TANGENT = 2.6, 60  # точка кабеля; плеч�
 OK_LED, OK_TEXT = "#62D69A", "#8FC7A3"
 WARN_LED, WARN_TEXT, WARN_BORDER, WARN_BG = "#E3D36B", "#E6DA8E", "#6F7748", (227, 211, 107, 0.06)
 ERR_LED, ERR_TEXT, ERR_BORDER, ERR_BG = "#F0646E", "#F2939A", "#7C4248", (240, 100, 110, 0.07)
-OK_BG: RGBA = (110, 190, 140, 0.07)
 LED_SIZE, LED_GLOW_BLUR = 6, 6  # светодиод 6 px: кольцо 0 0 0 1px rgba(0,0,0,.5) и свечение 0 0 6px своим цветом
 LED_RING: RGBA = (0, 0, 0, 0.5)
 LED_OFF = "#24412F"  # погашен (до конвертации); в макете не задано
@@ -219,7 +218,7 @@ PAGE_MARGIN = 32  # поля страницы слева и справа
 STRIP_W, STRIP_H = 836, 64  # полоса профиля: размер лица утопленного блока
 STRIP_GAP = 9  # от нижнего края виджета полосы до верхнего края виджета экранов (лица: 12 px)
 POOL_W, SCENE_W, SCREEN_GAP = 260, 564, 12  # блоки экранов и зазор между ними
-COL_FROM, COL_GAP, COL_TO = 200, 122, 200  # колонки сцены
+COL_GAP = 122  # промежуток кабелей между колонками сцены
 BAND_H = 30  # нижняя полоса под экранами (между винтами)
 BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # панель подсказок и статус: на линии центров нижних винтов
 STRIP_PAD_X = 15  # поля панели в полосе
@@ -427,7 +426,8 @@ def install_app_font() -> QFont:
     return font
 
 
-def stylesheet(t: dict[str, str] = TOKENS) -> str:
+def stylesheet() -> str:
+    t = TOKENS
     mono, label = f'"{MONO_FAMILY}"', f'"{LABEL_FAMILY}"'
     body = (f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {BODY_TOP}, stop:{BODY_MID_AT} {BODY_MID}, "
             f"stop:1 {BODY_BOTTOM})")
@@ -446,10 +446,6 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QPushButton:hover {{ background: {key_hover}; }}
     QPushButton:pressed {{ background: {key_down}; }}
     QPushButton:disabled {{ color: {t['text_faint']}; }}
-    QPushButton#primary {{ background: {t['accent']}; color: {t['on_accent']}; border: none; font-weight: 600; }}
-    QPushButton#primary:hover {{ background: {t['accent_hover']}; }}
-    QPushButton#primary:disabled {{ background: {key}; color: {t['text_faint']};
-                                    border: 1px solid {KEY_BORDER}; font-weight: 400; }}
     QComboBox {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 6px;
                  padding: 5px 24px 5px 10px; }}
     /* без font-size: шрифт в px из QSS при открытии списка даёт «QFont::setPointSize: Point size <= 0»; текст
@@ -488,14 +484,14 @@ def stylesheet(t: dict[str, str] = TOKENS) -> str:
     QMenu {{ background: {t['surface']}; border: 1px solid {t['border']}; padding: 4px; }}
     QMenu::item {{ padding: 6px 18px; border-radius: 4px; }}
     QMenu::item:selected {{ background: {t['accent']}; color: {t['on_accent']}; }}
-    QCheckBox::indicator, QTableWidget::indicator {{ width: 14px; height: 14px; border: 1px solid {t['text_faint']};
+    QTableWidget::indicator {{ width: 14px; height: 14px; border: 1px solid {t['text_faint']};
                                                    border-radius: 3px; background: {t['bg']}; }}
-    QCheckBox::indicator:checked, QTableWidget::indicator:checked {{ background: {t['accent']};
+    QTableWidget::indicator:checked {{ background: {t['accent']};
                                                                    border-color: {t['accent']}; }}
-    QCheckBox::indicator:hover, QTableWidget::indicator:hover {{ border-color: {t['accent']}; }}
-    QCheckBox::indicator:disabled, QTableWidget::indicator:disabled {{ border-color: {t['border']};
+    QTableWidget::indicator:hover {{ border-color: {t['accent']}; }}
+    QTableWidget::indicator:disabled {{ border-color: {t['border']};
                                                                      background: {t['surface']}; }}
-    QCheckBox::indicator:checked:disabled, QTableWidget::indicator:checked:disabled {{
+    QTableWidget::indicator:checked:disabled {{
         background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
     QFrame#suggestBar {{ background: {t['surface']}; border: 1px dashed {t['accent_muted']}; border-radius: 6px; }}
     QFrame#suggestBar QLabel {{ background: transparent; color: {t['text_muted']}; }}

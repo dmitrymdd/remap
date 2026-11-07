@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget
 
 from remap.ui import theme
 from remap.ui.keys import (
-    CLOSE, GO, HELP, MAP, PRESETS, SQUARE, SWAP, TAB, TUT, Key, key_column_spacing, key_margins, key_row_spacing,
+    CLOSE, GO, HELP, MAP, SQUARE, SWAP, TAB, TUT, Key, key_column_spacing, key_margins, key_row_spacing,
     paint_key,
 )
 from remap.ui.metal import MetalBody
@@ -54,8 +54,7 @@ def test_preset_face_sizes_match_mockup(app, spec, size):
     assert (key.face_size().width(), key.face_size().height()) == size
 
 
-def test_presets_are_listed_and_tut_follows_text(app):
-    assert set(PRESETS) == {"tab", "help", "square", "swap", "map", "close", "tut", "go"}
+def test_tut_follows_text(app):
     back, nxt = Key("Back", spec=TUT), Key("Next", spec=TUT)
     assert back.face_size().height() == 36
     assert back.face_size().width() > 2 * 16 + 2 and nxt.face_size().width() > 2 * 16 + 2  # поля 16 + рамка 1+1 + текст

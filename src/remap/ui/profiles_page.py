@@ -74,7 +74,7 @@ SUGGEST_TIP = ("Notes whose names match the target map, shown as dashed cables.\
 DISMISS_TIP = "Hide the suggestions for these maps"
 
 DIRECTION_SIDES = {FORWARD: "source", REVERSE: "target"}  # карта исходной стороны направления
-SWAP_TEXT, SWAP_TIP = "⇄", "Swap source and target"  # кнопка направления (здесь и на Convert)
+SWAP_TIP = "Swap source and target"  # кнопка направления (здесь и на Convert)
 
 
 def _undoable(fn):
@@ -182,7 +182,6 @@ class UnassignedDialog(QDialog):
 class ProfilesPage(QWidget):
     """Строка заголовка (выбор профиля, действия, Save) и редактор выбранного профиля под ней."""
 
-    dirty_changed = Signal(bool)
     profiles_changed = Signal()  # профиль сохранён, создан, переименован или удалён
 
     def __init__(self, storage: Storage) -> None:
@@ -644,9 +643,7 @@ class ProfilesPage(QWidget):
     def _update_state(self) -> None:
         has = self.work is not None
         dirty = has and self.work.to_dict() != self.base.to_dict()
-        if dirty != self._dirty:
-            self._dirty = dirty
-            self.dirty_changed.emit(dirty)
+        self._dirty = dirty
         self.save_btn.setEnabled(dirty)
         for action in (self.duplicate_action, self.rename_action, self.delete_action):
             action.setEnabled(has)

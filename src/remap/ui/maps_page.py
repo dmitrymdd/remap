@@ -17,7 +17,7 @@ from __future__ import annotations
 import copy
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QSizePolicy, QVBoxLayout,
@@ -53,7 +53,6 @@ SIDE_KEY = "layout/maps_side"  # ширина списка карт
 class MapsPage(QWidget):
     """Менеджер карт (слева) и редактор выбранной карты (справа)."""
 
-    dirty_changed = Signal(bool)
 
     def __init__(self, storage: Storage) -> None:
         super().__init__()
@@ -338,9 +337,7 @@ class MapsPage(QWidget):
         has_map = self.work is not None
         ref = self.current
         dirty = has_map and (self.work.names != self.base.names or self.work.primary != self.base.primary)
-        if dirty != self._dirty:
-            self._dirty = dirty
-            self.dirty_changed.emit(dirty)
+        self._dirty = dirty
         read_only = has_map and ref.read_only
         self.strip.show_state(has_map=has_map, read_only=read_only, dirty=dirty)
         self.notes.search.setEnabled(has_map)
