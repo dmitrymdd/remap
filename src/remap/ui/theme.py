@@ -220,7 +220,7 @@ STRIP_GAP = 9  # от нижнего края виджета полосы до �
 POOL_W, SCENE_W, SCREEN_GAP = 260, 564, 12  # блоки экранов и зазор между ними
 COL_GAP = 122  # промежуток кабелей между колонками сцены
 BAND_H = 30  # нижняя полоса под экранами (между винтами)
-BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # панель подсказок и статус: на линии центров нижних винтов
+BAND_ITEM_H, BAND_ITEM_TOP = 22, 1  # строка статуса и подсказок (ui/status_strip.py): на линии центров нижних винтов
 STRIP_PAD_X = 15  # поля панели в полосе
 STRIP_INSET = RECESS_PAD + STRIP_PAD_X  # 21: от края лица блока экрана до лица крайнего виджета секции полосы над ним
 STRIP_LEFT_W, STRIP_SEP_W, STRIP_RIGHT_W = 218, 54, 522
@@ -325,8 +325,7 @@ def logo_png(kind: str, scale: int) -> Path:
 
 
 # Временный слой: старые ключи → новая палитра для селекторов QSS `stylesheet()`. Ещё нужен: QMenu, QPlainTextEdit
-# (ReportDialog), QTableWidget / QHeaderView / ::indicator (диалог сохранения профиля), QLabel#status (нижняя полоса),
-# #suggestBar / #link / #muted (Profiles), QLineEdit, QPushButton, QToolTip.
+# (ReportDialog), QTableWidget / QHeaderView / ::indicator (диалог сохранения профиля), QLineEdit, QPushButton, QToolTip.
 # Направления цветом не различаем: обратное (←) рисуется как прямое.
 LEGACY = {
     "bg": RECESS_BOTTOM,
@@ -336,7 +335,6 @@ LEGACY = {
     "text_muted": SILK_TEXT,
     "text_faint": SILK_FAINT,
     "accent": ACCENT,
-    "accent_hover": ACCENT_HOVER,
     "on_accent": SCREEN_GLASS_OUTER,
     "selection": SCREEN_BORDER,
     "accent_muted": CHIP_BORDER,
@@ -440,7 +438,6 @@ def stylesheet() -> str:
     QDialog {{ background: {body}; }}
     QToolTip {{ background: {TOOLTIP_BG}; color: {TOOLTIP_TEXT}; border: 1px solid {TOOLTIP_BORDER};
                 padding: {TOOLTIP_PAD_Y}px {TOOLTIP_PAD_X}px; font-family: {mono}; font-size: {TOOLTIP_PX}px; }}
-    QLabel#muted {{ color: {t['text_muted']}; }}
     QPushButton {{ background: {key}; color: {KEY_LABEL}; border: 1px solid {KEY_BORDER};
                    border-radius: {KEY_RADIUS}px; padding: 7px 14px; }}
     QPushButton:hover {{ background: {key_hover}; }}
@@ -465,9 +462,6 @@ def stylesheet() -> str:
     QScrollBar::handle:vertical:hover {{ background: {t['text_faint']}; }}
     QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{
         background: none; height: 0; }}
-    QLabel#status {{ color: {t['text_muted']}; }}
-    QLabel#status[state="ok"] {{ color: {OK_TEXT}; }}
-    QLabel#status[state="error"] {{ color: {ERR_TEXT}; }}
 
     QTableWidget {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
                                outline: none; font-family: {mono}; font-size: 12px; }}
@@ -493,12 +487,6 @@ def stylesheet() -> str:
                                                                      background: {t['surface']}; }}
     QTableWidget::indicator:checked:disabled {{
         background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
-    QFrame#suggestBar {{ background: {t['surface']}; border: 1px dashed {t['accent_muted']}; border-radius: 6px; }}
-    QFrame#suggestBar QLabel {{ background: transparent; color: {t['text_muted']}; }}
-    QPushButton#link {{ background: transparent; border: none; padding: 3px 6px; color: {t['accent']};
-                        font-weight: 600; }}
-    QPushButton#link:hover {{ color: {t['accent_hover']}; }}
-    QPushButton#link:disabled {{ color: {t['text_faint']}; }}
     """
 
 

@@ -13,8 +13,8 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QMimeData, QPoint, QRect, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QLabel, QMessageBox, QPlainTextEdit,
-    QMenu, QSizePolicy, QVBoxLayout, QWidget,
+    QDialog, QDialogButtonBox, QFileDialog, QMessageBox, QPlainTextEdit,
+    QMenu, QVBoxLayout, QWidget,
 )
 
 from ..core import FileResult, RemapProfile, convert_batch, output_path_for
@@ -28,8 +28,8 @@ from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, re
 from .keys import GO, Key
 from .profiles_page import SWAP_TIP, map_summary
 from .split import SplitRow
+from .status_strip import StatusStrip
 from .strip import section_width
-from .theme import repolish as _repolish
 from .tips import tip
 
 DIRECTION_KEY = "convert/direction"  # ui.ini: направление конвертации, общее для всех профилей
@@ -167,16 +167,10 @@ class ConvertPage(QWidget):
             lambda: self.strip.set_sections(section_width(self.input.width()), section_width(right.width())))
         root.addWidget(self.split, stretch=1)
 
-        # TEMP: placement undecided — статус в нижней полосе под экранами, как на Profiles
-        self.status = QLabel("Supports .mid and .midi files.")
-        self.status.setObjectName("status")
-        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        band = QWidget()
-        band.setFixedHeight(theme.BAND_H)
-        band_box = QHBoxLayout(band)
-        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
-        band_box.addWidget(self.status, stretch=1)
-        root.addWidget(band)
+        # статус — в общей нижней полосе под экранами (между нижними винтами)
+        self.status = StatusStrip()
+        self.status.set_status("Supports .mid and .midi files.")
+        root.addWidget(self.status)
         self._show_output_dir()
 
     def eventFilter(self, obj, event) -> bool:
@@ -515,6 +509,5 @@ class ConvertPage(QWidget):
             dlg.exec()
 
     def set_status(self, text: str, state: str = "") -> None:
-        self.status.setText(text)
-        _repolish(self.status, "state", state)
+        self.status.set_status(text, state)
 

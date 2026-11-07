@@ -49,9 +49,9 @@ def test_parser_rejects_unsupported_commands(app):
 
 def test_icon_set_is_complete(app):
     expected = {"tab-convert", "tab-profiles", "tab-maps", "dots", "save", "swap", "go-arrow", "map-new", "map-import",
-                "map-export", "map-more", "search", "lock", "chevron-down", "group-caret", "file", "x", "drop-target",
+                "map-export", "search", "lock", "chevron-down", "group-caret", "file", "x", "drop-target",
                 "output-din", "code", "chat", "mail", "external-link"}
-    assert set(ICONS) == expected and len(ICONS) >= 22
+    assert set(ICONS) == expected and len(ICONS) == 22
 
 
 @pytest.mark.parametrize("name", sorted(ICONS))

@@ -100,7 +100,7 @@ def test_legacy_profile_seeded_once(app, storage):
     assert not w2.convert_page.convert_btn.isEnabled()
     assert "Profiles tab" in combo.toolTip() and "Profiles tab" in w2.convert_page.convert_btn.toolTip()
     w2.convert_page.convert()
-    assert w2.convert_page.status.property("state") == "error"
+    assert w2.convert_page.status.state() == "error"
     w2.close()
 
 
@@ -184,8 +184,8 @@ def test_suggestion_bar_and_apply(window, app):
     assert need > 0 and len(planned) > need
     # обе карты заданы — пунктир и панель, правил ещё нет, вопросов нет
     assert page.work.rules == {} and page.answers["asked"] == []
-    assert not page.suggest_bar.isHidden() and page.suggest_label.text() == f"{len(planned)} matches"
-    assert f"{need} need a Write to choice" in page.suggest_bar.toolTip()
+    assert page.status.suggestion() is not None and page.status.suggestion() == f"{len(planned)} matches"
+    assert f"{need} need a Write to choice" in page.status.suggestion_tip()
     assert ed.suggestion_items and not ed.cable_items
     assert all(i.pen().style() != Qt.PenStyle.SolidLine for i in ed.suggestion_items)
     rows = [r for r in ed.current.scene.source_rows if r.suggested]
@@ -199,9 +199,9 @@ def test_suggestion_bar_and_apply(window, app):
     assert page.status.text() == f"{len(done)} notes connected."
     # нужен выбор Write to — остаются пунктиром, Apply больше нечего применить
     assert len(ed.suggestion_items) > 0 and ed.cable_items
-    assert page.suggest_label.text() == f"{need} matches" and not page.apply_btn.isEnabled()
+    assert page.status.suggestion() == f"{need} matches" and not page.status.apply_enabled()
     # Apply — один шаг отмены, подсказки возвращаются
-    assert page.undo() and page.work.rules == {} and page.suggest_label.text() == f"{len(planned)} matches"
+    assert page.undo() and page.work.rules == {} and page.status.suggestion() == f"{len(planned)} matches"
     assert page.redo() and page.work.rules == expected.rules
 
 
@@ -209,26 +209,26 @@ def test_suggestions_follow_map_changes_and_dismiss(window):
     page = window.profiles_page
     pid = new_profile(page)
     page.answers["asked"].clear()
-    assert not page.suggest_bar.isHidden()
+    assert page.status.suggestion() is not None
     assert page.choose_map("target", MapRef(TEMPLATE, "General MIDI"))  # совпадений нет — панели нет
-    assert page.suggest_bar.isHidden() and not page.cables.suggestion_items
+    assert page.status.suggestion() is None and not page.cables.suggestion_items
     assert page.choose_map("target", SD3)  # снова есть
-    assert not page.suggest_bar.isHidden() and page.answers["asked"] == []  # ни одного диалога
+    assert page.status.suggestion() is not None and page.answers["asked"] == []  # ни одного диалога
     # ✕ — скрыть для этой пары карт (до повторного открытия профиля)
     page.dismiss_suggestions()
-    assert page.suggest_bar.isHidden() and not page.cables.suggestion_items
+    assert page.status.suggestion() is None and not page.cables.suggestion_items
     assert not page.cables.current.scene.source_rows  # строки вернулись в пул
     page.choose_map("target", MapRef(TEMPLATE, "General MIDI"))
     page.choose_map("target", SD3)
-    assert page.suggest_bar.isHidden()
+    assert page.status.suggestion() is None
     # нота, получившая правило, из подсказок выбывает: снятое правило подсказку не возвращает
     page.choose_map("source", MapRef(TEMPLATE, "Guitar Pro 8"))
     page.choose_map("source", EZD3)
-    assert page.suggest_bar.isHidden()  # пара EZD3 → SD3 всё ещё скрыта
+    assert page.status.suggestion() is None  # пара EZD3 → SD3 всё ещё скрыта
     page.answers["unassigned"] = set()
     page.save()
     page.open(pid)  # открытие существующего профиля панель не показывает
-    assert page.suggest_bar.isHidden() and not page.cables.suggestion_items
+    assert page.status.suggestion() is None and not page.cables.suggestion_items
 
 
 def test_rule_removes_note_from_suggestions(window):
@@ -244,7 +244,7 @@ def test_rule_removes_note_from_suggestions(window):
 def test_profile_without_maps(window):
     page = window.profiles_page
     page.select(LEGACY_ID)
-    assert page.suggest_bar.isHidden()
+    assert page.status.suggestion() is None
     lay = page.cables.current
     # без исходной карты — строка на правило, без групп; без целевой — цель по номерам
     shown = {n for r in lay.pool.rows + lay.scene.source_rows for n in r.notes}
@@ -445,7 +445,7 @@ def test_new_profile_without_maps_has_no_rows(window):
     page = window.profiles_page
     new_profile(page, "Empty", None, None)
     lay = page.cables.current
-    assert lay.pool.rows == [] and lay.scene.source_rows == [] and page.suggest_bar.isHidden()
+    assert lay.pool.rows == [] and lay.scene.source_rows == [] and page.status.suggestion() is None
 
 
 def test_unassigned_dialog_checkboxes(window):
@@ -1656,26 +1656,24 @@ def test_reverse_uses_forward_layout(window, app):
 
 
 def test_suggestion_bar_and_status_sit_in_the_bottom_band(window, app):
-    """TEMP: панель подсказок и статус — в нижней полосе под экранами (y 770–800), экраны не сдвигаются."""
+    """Подсказки и статус — в общей нижней полосе под экранами, между нижними винтами; подсказки — у правого края."""
     page = window.profiles_page
     window.resize(900, 800)
     window.show()
-    new_profile(page)  # обе карты — подсказки и панель
+    new_profile(page)  # обе карты — подсказки
     app.processEvents()
     ed = page.cables
-    assert page.suggest_bar.isVisibleTo(page) and page.suggest_label.isVisibleTo(page)
-    assert page.suggest_label.text().endswith("matches") and "matches" in page.suggest_bar.toolTip()
+    bar = page.status
+    assert bar.suggestion().endswith("matches") and "matches" in bar.suggestion_tip()
     screens_bottom = ed.pool_screen.parentWidget().mapTo(window, QPoint(0, 0)).y() + ed.pool_screen.parentWidget().height()
-    for w in (page.suggest_bar, page.status):
-        top = w.mapTo(window, QPoint(0, 0)).y()
-        assert top >= screens_bottom - 1 and top + w.height() <= window.height()
-    assert page.suggest_bar.mapTo(window, QPoint(0, 0)).x() >= 40
-    assert page.status.mapTo(window, QPoint(page.status.width(), 0)).x() <= 860  # между винтами
+    top = bar.mapTo(window, QPoint(0, 0)).y()
+    assert top >= screens_bottom - 1 and top + bar.height() <= window.height()
+    left = bar.mapTo(window, QPoint(0, 0)).x()
+    parts = bar.parts()
+    assert left + bar.status_rect().left() >= 40 and left + parts["dismiss"].right() <= 860  # между винтами
+    assert parts["dismiss"].right() == bar.line_rect().right()  # прижаты к правому краю
     screw_line = window.height() - theme.SCREW_INSET - theme.SCREW_SIZE / 2  # 782: центры нижних винтов
-    bar = page.suggest_bar
-    assert bar.mapTo(window, QPoint(0, 0)).y() + bar.height() / 2 == screw_line
-    assert bar.height() == theme.BAND_ITEM_H
-    assert page.status.mapTo(window, QPoint(0, 0)).y() + page.status.height() / 2 == screw_line
+    assert top + bar.line_rect().center().y() == screw_line
 
 
 def test_profiles_geometry_matches_mockup(window, app):
@@ -1948,7 +1946,7 @@ def test_reverse_suggestions_bar(window, app):
     fwd = dict(page._suggest[FORWARD])
     assert fwd and page._suggest[REVERSE]
     page.set_direction(REVERSE)
-    assert page.cables.suggested == page._suggest[REVERSE] and page.suggest_bar.isVisibleTo(page)
+    assert page.cables.suggested == page._suggest[REVERSE] and page.status.suggestion() is not None
     total, ready = page.suggestion_counts()
     assert total == len(page._suggest[REVERSE]) and ready
     assert page.apply_suggestions() == ready
@@ -1958,7 +1956,7 @@ def test_reverse_suggestions_bar(window, app):
     page.dismiss_suggestions()
     assert page._suggest[REVERSE] == {} and page._suggest[FORWARD] == fwd
     page.set_direction(FORWARD)
-    assert page.cables.suggested == fwd and page.suggest_bar.isVisibleTo(page)
+    assert page.cables.suggested == fwd and page.status.suggestion() is not None
     # снимок отмены хранит подсказки обоих направлений
     assert page.undo()  # Apply в ←
     assert page.direction == REVERSE and page._suggest[REVERSE] and page.work.reverse_overrides == {}
@@ -2484,14 +2482,14 @@ def test_status_fades_after_last_message(window, app):
     from remap.ui.profiles_page import STATUS_MS
     page = window.profiles_page
     page.set_status("One")
-    assert page.status.text() == "One" and page._status_fx.opacity() == 1.0
-    assert page._status_timer.isActive() and page._status_timer.interval() == STATUS_MS == 4000
-    page._status_timer.stop()
-    page._status_timer.timeout.emit()  # прошло ~4 с — гаснет
-    page._status_fade.setCurrentTime(page._status_fade.duration())
-    assert page._status_fx.opacity() == 0.0
+    assert page.status.text() == "One" and page.status.opacity == 1.0
+    assert page.status.fade_timer.isActive() and page.status.fade_timer.interval() == STATUS_MS == 4000
+    page.status.fade_timer.stop()
+    page.status.fade_timer.timeout.emit()  # прошло ~4 с — гаснет
+    page.status.fade_animation.setCurrentTime(page.status.fade_animation.duration())
+    assert page.status.opacity == 0.0
     page.set_status("Two")  # новое сообщение — снова видно, отсчёт заново
-    assert page._status_fx.opacity() == 1.0 and page._status_timer.isActive()
+    assert page.status.opacity == 1.0 and page.status.fade_timer.isActive()
 
 
 def test_undo_redo_hotkeys_work_with_focus_anywhere_on_profiles(window, app):

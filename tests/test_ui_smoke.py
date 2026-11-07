@@ -70,7 +70,7 @@ def test_load_convert_and_copy(window, tmp_path, app):
 def test_convert_without_file_does_not_crash(window):
     window.convert_page.convert()
     assert window.convert_page.output is None
-    assert window.convert_page.status.property("state") == "error"
+    assert window.convert_page.status.state() == "error"
 
 
 def test_midi_paths_from_mime(tmp_path):
@@ -246,7 +246,7 @@ def test_convert_several_files_with_one_failure(window, tmp_path):
     window.convert_page._accept_files([a, bad, c])
     window.convert_page.convert()
     assert [p.name for p in window.convert_page.outputs] == ["a_remapped.mid", "c_remapped.mid"]
-    assert window.convert_page.status.text() == "2 files converted, 1 failed" and window.convert_page.status.property("state") == "error"
+    assert window.convert_page.status.text() == "2 files converted, 1 failed" and window.convert_page.status.state() == "error"
     shown = rows(window)
     assert [r.path.name for r in shown] == ["a.mid", "b.mid", "c.mid"]
     assert " hits · " in shown[0].line and shown[0].state != "error"
@@ -323,7 +323,7 @@ def test_single_file_failure_shows_in_its_row(window, tmp_path):
     window.convert_page.show_error = shown.append
     window.convert_page.convert()
     assert shown == [] and window.convert_page.outputs == []  # как у пакета: без окна ошибки
-    assert window.convert_page.status.text() == "Conversion failed." and window.convert_page.status.property("state") == "error"
+    assert window.convert_page.status.text() == "Conversion failed." and window.convert_page.status.state() == "error"
     (row,) = rows(window)
     assert row.line == "Not a MIDI file" and row.state == "error" and row.details_rect() is not None
     assert window.convert_page.details_dialog(bad.resolve()).view.toPlainText() == NOT_MIDI_DETAILS

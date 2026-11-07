@@ -55,7 +55,7 @@ class MapsStrip(StripFrame):
         self.new_btn = Key(icon="map-new", spec=MAP)
         self.import_btn = Key(icon="map-import", spec=MAP)
         self.export_btn = Key(icon="map-export", spec=MAP)
-        self.more_btn = Key(icon="map-more", spec=MAP)
+        self.more_btn = Key(icon="dots", spec=MAP)  # тот же значок «…», что у Profiles
         self.field = MapField()
         self.save_btn = Key(icon="save", spec=SQUARE)
 

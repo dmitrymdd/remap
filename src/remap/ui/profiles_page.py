@@ -30,11 +30,10 @@ from __future__ import annotations
 import copy
 import functools
 
-from PySide6.QtCore import QPropertyAnimation, Qt, QTimer, Signal
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout,
-    QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSizePolicy, QTableWidget,
+    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -51,6 +50,7 @@ from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
 from .profile_strip import MapCombo, ProfileStrip
 from .tips import tip
 from .settings import ui_settings
+from .status_strip import StatusStrip
 from .strip import section_width
 from . import theme
 from .theme import repolish
@@ -259,50 +259,12 @@ class ProfilesPage(QWidget):
         self.match_btn.setToolTip(tip(MATCH_TIP))
         self.match_btn.clicked.connect(lambda _=False: self.match_by_number())
 
-        # TEMP: placement undecided — статус и панель подсказок временно в нижней полосе под экранами (между винтами)
-        self.status = QLabel()
-        self.status.setObjectName("status")
-        self.status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)  # длинный — обрезается
+        # статус и подсказки «N matches · Apply · ✕» — в общей нижней полосе под экранами (между нижними винтами);
         # статус — отклик на действие: гаснет через STATUS_MS после последнего сообщения
-        self._status_fx = QGraphicsOpacityEffect(self.status)
-        self.status.setGraphicsEffect(self._status_fx)
-        self._status_fade = QPropertyAnimation(self._status_fx, b"opacity", self)
-        self._status_fade.setDuration(STATUS_FADE_MS)
-        self._status_fade.setEndValue(0.0)
-        self._status_timer = QTimer(self)
-        self._status_timer.setSingleShot(True)
-        self._status_timer.setInterval(STATUS_MS)
-        self._status_timer.timeout.connect(self._status_fade.start)
-        # панель подсказок «N matches · Apply · ✕» (не диалог, ничего не блокирует)
-        self.suggest_bar = QFrame()
-        self.suggest_bar.setObjectName("suggestBar")
-        self.suggest_label = QLabel()
-        self.apply_btn = QPushButton("Apply")
-        self.apply_btn.setObjectName("link")
-        self.apply_btn.clicked.connect(self.apply_suggestions)
-        self.dismiss_btn = QPushButton("✕")
-        self.dismiss_btn.setObjectName("link")
-        self.dismiss_btn.setToolTip(DISMISS_TIP)
-        self.dismiss_btn.clicked.connect(self.dismiss_suggestions)
-        bar = QHBoxLayout(self.suggest_bar)
-        bar.setContentsMargins(10, 0, 4, 0)
-        bar.setSpacing(4)
-        self.suggest_dot = QLabel("·")
-        self.suggest_dot.setObjectName("muted")
-        bar.addWidget(self.suggest_label)
-        bar.addWidget(self.suggest_dot)
-        bar.addWidget(self.apply_btn)
-        bar.addWidget(self.dismiss_btn)
-        band = QWidget()
-        band.setFixedHeight(theme.BAND_H)
-        band_box = QHBoxLayout(band)
-        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
-        band_box.setSpacing(16)
-        self.suggest_bar.setFixedHeight(theme.BAND_ITEM_H)
-        band_box.addWidget(self.suggest_bar)
-        band_box.addWidget(self.status, stretch=1)
-        root.addWidget(band)
+        self.status = StatusStrip(fade_ms=STATUS_MS, fade_duration=STATUS_FADE_MS)
+        self.status.apply_clicked.connect(self.apply_suggestions)
+        self.status.dismiss_clicked.connect(self.dismiss_suggestions)
+        root.addWidget(self.status)
 
         # отмена/повтор и сохранение — на всё окно, пока видна вкладка Profiles (фокус может быть где угодно:
         # комбобокс, кнопки, вкладки); на других вкладках выключены (showEvent / hideEvent)
@@ -714,19 +676,18 @@ class ProfilesPage(QWidget):
 
     def _update_suggest_bar(self) -> None:
         total, ready = self.suggestion_counts()
-        self.suggest_bar.setVisible(total > 0)
         if not total:
+            self.status.clear_suggestion()
             return
         matches = f"{total} match" + ("" if total == 1 else "es")
-        self.suggest_label.setText(matches)
         need = total - ready
-        tip = f"{matches}\n{SUGGEST_TIP}"  # число — и здесь: над узкой колонкой надпись скрыта
+        label_tip = f"{matches}\n{SUGGEST_TIP}"
         if need:
-            tip += (f"\n{need} need{'s' if need == 1 else ''} a Write to choice and stay dashed: "
-                    "drag them onto the target.")
-        self.suggest_bar.setToolTip(tip)
-        self.apply_btn.setEnabled(ready > 0)
-        self.apply_btn.setToolTip(f"Connect {ready} note{'' if ready == 1 else 's'} (one undo step)")
+            label_tip += (f"\n{need} need{'s' if need == 1 else ''} a Write to choice and stay dashed: "
+                          "drag them onto the target.")
+        self.status.set_suggestion(matches, label_tip, apply_enabled=ready > 0,
+                                   apply_tip=f"Connect {ready} note{'' if ready == 1 else 's'} (one undo step)",
+                                   dismiss_tip=DISMISS_TIP)
 
     @_undoable
     def apply_suggestions(self) -> int:
@@ -1048,11 +1009,4 @@ class ProfilesPage(QWidget):
 
     def set_status(self, text: str, state: str = "") -> None:
         """Отклик на действие (не счётчик): виден сразу, гаснет через STATUS_MS после последнего сообщения."""
-        self.status.setText(text)
-        repolish(self.status, "state", state)
-        self._status_fade.stop()
-        self._status_fx.setOpacity(1.0)
-        if text:
-            self._status_timer.start()
-        else:
-            self._status_timer.stop()
+        self.status.set_status(text, state)

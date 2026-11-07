@@ -20,7 +20,7 @@ from pathlib import Path
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QFileDialog, QHBoxLayout, QInputDialog, QLabel, QLineEdit, QMessageBox, QSizePolicy, QVBoxLayout,
+    QFileDialog, QInputDialog, QLineEdit, QMessageBox, QVBoxLayout,
     QWidget,
 )
 
@@ -39,8 +39,8 @@ from .maps_text import (
 )
 from .settings import ui_settings
 from .split import SplitRow
+from .status_strip import StatusStrip
 from .strip import section_width
-from .theme import repolish
 from .tips import tip
 
 SAVE_KEYS = ("Ctrl+S",)
@@ -117,16 +117,9 @@ class MapsPage(QWidget):
             lambda: strip.set_sections(section_width(self.list.width()), section_width(self.notes.width())))
         root.addWidget(self.split, stretch=1)
 
-        # TEMP: placement undecided — статус в нижней полосе под экранами, как на Convert
-        self.status = QLabel()
-        self.status.setObjectName("status")
-        self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        band = QWidget()
-        band.setFixedHeight(theme.BAND_H)
-        band_box = QHBoxLayout(band)
-        band_box.setContentsMargins(8, theme.BAND_ITEM_TOP, 8, theme.BAND_H - theme.BAND_ITEM_TOP - theme.BAND_ITEM_H)
-        band_box.addWidget(self.status, stretch=1)
-        root.addWidget(band)
+        # статус — в общей нижней полосе под экранами (между нижними винтами)
+        self.status = StatusStrip()
+        root.addWidget(self.status)
 
     # --- диалоги (тесты подменяют эти методы) ---
 
@@ -495,5 +488,4 @@ class MapsPage(QWidget):
         self.set_status(f"Exported to {path}.", "ok")
 
     def set_status(self, text: str, state: str = "") -> None:
-        self.status.setText(text)
-        repolish(self.status, "state", state)
+        self.status.set_status(text, state)
