@@ -33,9 +33,9 @@ import functools
 from PySide6.QtCore import QPropertyAnimation, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout, QHeaderView, QInputDialog,
-    QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSizePolicy, QTableWidget, QTableWidgetItem, QVBoxLayout,
-    QWidget,
+    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QFrame, QGraphicsOpacityEffect, QHBoxLayout,
+    QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton, QSizePolicy, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..core.notemap import NoteMap, duplicate_map
@@ -61,6 +61,7 @@ ID_ROLE = Qt.ItemDataRole.UserRole           # ID профиля в хранил
 
 UNDO_LIMIT = 200
 UNDO_KEYS, REDO_KEYS, SAVE_KEYS = ("Ctrl+Z",), ("Ctrl+Y", "Ctrl+Shift+Z"), ("Ctrl+S",)
+SELECT_ALL_KEYS, CLEAR_KEYS = ("Ctrl+A",), ("Esc",)
 STATUS_MS, STATUS_FADE_MS = 4000, 600  # статус гаснет через ~4 с после последнего сообщения
 MATCH_TIP = ("Connect every unassigned note to the same number in the other map, if it is there\n"
              "(struck-through and connected notes are left alone; one undo step)")
@@ -307,7 +308,27 @@ class ProfilesPage(QWidget):
         # комбобокс, кнопки, вкладки); на других вкладках выключены (showEvent / hideEvent)
         self._shortcuts = [QShortcut(QKeySequence(k), self, activated=slot, context=Qt.ShortcutContext.WindowShortcut)
                            for keys, slot in ((UNDO_KEYS, self.undo), (REDO_KEYS, self.redo),
-                                              (SAVE_KEYS, self._save_if_dirty)) for k in keys]
+                                              (SAVE_KEYS, self._save_if_dirty), (SELECT_ALL_KEYS, self._select_all),
+                                              (CLEAR_KEYS, self._escape)) for k in keys]
+
+    def _select_all(self) -> None:
+        """Ctrl+A: строки колонки последнего щелчка; в текстовом поле — его текст."""
+        focus = QApplication.focusWidget()
+        if isinstance(focus, QLineEdit):
+            focus.selectAll()
+        else:
+            self.cables.select_all()
+
+    def _escape(self) -> None:
+        """Esc: отменить перетаскивание / росчерк, иначе снять выделение (в текстовом поле — ничего)."""
+        if isinstance(QApplication.focusWidget(), QLineEdit):
+            return
+        if self.cables.dragging:
+            self.cables.cancel_drag()
+        elif self.cables.swiping:
+            self.cables.cancel_swipe()
+        else:
+            self.cables.clear_selection()
 
     def _save_if_dirty(self) -> None:
         if self.save_btn.isEnabled():
@@ -777,6 +798,7 @@ class ProfilesPage(QWidget):
         else:
             self.work.target_map = m
         self.work.reverse_overrides = {}  # ручные правки — по нотам прежней карты: смену не переживают
+        self.cables.reset_selection()
         self._compute_suggestions()
         self._sync_suggestions()
         self.cables.refresh()

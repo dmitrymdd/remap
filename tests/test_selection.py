@@ -70,3 +70,11 @@ def test_targets_selected_row_acts_on_all_selected_else_only_itself():
     s = sel("a", "c")
     assert s.targets("c") == ["a", "c"]
     assert s.targets("b") == ["b"]
+
+
+def test_reset_clears_selection_and_anchor_so_shift_acts_as_click():
+    s = sel("a", "c", anchor="c")
+    s.reset()
+    assert s.selected == [] and s.anchor is None
+    s.extend("d")
+    assert s.selected == ["d"] and s.anchor == "d"

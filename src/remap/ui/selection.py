@@ -73,6 +73,11 @@ class Selection:
     def clear(self) -> None:
         self._selected = set()
 
+    def reset(self) -> None:
+        """Снять выделение и забыть якорь (другой профиль, направление, карта)."""
+        self._selected = set()
+        self.anchor = None
+
     def targets(self, key: Hashable) -> list[Hashable]:
         """На что действует кнопка элемента (× и т.п.): на всё выделенное, если элемент выделен, иначе на него один."""
         return self.selected if key in self._selected else [key]

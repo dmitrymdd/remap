@@ -23,9 +23,11 @@ write_to_requested) — правила меняет ядро (core/profile.py) �
 цели в сигналах — ориентированного профиля (в REVERSE ноты — целевой карты, строки цели — артикуляции исходной);
 страница разбирает их по направлению.
 
-Мышь: строки пула и колонки «from» выделяются (Ctrl/Shift — несколько) и перетаскиваются на строку цели (назначение
-по совпадению номеров, см. assign_plan) или на заголовок группы цели (n → n для совпавших номеров); заголовок
-группы пула тоже можно перетащить — со всеми его нотами. Кабель-превью
+Мышь: строки пула и колонки «from» выделяются как в Проводнике (ui/selection.py: клик, Ctrl, Shift — заменить
+диапазоном, Ctrl+Shift — добавить; Ctrl+A / Esc — со страницы), выделение живёт в одной колонке (щелчок в другой его
+снимает), и перетаскиваются на строку цели (назначение по совпадению номеров, см. assign_plan) или на заголовок группы
+цели (n → n для совпавших номеров); заголовок группы пула тоже можно перетащить — с его незачёркнутыми нотами.
+Правый и двойной клик по выделенной строке действуют на всё выделение (один сигнал — один шаг отмены). Кабель-превью
 догоняет курсор с лёгкой пружиной (таймер ~60 кадров/с), у края сцены — автопрокрутка (пул не прокручивается:
 в него не бросают, строки пула во время перетаскивания не двигаются), Esc — отмена.
 Наведение на заголовок группы цели во время перетаскивания (~500 мс) показывает все её артикуляции.
@@ -48,7 +50,7 @@ write_to_requested) — правила меняет ядро (core/profile.py) �
 from __future__ import annotations
 
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Hashable
 from dataclasses import dataclass, field
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, QRectF, Qt, QTimer, Signal
@@ -67,6 +69,7 @@ from .field import ScreenButton
 from .glass import Screen
 from .split import SplitRow
 from .metal import RecessedBlock
+from .selection import Selection
 from .profiles_text import (
     EMPTY_HINT, GROUP_HINT, POOL_TIP, POOL_TITLE, TARGET_GROUP_HINT, Overrides, cable_tip, source_tip,
     target_missing_tip, target_number_tip, target_tip, with_name,
@@ -666,6 +669,8 @@ class _Press:
     pos: QPointF                 # в координатах viewport
     select_on_release: bool      # клик по уже выделенной строке без модификаторов: выделить только её при отпускании
     header: str | None = None    # нажали на заголовок пула: клик — свернуть, перетаскивание — все его ноты
+    key: Hashable | None = None  # ключ строки в выделении колонки (_row_key)
+    drag: bool = True            # False — Ctrl+клик только что снял со строки выделение: не перетаскивать
 
 
 @dataclass
@@ -774,7 +779,12 @@ class CableEditor(QWidget):
         self.direction = FORWARD
         self.shown: RemapProfile | None = None    # profile.oriented(direction) — по нему строится вид
         self._state = {FORWARD: _ViewState(), REVERSE: _ViewState()}  # свёрнутость — своя у направления
-        self.selection: set[int] = set()                   # выделенные ноты (строки пула и колонки «from»)
+        # выделение — строки (ключи _row_key) в ОДНОЙ колонке: пул или «from»; ноты — selection
+        self.pool_sel = Selection()
+        self.from_sel = Selection()
+        self._keyed: dict[int, dict[Hashable, _Row]] = {}   # id(view) -> ключ строки -> строка (по текущей раскладке)
+        self._active: _ColumnView | None = None             # колонка последнего щелчка (Ctrl+A); None — пул
+        self._collapse: tuple[Hashable, list[Hashable]] | None = None  # отпускание свело выделение пула к строке
         self.suggested: dict[int, str] = {}                # подсказки: нота без правила -> артикуляция цели
         self.current: CableLayout | None = None  # последняя построенная раскладка
         self.cable_items: list[_CableItem] = []
@@ -790,7 +800,6 @@ class CableEditor(QWidget):
         self.hovered: _CableItem | None = None
         self._issues: dict[int, list[str]] = {}  # нота -> тексты замечаний (подсказка строки)
         self._press: _Press | None = None
-        self._anchor: tuple[_ColumnView, frozenset[int]] | None = None  # начало диапазона Shift+клика
         self._drag: _Drag | None = None
         self._swipe: _Swipe | None = None
         self._frame = QTimer(self)
@@ -846,7 +855,7 @@ class CableEditor(QWidget):
         group = self._top_group()
         self.cancel_drag()
         self.cancel_swipe()
-        self.selection.clear()
+        self.reset_selection()
         self.direction = direction
         self._build(anchor=False)
         self._scroll_to_group(group)
@@ -875,7 +884,7 @@ class CableEditor(QWidget):
         self.profile = p
         if direction is not None:
             self.direction = direction
-        self.selection.clear()
+        self.reset_selection()
         if reset_collapsed:
             self._state = {FORWARD: _ViewState(), REVERSE: _ViewState()}
         self._build(anchor=reset_collapsed is False)
@@ -917,13 +926,77 @@ class CableEditor(QWidget):
         self.expanded ^= {key}
         self._build(pool=in_pool, scene=not in_pool)
 
+    # --- выделение ---
+
+    @staticmethod
+    def _row_key(item: _Row) -> Hashable:
+        """Ключ строки в выделении: алиасы (свёрнутые и заголовок раскрытых) — ключ группы, иначе нота."""
+        m = item.model
+        return ("alias", m.alias) if m.alias is not None and not m.child else m.note
+
+    def _sel(self, view: _ColumnView) -> Selection:
+        return self.pool_sel if view is self.pool else self.from_sel
+
+    def _notes_of(self, view: _ColumnView, keys) -> list[int]:
+        rows = self._keyed.get(id(view), {})
+        return sorted({n for k in keys if k in rows for n in rows[k].notes})
+
+    @property
+    def selection(self) -> set[int]:
+        """Выделенные ноты: объединение нот выделенных строк."""
+        return {n for v in (self.pool, self.view) for n in self._notes_of(v, self._sel(v).selected)}
+
     def selected_notes(self) -> list[int]:
         return sorted(self.selection)
 
+    def _sync_items(self) -> None:
+        """Порядок строк обеих колонок — по раскладке; исчезнувшие строки выделение теряют."""
+        for view, rows in ((self.pool, self.pool_rows), (self.view, self.scene_rows)):
+            keyed = {self._row_key(r): r for r in sorted(rows, key=lambda i: i.model.y)}
+            self._keyed[id(view)] = keyed
+            self._sel(view).set_items(keyed)
+
+    def _enter(self, view: _ColumnView) -> None:
+        """Щелчок в колонке: выделение другой колонки снимается (вместе с якорем)."""
+        self._active = view
+        self._sel(self.view if view is self.pool else self.pool).reset()
+
+    def reset_selection(self) -> None:
+        """Снять выделение и якоря (другой профиль, направление, карта)."""
+        self.pool_sel.reset()
+        self.from_sel.reset()
+        self._active, self._collapse = None, None
+        self._show_selection()
+
+    def clear_selection(self) -> None:
+        self.pool_sel.clear()
+        self.from_sel.clear()
+        self._show_selection()
+
+    def select_all(self) -> None:
+        """Ctrl+A: все видимые строки колонки последнего щелчка (по умолчанию — пул)."""
+        view = self._active or self.pool
+        self._enter(view)
+        self._sel(view).select_all()
+        self._show_selection()
+
     def set_selection(self, notes: set[int]) -> None:
-        self.selection = set(notes)
-        for item in self.pool_rows + self.scene_rows:
-            item.set_selected(bool(self.selection) and set(item.notes) <= self.selection)
+        """Выделить строки, все ноты которых среди notes: в пуле, а нет таких — в колонке «from»."""
+        notes = set(notes)
+        for view in (self.pool, self.view):
+            sel = self._sel(view)
+            sel.clear()
+            if notes and not self.selection:
+                for key, row in self._keyed.get(id(view), {}).items():
+                    if set(row.notes) <= notes:
+                        sel.toggle(key)
+        self._show_selection()
+
+    def _show_selection(self) -> None:
+        for view, rows in ((self.pool, self.pool_rows), (self.view, self.scene_rows)):
+            chosen = set(self._notes_of(view, self._sel(view).selected))
+            for item in rows:
+                item.set_selected(bool(chosen) and set(item.notes) <= chosen)
         # строка цели выбрана, если в неё идёт кабель выбранной строки (как в макете: многие-в-одну — цель белая);
         # у раскрытой — плашки тех номеров, куда идут эти кабели
         lit: dict[int, set[int]] = {}
@@ -1022,6 +1095,9 @@ class CableEditor(QWidget):
         Нажатие на кабель левой кнопкой ничего не делает (не перетаскивание и не смена выделения)."""
         pos = event.position()
         item = self._item_at(view, pos.toPoint())
+        double = event.type() == QEvent.Type.MouseButtonDblClick
+        if not double:
+            self._collapse = None
         if event.button() == Qt.MouseButton.RightButton:
             if view is self.view and self._drag is None:  # в сцене: клик или росчерк — решит сдвиг
                 view.setFocus()  # Esc — отмена росчерка
@@ -1042,50 +1118,65 @@ class CableEditor(QWidget):
                 QTimer.singleShot(0, lambda t=item.model: self._write_to_menu(t, at))
             return True
         if isinstance(item, _HeaderItem) and view is self.pool:
-            # клик — свернуть (при отпускании), перетаскивание — все ноты заголовка
-            self._press = _Press(view, frozenset(item.header.notes), pos, False, item.header.key)
+            # клик — свернуть (при отпускании), перетаскивание — все ноты заголовка, кроме зачёркнутых
+            self._enter(view)
+            self._show_selection()
+            rules = self.shown.rules
+            live = frozenset(n for n in item.header.notes if not (n in rules and rules[n].action == "delete"))
+            self._press = _Press(view, live, pos, False, item.header.key)
             return True
         if isinstance(item, _Row):
             chevron = item.chevron_rect()
             if chevron is not None and chevron.contains(scene_pt):
                 QTimer.singleShot(0, lambda k=item.model.alias, pool=view is self.pool: self.toggle_alias(k, pool))
                 return True
-            if (event.type() == QEvent.Type.MouseButtonDblClick and item.role == POOL
-                    and item.model.state != DELETE):
+            if double and item.role == POOL and item.model.state != DELETE:
                 # первое нажатие двойного клика лишь выделило строку (перетаскивания без сдвига нет)
                 self._press = None
-                QTimer.singleShot(0, lambda notes=list(item.notes): self.same_number_requested.emit(notes))
+                notes = self._same_number_notes(item)
+                QTimer.singleShot(0, lambda: self.same_number_requested.emit(notes))
                 return True
             view.setFocus()
             self._press_row(view, item, event.modifiers(), pos)
             return True
-        if item is None and not event.modifiers() & (Qt.KeyboardModifier.ControlModifier
-                                                     | Qt.KeyboardModifier.ShiftModifier):
-            self.set_selection(set())
+        if item is None:
+            self._enter(view)
+            if not event.modifiers() & (Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.ShiftModifier):
+                self.clear_selection()
+            else:
+                self._show_selection()
         return False
 
     def _press_row(self, view: _ColumnView, item: _Row, mods, pos: QPointF) -> None:
-        notes = frozenset(item.notes)
-        later = False
-        if mods & Qt.KeyboardModifier.ControlModifier:
-            self.set_selection(self.selection - notes if notes <= self.selection else self.selection | notes)
-            self._anchor = (view, notes)
-        elif mods & Qt.KeyboardModifier.ShiftModifier and self._anchor is not None and self._anchor[0] is view:
-            self.set_selection(self.selection | self._range(view, self._anchor[1], notes))
-        elif notes <= self.selection:
-            later = True  # возможно, перетаскивание всего выделения
+        """Нажатие на строку колонки — как в Проводнике (Selection.press); нажатие без модификаторов на выделенную
+        строку выделение не меняет (так тащат всё выделенное), «только эта» — при отпускании без сдвига."""
+        self._enter(view)
+        sel, key = self._sel(view), self._row_key(item)
+        ctrl = bool(mods & Qt.KeyboardModifier.ControlModifier)
+        shift = bool(mods & Qt.KeyboardModifier.ShiftModifier)
+        later, drag = False, True
+        if not ctrl and not shift and sel.is_selected(key):
+            later = True
         else:
-            self.set_selection(set(notes))
-            self._anchor = (view, notes)
-        self._press = _Press(view, notes, pos, later)
+            drag = not (ctrl and not shift and sel.is_selected(key))  # Ctrl снял выделение — не тащить
+            sel.press(key, ctrl=ctrl, shift=shift)
+        self._show_selection()
+        self._press = _Press(view, frozenset(item.notes), pos, later, key=key, drag=drag)
 
-    def _range(self, view: _ColumnView, a: frozenset[int], b: frozenset[int]) -> set[int]:
-        """Ноты строк view между строками a и b (по порядку показа)."""
-        rows = sorted(self.pool_rows if view is self.pool else self.scene_rows, key=lambda i: i.rect.top())
-        idx = [i for i, row in enumerate(rows) if frozenset(row.notes) in (a, b)]
-        if not idx:
-            return set(b)
-        return {n for row in rows[min(idx):max(idx) + 1] for n in row.notes}
+    def _same_number_notes(self, item: _Row) -> list[int]:
+        """Двойной клик по строке пула: ноты выделения (если строка в нём), кроме зачёркнутых; иначе — строки.
+        Первое нажатие двойного клика могло свести выделение к строке — оно возвращается."""
+        sel, key = self.pool_sel, self._row_key(item)
+        if self._collapse is not None and self._collapse[0] == key:
+            sel.clear()
+            for k in self._collapse[1]:
+                sel.toggle(k)
+            sel.anchor = key
+            self._collapse = None
+            self._show_selection()
+        rows = self._keyed.get(id(self.pool), {})
+        keys = [k for k in sel.targets(key) if k in rows and rows[k].model.state != DELETE]
+        return self._notes_of(self.pool, keys) if keys else list(item.notes)
 
     def view_move(self, view: _ColumnView, event) -> bool:
         pos = event.position()
@@ -1100,10 +1191,14 @@ class CableEditor(QWidget):
         if press is not None and event.buttons() & Qt.MouseButton.LeftButton:
             if (pos - press.pos).manhattanLength() >= QApplication.startDragDistance():
                 at = QPointF(view.viewport().mapTo(self, pos.toPoint()))
-                if press.header is not None:
+                if not press.drag or not press.notes:  # строку только что сняли Ctrl / у заголовка всё зачёркнуто
+                    self._press = None
+                elif press.header is not None:
                     self.begin_drag(set(press.notes), at, header=press.header)
                 else:
-                    notes = self.selection if press.notes <= self.selection else set(press.notes)
+                    sel = self._sel(press.view)
+                    keys = sel.selected if sel.is_selected(press.key) else []
+                    notes = set(self._notes_of(press.view, keys)) or set(press.notes)
                     self.begin_drag(notes, at)
             return True
         return False
@@ -1124,8 +1219,11 @@ class CableEditor(QWidget):
                 QTimer.singleShot(0, lambda key=press.header: self.toggle_pool(key))
                 return True
             if press.select_on_release:
-                self.set_selection(set(press.notes))
-                self._anchor = (press.view, press.notes)
+                sel = self._sel(press.view)
+                if press.view is self.pool:
+                    self._collapse = (press.key, sel.selected)
+                sel.click(press.key)
+                self._show_selection()
             return True
         return False
 
@@ -1202,12 +1300,16 @@ class CableEditor(QWidget):
         if isinstance(item, _CableItem):
             self.disconnect_requested.emit(list(item.cable.notes))
         elif isinstance(item, _Row) and item.role in (POOL, SOURCE):
-            row = item.model
+            # выделенная строка — всё выделение колонки одним действием (один шаг отмены), иначе — она одна
+            row, view = item.model, self.pool if item.role == POOL else self.view
+            self._enter(view)
+            self._show_selection()
+            notes = self._notes_of(view, self._sel(view).targets(self._row_key(item))) or list(row.notes)
             if item.role == SOURCE and row.connected:
-                mapped = [n for n in row.notes if p.rules.get(n) is not None and p.rules[n].action == "map"]
+                mapped = [n for n in notes if p.rules.get(n) is not None and p.rules[n].action == "map"]
                 self.disconnect_requested.emit(mapped)
             else:
-                self.strike_requested.emit(list(row.notes))
+                self.strike_requested.emit(notes)
         elif isinstance(item, _HeaderItem) and item.header.key.startswith(POOL_PREFIX) and item.header.notes:
             self.strike_requested.emit(list(item.header.notes))
 
@@ -1249,7 +1351,7 @@ class CableEditor(QWidget):
             v.viewport().unsetCursor()
         if drop and isinstance(d.hover, _Row):
             notes, slot, zone = list(d.notes), d.hover.model.slot, d.zone or ("row",)
-            self.set_selection(set())
+            self.clear_selection()
             if zone[0] == "line":  # ровно на эту ноту: без логики Write to и вопросов
                 QTimer.singleShot(0, lambda: self.note_drop_requested.emit(notes, zone[2]))
             elif zone[0] == "badge":  # меню всех нот артикуляции — куда пойдёт кабель (Write to не меняется)
@@ -1260,7 +1362,7 @@ class CableEditor(QWidget):
                 QTimer.singleShot(0, lambda: self.connect_requested.emit(notes, slot))
         elif drop and self._droppable(d.hover):
             notes, targets = list(d.notes), list(d.hover.header.notes)
-            self.set_selection(set())
+            self.clear_selection()
             QTimer.singleShot(0, lambda: self.group_drop_requested.emit(notes, targets))
 
     def cancel_drag(self) -> None:
@@ -1434,8 +1536,8 @@ class CableEditor(QWidget):
         if scene:
             self._draw_scene()
             self._restore_anchor(self.view, anchors[self.view])
-        visible = {n for item in self.pool_rows + self.scene_rows for n in item.notes}
-        self.set_selection(self.selection & visible)
+        self._sync_items()
+        self._show_selection()
 
     def _init_target_groups(self) -> None:
         """Группам цели, которых вид ещё не показывал, — начальный режим (initial_show_all); уже виденные не
