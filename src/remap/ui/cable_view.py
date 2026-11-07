@@ -57,11 +57,9 @@ from PySide6.QtWidgets import (
     QApplication, QGraphicsItem, QGraphicsPathItem, QGraphicsScene, QGraphicsView, QHBoxLayout, QMenu, QFrame, QWidget,
 )
 
-from ..core.notemap import primary_note
-from ..core.pitch import note_tip
-from ..core.profile import FORWARD, NO_RULE, REVERSE, RemapProfile, names_differ, validate_profile
+from ..core.profile import FORWARD, NO_RULE, REVERSE, RemapProfile, validate_profile
 from .cable_layout import (
-    DELETE, KEEP, MIXED, POOL_PREFIX, TARGET_PREFIX, UNASSIGNED, Cable, CableLayout, Header, RowMetrics, Ruler,
+    DELETE, KEEP, POOL_PREFIX, TARGET_PREFIX, Cable, CableLayout, Header, RowMetrics, Ruler,
     SourceRow, TargetRow, build_layout, initial_show_all, scene_columns, target_group_keys,
 )
 from . import plates, text, theme
@@ -69,6 +67,10 @@ from .field import ScreenButton
 from .glass import Screen
 from .split import SplitRow
 from .metal import RecessedBlock
+from .profiles_text import (
+    EMPTY_HINT, GROUP_HINT, POOL_TIP, POOL_TITLE, TARGET_GROUP_HINT, Overrides, cable_tip, source_tip,
+    target_missing_tip, target_number_tip, target_tip, with_name,
+)
 from .tips import tip
 
 POOL_ROWS = RowMetrics(*theme.POOL_ROWS)
@@ -100,54 +102,6 @@ SPRING_LOAD_MS = 500            # наведение на заголовок г�
 MAX_PREVIEW = 24                # кабелей-превью при перетаскивании многих строк
 
 POOL, SOURCE, TARGET = "pool", "source", "target"  # роль строки: пул, колонка «from», цель
-
-# Подсказки строк, кабелей и плашек цели (через tip(), не больше трёх строк): высота ноты, куда идёт, замечания и
-# ручные правки, действие правой кнопкой. То, что видно на плашке, и жесты, которым учит обучение (перетаскивание,
-# росчерк), не повторяются.
-DELETED_TIP = "Deleted from converted files"
-KEPT_TIP = "Kept on the same number"
-# ←: ноты цели без обратного правила при сохранении не спрашиваются (полнота — статус)
-REVERSE_UNASSIGNED_TIP = "No rule here: kept on the same number"
-MIXED_TIP = "Different rules: shown one by one"
-REMOVE_ACTION = "Right-click: remove"
-DELETE_ACTION = "Right-click: delete"
-RESTORE_ACTION = "Right-click: restore"
-SAME_NUMBER_HINT = "Double-click: same number"
-SUGGESTED_HINT = "Suggested: apply in the bar above"
-SUGGESTED_WRITE_TO_HINT = "Suggested, needs a Write to note: Apply skips it"
-NAMES_DIFFER_TIP = "Names differ"
-NOT_WRITE_TO_TIP = "Not the Write to note ({n})"
-WRITE_TO_TIP = "Write to: {n}"
-NO_WRITE_TO_TIP = "Write to: not chosen"
-BADGE_HINT = "Click {pill}: choose the Write to"
-HAND_SET_TIP = "Set by hand: forward edits don't change it"
-HAND_SET_SOME_TIP = "Set by hand ({notes})"
-HAND_REMOVED_TIP = "Removed by hand: forward edits don't restore it"
-HAND_REMOVED_SOME_TIP = "Removed by hand ({notes})"
-TIP_LINES = 3
-POOL_TITLE = "Unassigned"
-POOL_TIP = ("{side} notes not connected in this direction, by instrument.\n"
-            "Struck-through notes are deleted: right-click to restore")
-EMPTY_HINT = "Drag notes from Unassigned onto the {side} map"
-GROUP_HINT = "Right-click to delete or restore the whole group"
-TARGET_GROUP_HINT = "Drop notes here to connect those with the same numbers"
-
-
-def tip_lines(head: str, details: list[str], action: str = "") -> str:
-    """Текст подсказки: первая строка, замечания, действие; больше TIP_LINES строк — замечания в одну строку через «·»."""
-    details = [d for d in details if d]
-    if len(details) + 1 + bool(action) > TIP_LINES and len(details) > 1:
-        details = [" · ".join(details)]
-    return "\n".join([line for line in (head, *details, action) if line])
-
-
-def with_name(name: str, text: str) -> str:
-    """Полное имя первой строкой подсказки; строк стало больше TIP_LINES — средние склеиваются через «·»."""
-    lines = [name, *text.splitlines()]
-    if len(lines) > TIP_LINES:
-        lines = [lines[0], " · ".join(lines[1:-1]), lines[-1]]
-    return "\n".join(lines)
-
 
 def cable_path(a: QPointF, b: QPointF) -> QPainterPath:
     """Плавный кубический Безье: горизонтальные касательные на концах."""
@@ -1734,105 +1688,34 @@ class CableEditor(QWidget):
                     metrics=POOL_ROWS if role == POOL else SCENE_ROWS)
 
     def _source_text(self, row: SourceRow, issues: list[str]) -> str:
-        """Подсказка строки слева: ноты (у строки ноты под заголовком алиасов — и имя), куда идёт, замечания, действие."""
-        p = self.shown
-        tgt = p.target_map
-        head = note_tip(row.notes)
-        if row.child and row.name:
-            head = f"{head} · {row.name}"
-        details: list[str] = list(issues)
-        action = ""
-        if row.expanded:
-            details += [MIXED_TIP] if row.mixed else []
-        elif row.connected:
-            dst = p.rules[row.note].dst
-            dst_name = tgt.names.get(dst, "") if tgt is not None else ""
-            head = f"{head}  →  {dst} {dst_name}".rstrip()
-            details.append(self._not_write_to(dst))
-            action = REMOVE_ACTION
-        elif row.suggested:
-            cable = next(c for c in self.current.scene.cables if c.src_y == row.y)
-            if cable.dst is not None:
-                head = f"{head}  →  {cable.dst} {cable.target.label}".rstrip()
-                details.append(SUGGESTED_HINT)
-            else:
-                head = f"{head}  →  {cable.target.label}"
-                details.append(SUGGESTED_WRITE_TO_HINT)
-        elif row.state == DELETE:
-            details.append(DELETED_TIP)
-            action = RESTORE_ACTION
-        else:
-            if row.state == KEEP:
-                where = (f": {tgt.names[row.note]}" if tgt is not None and row.note in tgt.names
-                         else f" (not in the {self.sides[1]} map)")
-                details.append(KEPT_TIP + where)
-            elif self.direction == REVERSE and row.state == UNASSIGNED:
-                details.append(REVERSE_UNASSIGNED_TIP)
-            elif row.state == MIXED:
-                details.append(MIXED_TIP)
-            action = DELETE_ACTION
-            if row.block == UNASSIGNED:
-                action += f" · {SAME_NUMBER_HINT}"
-        details.append(self._hand_text(row.notes, connected=row.connected and not row.suggested and not row.expanded))
-        return tip_lines(head, details, action)
+        dashed = row.suggested and not (row.expanded or row.connected)  # строка-подсказка: куда идёт её кабель
+        cable = next(c for c in self.current.scene.cables if c.src_y == row.y) if dashed else None
+        return source_tip(row, issues, self.shown, cable, self._overrides(), self.sides[1], self.direction == REVERSE)
 
     def _target_item(self, r: QRectF, t: TargetRow, connected: bool, dashed: bool = False) -> _Row:
         port = "left" if connected else None
         if not t.in_map:
-            side = f"{self.sides[1]} map"
-            text = tip_lines(note_tip(t.notes), [f"Not in the {side}" if self.shown.target_map is not None
-                                                 else f"No {side}"])
+            text = target_missing_tip(t, self.shown.target_map is not None, self.sides[1])
             item = _Row(r, TARGET, t, "" if t.expanded else str(t.notes[0]), "—", dim=True,
                         italic=True, port=port, dashed=dashed, tooltip=text, metrics=SCENE_ROWS)
             item.part_tips = {"head": text, t.notes[0]: text}
             return item
         many = len(t.notes) > 1
         pill = (f"+{t.hidden}" if t.hidden else "…") if many else ""
-        details = []
-        if many:
-            wt = WRITE_TO_TIP.format(n=t.write_to) if t.write_to is not None else NO_WRITE_TO_TIP
-            details = [f"{wt} · {BADGE_HINT.format(pill=pill)}"]
-        text = tip_lines(note_tip(t.notes), details)
+        text = target_tip(t, pill)
         item = _Row(r, TARGET, t, "" if t.expanded else str(t.numbers[0][1]), t.label, pill=pill, badge=many,
                     port=port, dashed=dashed, tooltip=text, metrics=SCENE_ROWS)
         if t.expanded:  # плашки номеров: номер, высота и имя (на плашке имени нет)
             item.part_tips = {"head": text}
             for _off, n in t.numbers:
-                item.part_tips[n] = tip_lines(f"{note_tip([n])} · {t.label}", ["Write to" if n == t.write_to else ""])
+                item.part_tips[n] = target_number_tip(t, n)
         return item
 
-    def _hand_text(self, notes: tuple[int, ...], connected: bool) -> str:
-        """← : пометка «ручная правка» — по `reverse_overrides` прямого профиля (в → ничего не меняется)."""
+    def _overrides(self) -> Overrides | None:
+        """← : ручные обратные правки прямого профиля (пометка «ручная правка» в подсказках); в → — None."""
         if self.direction != REVERSE or self.profile is None:
-            return ""
-        over = self.profile.reverse_overrides
-        if connected:
-            hand = [n for n in notes if over.get(n) is not None]
-            if not hand:
-                return ""
-            return HAND_SET_TIP if len(notes) == 1 else HAND_SET_SOME_TIP.format(notes=", ".join(map(str, hand)))
-        gone = [n for n in notes if n in over and over[n] is None]
-        if not gone:
-            return ""
-        return HAND_REMOVED_TIP if len(notes) == 1 else HAND_REMOVED_SOME_TIP.format(notes=", ".join(map(str, gone)))
-
-    def _not_write_to(self, dst: int) -> str:
-        """Кабель идёт не на Write to своей артикуляции — замечание."""
-        tgt = self.shown.target_map
-        if tgt is None or dst not in tgt.names:
-            return ""
-        wt = primary_note(tgt, tgt.names[dst])
-        return NOT_WRITE_TO_TIP.format(n=wt) if wt is not None and wt != dst else ""
+            return None
+        return self.profile.reverse_overrides
 
     def _cable_text(self, c: Cable) -> str:
-        """Кабель: «ноты имя  →  нота имя» по ориентированному профилю (как на картинке — слева направо), замечания
-        (имена разные, не Write to, ручная правка), действие."""
-        p = self.shown
-        src_name = p.source_map.names.get(c.notes[0], "") if p.source_map is not None else ""
-        tgt = p.target_map
-        dst_name = tgt.names.get(c.dst, "") if tgt is not None else ""
-        left = f"{', '.join(map(str, c.notes))} {src_name}".strip()
-        right = f"{c.dst} {dst_name}".strip()
-        details = [NAMES_DIFFER_TIP if names_differ(p, c.notes[0], c.dst) else "", self._not_write_to(c.dst),
-                   self._hand_text(c.notes, connected=True)]
-        return tip_lines(f"{left}  →  {right}", details, REMOVE_ACTION)
+        return cable_tip(c, self.shown, self._overrides())

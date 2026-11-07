@@ -431,7 +431,7 @@ def test_profiles_tab_disables_convert_shortcuts(window):
 
 
 def test_suggestion_needing_write_to_tooltip(window):
-    from remap.ui.cable_view import SUGGESTED_WRITE_TO_HINT
+    from remap.ui.profiles_text import SUGGESTED_WRITE_TO_HINT
     page = window.profiles_page
     new_profile(page)
     ed = page.cables
@@ -2094,7 +2094,7 @@ def test_kick_bundle_same_numbers_ascending_in_reverse(window, app):
 
 
 def test_double_click_unassigned_free_number_connects(window, app):
-    from remap.ui.cable_view import SAME_NUMBER_HINT
+    from remap.ui.profiles_text import SAME_NUMBER_HINT
     page, ed = bare_page(window)
     (t,) = shared_numbers(page.work, 1)
     item = ed.pool_items[t]
@@ -2169,7 +2169,7 @@ def test_double_click_unassigned_missing_number_and_partial_alias_row(window, ap
 
 
 def test_double_click_struck_row_does_nothing(window, app):
-    from remap.ui.cable_view import SAME_NUMBER_HINT
+    from remap.ui.profiles_text import SAME_NUMBER_HINT
     page, ed = bare_page(window)
     (t,) = shared_numbers(page.work, 1)
     page.toggle_strike([t])
@@ -2602,7 +2602,7 @@ def hand_tip_setup(window):
 
 
 def test_reverse_tooltips_mark_hand_set_notes(window, app):
-    from remap.ui.cable_view import HAND_REMOVED_TIP, HAND_SET_TIP
+    from remap.ui.profiles_text import HAND_REMOVED_TIP, HAND_SET_TIP
     _page, ed, drawn, gone, bundle, part = hand_tip_setup(window)
     assert HAND_SET_TIP in ed.source_items[drawn].tip_text
     cable = next(c for c in ed.cable_items if drawn in c.cable.notes)

@@ -219,8 +219,8 @@ def test_slot_keys_compare_names_normalized():
 
 
 def test_core_storage_and_layout_do_not_import_qt():
-    """Ядро, хранилище и раскладка «кабелей» — без Qt (один отдельный процесс на все три)."""
-    code = ("import sys, remap.core, remap.storage, remap.ui.cable_layout; "
+    """Ядро, хранилище, раскладка «кабелей» и тексты Profiles — без Qt (один отдельный процесс на всё)."""
+    code = ("import sys, remap.core, remap.storage, remap.ui.cable_layout, remap.ui.profiles_text; "
             "assert not [m for m in sys.modules if m.startswith(('PySide6', 'shiboken6'))], 'Qt imported'")
     src = str(Path(__file__).resolve().parents[1] / "src")
     env = {**os.environ, "PYTHONPATH": os.pathsep.join(filter(None, [src, os.environ.get("PYTHONPATH")]))}
