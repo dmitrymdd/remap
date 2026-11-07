@@ -376,12 +376,23 @@ def test_visible_part_of_a_long_scene_repaints_quickly(app):
 
 
 # --- руками нарисованный код без своих цветов ---
+def _strip_comment(line: str) -> str:
+    """Строка без комментария: `#` вне кавычек (грубо — по чётности кавычек перед ним)."""
+    for i, ch in enumerate(line):
+        if ch == "#" and line[:i].count('"') % 2 == 0 and line[:i].count("'") % 2 == 0:
+            return line[:i]
+    return line
+
+
 @pytest.mark.parametrize("module", ["cable_view", "maps_page", "maps_list", "maps_table", "maps_strip", "profiles_page", "main_window", "plates", "keys", "combo", "field",
                                     "glass", "text", "cable_layout"])
 def test_hand_painted_modules_have_no_hex_colours_or_legacy_tokens(module):
     source = (SRC / f"{module}.py").read_text(encoding="utf-8")
-    code = "\n".join(line.split("#", 1)[0] if not re.search(r"[\"']#", line) else line for line in source.splitlines())
-    assert not re.search(r"[\"']#[0-9A-Fa-f]{6}[\"']", code), module
+    code = "\n".join(_strip_comment(line) for line in source.splitlines())
+    hexes = re.findall(r"#[0-9A-Fa-f]{6}\b", code)  # в любом контексте: строка, f-строка, QSS
+    assert not hexes, f"{module}: {hexes}"
+    literals = re.findall(r"\b(?:qss_rgba|qcolor|QColor)\(\s*\(?\s*\d+\s*,\s*\d+\s*,\s*\d+", code)
+    assert not literals, f"{module}: {literals}"
     assert "TOKENS" not in source and "LEGACY" not in source.replace("LEGACY .TXT", ""), module
     assert Qt is not None
 

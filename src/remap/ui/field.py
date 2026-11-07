@@ -273,11 +273,11 @@ class SearchField(BezelField):
         self.edit.setFont(theme.mono_font(theme.FIELD_VALUE_FONT, wdth=theme.WDTH_BUTTON))
         self.edit.setFrame(False)
         self.edit.setPlaceholderText(placeholder)
-        accent = theme.qss_rgba((98, 214, 154, 0.35))
+        accent = theme.qss_rgba(theme.TEXT_SELECTION_BG)
         # локальная таблица перекрывает общую (QLineEdit со старых страниц): без фона, рамки и полей
         self.edit.setStyleSheet(
             f"QLineEdit {{ background: transparent; border: none; padding: 0; margin: 0; color: {theme.FIELD_TEXT};"
-            f" selection-background-color: {accent}; selection-color: #FFFFFF;"
+            f" selection-background-color: {accent}; selection-color: {theme.SEARCH_SELECTION_FG};"
             f" placeholder-text-color: {theme.FIELD_PLACEHOLDER}; }}")
         pal = self.edit.palette()
         pal.setColor(QPalette.ColorRole.PlaceholderText, QColor(theme.FIELD_PLACEHOLDER))

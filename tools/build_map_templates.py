@@ -31,8 +31,10 @@ TEMPLATES: dict[str, tuple[str, MapMeta]] = {
         status="verified",
         notes="This is the layout of the EZdrummer 3 library inside SD3, not of the EZdrummer 3 plugin itself.",
     )),
-    "General MIDI": ("General_MIDI_GM1.txt", MapMeta(status="verified")),
-    "Guitar Pro 8": ("Guitar_Pro_8.txt", MapMeta(status="verified")),
+    "General MIDI": ("General_MIDI_GM1.txt", MapMeta(
+        source="General MIDI Level 1 percussion key map, from public GM1 references.", status="verified")),
+    "Guitar Pro 8": ("Guitar_Pro_8.txt", MapMeta(
+        source="Guitar Pro 8 drum note names, taken from the Guitar Pro 8 application.", status="verified")),
 }
 
 

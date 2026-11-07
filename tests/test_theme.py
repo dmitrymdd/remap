@@ -3,6 +3,10 @@ import re
 from pathlib import Path
 
 import pytest
+
+pytest.importorskip("PySide6")
+pytestmark = pytest.mark.ui
+
 from PySide6.QtGui import QColor, QFont, QImage
 
 from remap.ui import theme

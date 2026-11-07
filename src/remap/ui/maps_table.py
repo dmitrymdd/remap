@@ -308,7 +308,7 @@ class NoteDelegate(QStyledItemDelegate):
         editor = QLineEdit(parent)
         editor.setFont(theme.mono_font(theme.PLATE_NAME_FONT))
         editor.setFrame(False)
-        accent = theme.qss_rgba((98, 214, 154, 0.35))
+        accent = theme.qss_rgba(theme.TEXT_SELECTION_BG)
         # поле макета: заливка, рамка 1 px, радиус 3, текст в 9 px от края (у QLineEdit ещё 2 px своего поля)
         editor.setStyleSheet(
             f"QLineEdit {{ background: {theme.NOTE_EDIT_FIELD}; border: 1px solid {theme.CHIP_BORDER};"

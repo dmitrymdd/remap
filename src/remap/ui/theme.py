@@ -111,6 +111,8 @@ FIELD_INSET = {"dy": 1, "blur": 3, "alpha": 0.7}  # inset 0 1px 3px rgba(0,0,0,.
 FIELD_CAPTION, FIELD_TEXT, FIELD_PLACEHOLDER = "#7DB394", SCREEN_TEXT, SCREEN_TEXT_3
 FIELD_HOVER_BORDER = "#477A5C"  # наведение; в макете не задано
 FIELD_FOCUS_BORDER = ACCENT  # фокус и открытый список; в макете не задано
+TEXT_SELECTION_BG: RGBA = (98, 214, 154, 0.35)  # выделение текста в полях ввода (поиск и правка имени на Maps)
+SEARCH_SELECTION_FG = "#FFFFFF"  # текст выделения в поиске Maps
 FIELD_FOCUS_GLOW: RGBA = (98, 214, 154, 0.25)  # inset 0 0 0 1px
 FIELD_DISABLED_OPACITY = 0.45
 # Подписи двухстрочного поля и значения: px, вес, интервал (в em); зазор между строками 1 px

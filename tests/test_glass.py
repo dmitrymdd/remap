@@ -235,6 +235,7 @@ def test_click_on_track_pages_and_wheel_scrolls(attached):
 
 def test_scrollbar_paints_track_and_handle_colours(attached):
     _, _, bar = attached
+    bar._hover = False  # курсор offscreen от прошлых тестов мог дать HoverEnter: первый снимок — без наведения
     img = flat(bar)
     x = theme.SCROLL_HIT + 1
     handle, below = bar.handle_rect(), bar.height() - 10
