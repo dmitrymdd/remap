@@ -522,25 +522,25 @@ class ProfilesPage(QWidget):
                 direction or self.direction)
 
     def _restore(self, snap: tuple[RemapProfile, dict[str, dict[int, str]], str]) -> None:
-        """Вернуть рабочую копию к снимку (на месте: «кабели» держат тот же объект) и подсказки."""
-        profile, suggest, _ = snap
+        """Вернуть рабочую копию к снимку (на месте: «кабели» держат тот же объект) и подсказки, вид — на
+        направление шага. Одна перестройка: шаг другого направления перестраивает вид сменой направления."""
+        profile, suggest, direction = snap
         self._suggest = {d: dict(v) for d, v in suggest.items()}
         w = self.work
-        maps_changed = (w.source_map, w.target_map) != (profile.source_map, profile.target_map)
         w.name, w.source_map, w.target_map, w.rules = profile.name, profile.source_map, profile.target_map, \
             profile.rules
         w.reverse_overrides = profile.reverse_overrides
-        self._changed()
-        if maps_changed:
-            self.cables.refresh()
+        if direction == self.direction:
+            self._changed()
+        else:
+            self.set_direction(direction)
 
     def undo(self) -> bool:
-        """Отменить шаг: сначала вид — на направление, в котором он сделан (не шаг), затем снимок «до»."""
+        """Отменить шаг: снимок «до», вид — на направление, в котором шаг сделан (смена вида — не шаг)."""
         if self.work is None or not self._undo:
             return False
         snap = self._undo.pop()
         self._redo.append(self._snapshot(snap[2]))
-        self.set_direction(snap[2])
         self._restore(snap)
         return True
 
@@ -549,7 +549,6 @@ class ProfilesPage(QWidget):
             return False
         snap = self._redo.pop()
         self._undo.append(self._snapshot(snap[2]))
-        self.set_direction(snap[2])
         self._restore(snap)
         return True
 

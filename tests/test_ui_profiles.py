@@ -1983,6 +1983,31 @@ def test_undo_redo_switch_to_direction_of_the_step(window, app):
     assert page.redo() and page.direction == FORWARD and src not in page.work.rules
 
 
+def test_undo_redo_builds_once(window, app, monkeypatch):
+    """Один шаг отмены/повтора — одна перестройка вида (правка, смена карты, шаг другого направления)."""
+    from remap.core.profile import FORWARD, REVERSE
+    page, ed = cables_page(window, accept=False)
+    builds = []
+    build = ed._build
+    monkeypatch.setattr(ed, "_build", lambda **kw: (builds.append(kw), build(**kw)))
+
+    def count(step) -> int:
+        builds.clear()
+        assert step()
+        return len(builds)
+
+    key, notes = three_note_articulation(page.work)
+    page.connect_to(notes[:1], "a:" + key)
+    assert count(page.undo) == 1 and count(page.redo) == 1
+    page.answers["confirm"] = True
+    page.choose_map("target", MapRef(TEMPLATE, "General MIDI"))
+    assert count(page.undo) == 1 and count(page.redo) == 1
+    page.set_direction(REVERSE)
+    assert count(page.undo) == 1 and page.direction == FORWARD and ed.direction == FORWARD
+    page.set_direction(REVERSE)
+    assert count(page.redo) == 1 and page.direction == FORWARD and ed.direction == FORWARD
+
+
 def test_reverse_edit_back_to_derived_is_automatic_again(window, app):
     page, ed = reverse_page(window)
     w = page.work
