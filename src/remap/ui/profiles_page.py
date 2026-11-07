@@ -3,7 +3,7 @@ Duplicate, Rename, Delete] [Save] | [карта SOURCE ▾] [⇄] [карта TA
 и сцена «кабелями» (cable_view.py). Отмены правок — Ctrl+Z / Ctrl+Y, клавиши Revert нет. В нижней полосе — панель
 подсказок и статус: отклик на последнее действие (не счётчик), гаснет через ~4 с.
 
-Направление: кнопка «⇄» (Swap source and target) переключает → / ←; в ← она цвета обратного направления, карты
+Направление: кнопка «⇄» (Swap source and target) переключает → / ← (направления цветом не различаем), карты
 сторон видны над колонками. Профиль открывается в →; переключение — не шаг отмены. В ← вид правит профиль work.reversed(): ядро вызывается
 на нём (assign_plan, assign_to_articulation, with_write_to, connect_same_numbers, apply_suggested), результат
 пишется назад — карта цели обратного профиля это КОПИЯ ИСХОДНОЙ карты (туда ложится Write to), его правила —
@@ -74,7 +74,7 @@ SUGGEST_TIP = ("Notes whose names match the target map, shown as dashed cables.\
 DISMISS_TIP = "Hide the suggestions for these maps"
 
 DIRECTION_SIDES = {FORWARD: "source", REVERSE: "target"}  # карта исходной стороны направления
-SWAP_TEXT, SWAP_TIP = "⇄", "Swap source and target"  # кнопка направления (здесь и на Convert); ← — цвет reverse
+SWAP_TEXT, SWAP_TIP = "⇄", "Swap source and target"  # кнопка направления (здесь и на Convert)
 
 
 def _undoable(fn):

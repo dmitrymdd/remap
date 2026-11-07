@@ -179,7 +179,7 @@ LABEL_FILES = ("BarlowCondensed-Medium.ttf", "BarlowCondensed-SemiBold.ttf")
 MONO_FAMILY = "Martian Mono"  # реальные имена выставляет load_fonts()
 LABEL_FAMILY = "Barlow Condensed"
 # Ось wdth Martian Mono (75–112.5). В макете корень — `font-stretch: 75%`, но UA-стиль `<button>`/`<input>` сбрасывает
-# её в 100 %: текст внутри кнопок и полей ввода шире, текст в span/div — уже (таблица — в отчёте шага 3b)
+# её в 100 %: текст внутри кнопок и полей ввода шире, текст в span/div — уже (таблица — `Claude outputs/redesign-3b-glass/report.md`)
 WDTH_TEXT = 75.0
 WDTH_BUTTON = 100.0
 LABEL_SPACING = 0.13  # межбуквенный интервал подписей по умолчанию, в em
@@ -323,7 +323,9 @@ def logo_png(kind: str, scale: int) -> Path:
     return Path(str(ASSETS / f"{kind}@{scale}x.png"))
 
 
-# Временный слой: старые ключи → новая палитра, чтобы страницы работали до перестройки. Убирается в шагах 3–5.
+# Временный слой: старые ключи → новая палитра для селекторов QSS `stylesheet()`. Ещё нужен: QMenu, QPlainTextEdit
+# (ReportDialog), QTableWidget / QHeaderView / ::indicator (диалог сохранения профиля), QLabel#status (нижняя полоса),
+# #suggestBar / #link / #muted (Profiles), QLineEdit, QPushButton, QToolTip.
 # Направления цветом не различаем: обратное (←) рисуется как прямое.
 LEGACY = {
     "bg": RECESS_BOTTOM,

@@ -2,7 +2,7 @@
 пакетом, итог каждого файла и окно Details, результат наружу (перетаскивание в DAW, Ctrl+C).
 
 Логики конвертации здесь нет — только вызов remap.core.convert_batch и показ отчёта; тексты — ui/convert_text.py.
-Перетаскивание файлов принимает всё окно: оно передаёт события сюда (`drag_enter()`, `drag_leave()`, `drop()`).
+Перетаскивание файлов принимает всё окно: оно передаёт события сюда (`drag_enter()`, `drag_leave()`, `drop_files()`).
 """
 from __future__ import annotations
 
@@ -77,8 +77,8 @@ class ReportDialog(QDialog):
 
 
 class ConvertPage(QWidget):
-    """Вкладка Convert. Состояние: `sources` (исходные файлы), `outputs` (готовые результаты), `results` (итог по
-    исходному файлу), `output_dir` (None — рядом с исходниками), `direction` (ui.ini). Сверху — полоса `strip`
+    """Вкладка Convert. Состояние: `sources` (исходные файлы), `results` (итог по исходному файлу), `output_dir`
+    (None — рядом с исходниками), `direction` (ui.ini); `outputs` (готовые результаты) вычисляется из `results`. Сверху — полоса `strip`
     (профиль, карты направления, «⇄», папка результатов)."""
 
     def __init__(self, storage: Storage, settings) -> None:
@@ -167,7 +167,7 @@ class ConvertPage(QWidget):
             lambda: self.strip.set_sections(section_width(self.input.width()), section_width(right.width())))
         root.addWidget(self.split, stretch=1)
 
-        # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Profiles
+        # TEMP: placement undecided — статус в нижней полосе под экранами, как на Profiles
         self.status = QLabel("Supports .mid and .midi files.")
         self.status.setObjectName("status")
         self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)

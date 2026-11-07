@@ -118,7 +118,7 @@ class MapsPage(QWidget):
             lambda: strip.set_sections(section_width(self.list.width()), section_width(self.notes.width())))
         root.addWidget(self.split, stretch=1)
 
-        # TEMP: placement undecided (step 7) — статус в нижней полосе под экранами, как на Convert
+        # TEMP: placement undecided — статус в нижней полосе под экранами, как на Convert
         self.status = QLabel()
         self.status.setObjectName("status")
         self.status.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)

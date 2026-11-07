@@ -76,7 +76,7 @@ class Storage:
         self.maps_dir = self.root / "maps"
         self.profiles_dir = self.root / "profiles"
 
-    # --- карты нот (REAPER MIDINoteNames) ---
+    # --- карты нот (JSON; legacy .txt — только чтение) ---
 
     def list_maps(self) -> tuple[list[Entry], list[StorageIssue]]:
         entries, issues = [], []

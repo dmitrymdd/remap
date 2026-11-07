@@ -1,11 +1,11 @@
-# PyInstaller spec для пробной сборки PySide6 (этап 5). Сборка папкой (onedir).
+# PyInstaller spec для пробной сборки PySide6. Сборка папкой (onedir).
 # Запуск: .venv\Scripts\pyinstaller remap_smoke.spec --noconfirm
 # Результат: dist\REMAPSmoke\REMAPSmoke.exe
 #
-# При переходе на настоящее приложение (этап 9) в Analysis нужно добавить данные пакета —
-# встроенные шаблоны карт src/remap/templates/maps/*.json:
+# Данных пакета здесь нет (datas=[]). Spec настоящего приложения (точка входа remap/__main__) должен добавить
+# встроенные шаблоны карт и assets (шрифты, текстуры, логотип); art/ не добавлять:
 #   from PyInstaller.utils.hooks import collect_data_files
-#   datas=collect_data_files("remap.templates")
+#   datas=collect_data_files("remap.templates") + collect_data_files("remap", includes=["assets/**"])
 
 a = Analysis(
     ["src/remap/ui/smoke.py"],
