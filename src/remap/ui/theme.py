@@ -324,24 +324,6 @@ def logo_png(kind: str, scale: int) -> Path:
     return Path(str(ASSETS / f"{kind}@{scale}x.png"))
 
 
-# Временный слой: старые ключи → новая палитра для селекторов QSS `stylesheet()`. Ещё нужен: QMenu, QPlainTextEdit
-# (ReportDialog), QTableWidget / QHeaderView / ::indicator (диалог сохранения профиля), QLineEdit, QPushButton, QToolTip.
-# Направления цветом не различаем: обратное (←) рисуется как прямое.
-LEGACY = {
-    "bg": RECESS_BOTTOM,
-    "surface": KEY_TOP,
-    "border": TOOLTIP_BORDER,
-    "text": SCREEN_TEXT,
-    "text_muted": SILK_TEXT,
-    "text_faint": SILK_FAINT,
-    "accent": ACCENT,
-    "on_accent": SCREEN_GLASS_OUTER,
-    "selection": SCREEN_BORDER,
-    "accent_muted": CHIP_BORDER,
-}
-TOKENS = LEGACY
-
-
 def qss_rgba(c: RGBA) -> str:
     r, g, b, a = c
     return f"rgba({r}, {g}, {b}, {round(a * 100)}%)"
@@ -425,7 +407,9 @@ def install_app_font() -> QFont:
 
 
 def stylesheet() -> str:
-    t = TOKENS
+    """QSS окна — только для того, что рисует Qt, а не мы: подсказки, меню, системные диалоги (кнопки QMessageBox /
+    QInputDialog / QDialogButtonBox, поле QInputDialog), окно отчёта (QPlainTextEdit) и таблица диалога сохранения
+    профиля (QTableWidget, заголовки, флажки), полосы прокрутки в них. Цвета — прямо токены темы."""
     mono, label = f'"{MONO_FAMILY}"', f'"{LABEL_FAMILY}"'
     body = (f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {BODY_TOP}, stop:{BODY_MID_AT} {BODY_MID}, "
             f"stop:1 {BODY_BOTTOM})")
@@ -433,7 +417,7 @@ def stylesheet() -> str:
     key_hover = f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {KEY_HOVER_TOP}, stop:1 {KEY_HOVER_BOTTOM})"
     key_down = f"qlineargradient(x1:0, y1:0, x2:0, y2:1, stop:0 {KEY_PRESSED_TOP}, stop:1 {KEY_PRESSED_BOTTOM})"
     return f"""
-    QWidget {{ background: transparent; color: {t['text']}; }}  /* шрифт — приложения (install_app_font) */
+    QWidget {{ background: transparent; color: {SCREEN_TEXT}; }}  /* шрифт — приложения (install_app_font) */
     QMainWindow {{ background: {BODY_BOTTOM}; }}  /* металл центрального виджета рисует ui/metal.py */
     QDialog {{ background: {body}; }}
     QToolTip {{ background: {TOOLTIP_BG}; color: {TOOLTIP_TEXT}; border: 1px solid {TOOLTIP_BORDER};
@@ -442,51 +426,34 @@ def stylesheet() -> str:
                    border-radius: {KEY_RADIUS}px; padding: 7px 14px; }}
     QPushButton:hover {{ background: {key_hover}; }}
     QPushButton:pressed {{ background: {key_down}; }}
-    QPushButton:disabled {{ color: {t['text_faint']}; }}
-    QComboBox {{ background: {t['surface']}; border: 1px solid {t['border']}; border-radius: 6px;
-                 padding: 5px 24px 5px 10px; }}
-    /* без font-size: шрифт в px из QSS при открытии списка даёт «QFont::setPointSize: Point size <= 0»; текст
-       комбо рисует ui/combo.py */
-    QComboBox:hover {{ border-color: {t['accent']}; }}
-    /* стрелку рисует ui/combo.py (ComboBox): у ::drop-down своей рамки нет — иначе справа двойная граница */
-    QComboBox::drop-down {{ subcontrol-origin: padding; subcontrol-position: center right; width: 20px;
-                            border: none; background: transparent; }}
-    QComboBox::down-arrow {{ image: none; width: 0; height: 0; }}
-    QComboBox QAbstractItemView {{ background: {t['surface']}; border: 1px solid {t['border']};
-                                   selection-background-color: {t['accent']};
-                                   selection-color: {t['on_accent']}; }}
-    QPlainTextEdit {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
+    QPushButton:disabled {{ color: {SILK_FAINT}; }}
+    QPlainTextEdit {{ background: {RECESS_BOTTOM}; border: 1px solid {TOOLTIP_BORDER}; border-radius: 8px;
                       padding: 6px; font-family: {mono}; font-size: 12px; }}
     QScrollBar:vertical {{ background: transparent; width: 10px; margin: 2px; }}
-    QScrollBar::handle:vertical {{ background: {t['border']}; border-radius: 3px; min-height: 24px; }}
-    QScrollBar::handle:vertical:hover {{ background: {t['text_faint']}; }}
+    QScrollBar::handle:vertical {{ background: {SCROLL_HANDLE}; border-radius: 3px; min-height: 24px; }}
+    QScrollBar::handle:vertical:hover {{ background: {SCROLL_HANDLE_HOVER}; }}
     QScrollBar::add-line, QScrollBar::sub-line, QScrollBar::add-page, QScrollBar::sub-page {{
         background: none; height: 0; }}
 
-    QTableWidget {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 8px;
-                               outline: none; font-family: {mono}; font-size: 12px; }}
-    QTableWidget {{ gridline-color: {t['border']}; selection-background-color: {t['selection']};
-                  selection-color: {t['text']}; }}
-    QHeaderView::section {{ background: {t['bg']}; color: {t['text_muted']}; border: none;
-                            border-bottom: 1px solid {t['border']}; padding: 4px 6px; font-family: {label};
+    QTableWidget {{ background: {RECESS_BOTTOM}; border: 1px solid {TOOLTIP_BORDER}; border-radius: 8px; outline: none;
+                    font-family: {mono}; font-size: 12px; gridline-color: {TOOLTIP_BORDER};
+                    selection-background-color: {SCREEN_BORDER}; selection-color: {SCREEN_TEXT}; }}
+    QHeaderView::section {{ background: {RECESS_BOTTOM}; color: {SILK_TEXT}; border: none;
+                            border-bottom: 1px solid {TOOLTIP_BORDER}; padding: 4px 6px; font-family: {label};
                             font-size: 10pt; font-weight: 600; }}
-    QTableWidget QLineEdit {{ border-radius: 0; padding: 0 4px; }}
-    QLineEdit {{ background: {t['bg']}; border: 1px solid {t['border']}; border-radius: 6px;
-                 padding: 5px 8px; font-family: {mono}; font-size: 12px; selection-background-color: {t['accent']};
-                 selection-color: {t['on_accent']}; }}
-    QLineEdit:focus {{ border-color: {t['accent']}; }}
-    QMenu {{ background: {t['surface']}; border: 1px solid {t['border']}; padding: 4px; }}
+    QTableWidget::indicator {{ width: 14px; height: 14px; border: 1px solid {SILK_FAINT}; border-radius: 3px;
+                               background: {RECESS_BOTTOM}; }}
+    QTableWidget::indicator:checked {{ background: {ACCENT}; border-color: {ACCENT}; }}
+    QTableWidget::indicator:hover {{ border-color: {ACCENT}; }}
+    QTableWidget::indicator:disabled {{ border-color: {TOOLTIP_BORDER}; background: {KEY_TOP}; }}
+    QTableWidget::indicator:checked:disabled {{ background: {CHIP_BORDER}; border-color: {CHIP_BORDER}; }}
+    QLineEdit {{ background: {RECESS_BOTTOM}; border: 1px solid {TOOLTIP_BORDER}; border-radius: 6px;
+                 padding: 5px 8px; font-family: {mono}; font-size: 12px; selection-background-color: {ACCENT};
+                 selection-color: {SCREEN_GLASS_OUTER}; }}
+    QLineEdit:focus {{ border-color: {ACCENT}; }}
+    QMenu {{ background: {KEY_TOP}; border: 1px solid {TOOLTIP_BORDER}; padding: 4px; }}
     QMenu::item {{ padding: 6px 18px; border-radius: 4px; }}
-    QMenu::item:selected {{ background: {t['accent']}; color: {t['on_accent']}; }}
-    QTableWidget::indicator {{ width: 14px; height: 14px; border: 1px solid {t['text_faint']};
-                                                   border-radius: 3px; background: {t['bg']}; }}
-    QTableWidget::indicator:checked {{ background: {t['accent']};
-                                                                   border-color: {t['accent']}; }}
-    QTableWidget::indicator:hover {{ border-color: {t['accent']}; }}
-    QTableWidget::indicator:disabled {{ border-color: {t['border']};
-                                                                     background: {t['surface']}; }}
-    QTableWidget::indicator:checked:disabled {{
-        background: {t['accent_muted']}; border-color: {t['accent_muted']}; }}
+    QMenu::item:selected {{ background: {ACCENT}; color: {SCREEN_GLASS_OUTER}; }}
     """
 
 

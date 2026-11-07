@@ -13,8 +13,6 @@ from remap.ui import theme
 
 UI_DIR = Path(theme.__file__).parent
 OLD_PALETTE = ["#E18147", "#EA9564", "#6B4632", "#4D3628", "#3A3224", "#4FB0C6", "#74C4D6"]
-LEGACY_KEYS = ["bg", "surface", "border", "text", "text_muted", "text_faint", "accent",
-               "on_accent", "selection", "accent_muted"]
 
 
 def _constants():
@@ -36,12 +34,23 @@ def test_rgba_constants_are_valid():
     assert theme.qss_rgba(theme.CHIP_BG) == "rgba(110, 190, 140, 7%)"
 
 
-def test_legacy_layer_maps_every_old_key():
-    assert theme.TOKENS is theme.LEGACY
-    assert list(theme.LEGACY) == LEGACY_KEYS
-    assert all(QColor(v).isValid() for v in theme.LEGACY.values())
-    dead = {"error", "warning", "warning_bg", "reverse", "reverse_hover", "surface_hover", "success", "accent_hover"}
-    assert not dead & set(theme.LEGACY)  # мёртвые убраны
+def test_legacy_layer_is_gone():
+    """Слоя старых ключей нет: QSS берёт токены темы напрямую."""
+    assert not hasattr(theme, "LEGACY") and not hasattr(theme, "TOKENS")
+    source = Path(theme.__file__).read_text(encoding="utf-8")
+    body = source[source.index("def stylesheet()"):source.index("def repolish")]
+    assert "t[" not in body and "LEGACY" not in body and "TOKENS" not in body
+
+
+def test_stylesheet_styles_only_what_qt_draws():
+    """Свои виджеты (комбо, поля, клавиши) рисуются сами: правил для них в QSS нет."""
+    css = theme.stylesheet()
+    selectors = {line.split("{")[0].strip() for line in css.splitlines() if "{" in line}
+    selectors = {s for s in selectors if s}
+    assert not [s for s in selectors if "QComboBox" in s or "QTableWidget QLineEdit" in s]
+    assert {"QToolTip", "QMenu", "QPlainTextEdit", "QTableWidget", "QHeaderView::section", "QLineEdit",
+            "QPushButton"} <= selectors
+    assert theme.SCROLL_HANDLE in css  # полосы диалогов — как у экранов
 
 
 def test_no_old_palette_left_in_ui():

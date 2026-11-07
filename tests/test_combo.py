@@ -20,7 +20,7 @@ ITEMS = ["EZD3 – SD3", "GM – SD3", "My kit"]
 def fonts(app):
     theme.load_fonts()
     theme.install_app_font()
-    app.setStyleSheet(theme.stylesheet())  # как в приложении: общая таблица со старыми правилами QComboBox
+    app.setStyleSheet(theme.stylesheet())  # как в приложении
     yield
     app.setStyleSheet("")
 
@@ -322,12 +322,21 @@ def test_popup_flips_above_when_there_is_no_room_below(app):
     host.close()
 
 
-def test_old_stylesheet_does_not_leak_into_the_new_face(app):
-    """В общей таблице стилей ещё лежат правила QComboBox для старых страниц; лицо рисуется само и их не использует."""
-    assert "QComboBox" in theme.stylesheet()
+def test_app_stylesheet_does_not_touch_the_combo(app):
+    """Правил QComboBox в QSS окна нет: лицо рисуется само, а размер с таблицей стилей и без неё один и тот же."""
+    assert "QComboBox" not in theme.stylesheet()
     combo = combo_with()
     combo.setFixedWidth(132)
     host = Host(app, combo)
-    assert face_pixel(combo, 60, 0.5) == rgb(theme.FIELD_BORDER) and face_pixel(combo, 60, 20) != rgb(theme.LEGACY["surface"])
+    assert face_pixel(combo, 60, 0.5) == rgb(theme.FIELD_BORDER) and face_pixel(combo, 60, 20) != rgb(theme.KEY_TOP)
     host.close()
+    for caption in (None, "PROFILE"):
+        styled = combo_with(caption=caption)
+        styled.ensurePolished()
+        hints = (styled.sizeHint(), styled.minimumSizeHint())
+        app.setStyleSheet("")
+        plain = combo_with(caption=caption)
+        plain.ensurePolished()
+        assert (plain.sizeHint(), plain.minimumSizeHint()) == hints
+        app.setStyleSheet(theme.stylesheet())
     assert QRectF is not None and QImage is not None  # импорты нужны другим тестам этого файла

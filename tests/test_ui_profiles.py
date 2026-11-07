@@ -2216,7 +2216,7 @@ def test_comboboxes_draw_own_arrow_and_style_popup(window, app):
     from remap.ui.combo import ComboBox
     page = window.profiles_page
     assert isinstance(page.combo, ComboBox) and isinstance(window.convert_page.profile_combo, ComboBox)
-    assert "QComboBox::drop-down" in window.styleSheet() and "border: none" in window.styleSheet()
+    assert "QComboBox" not in window.styleSheet()  # лицо и стрелку комбо рисует ui/combo.py, QSS их не касается
     window.show()
     page.combo.showPopup()
     app.processEvents()
