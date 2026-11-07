@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+from .fileio import atomic_write_bytes
 from .notemap import NoteMap, articulations, primary_note
 
 HEADER = "# MIDI note/CC name map"
@@ -121,4 +122,4 @@ def export_notenames(m: NoteMap, primary_only: bool = False) -> str:
 
 
 def save_notenames(m: NoteMap, path: str | Path, primary_only: bool = False) -> None:
-    Path(path).write_bytes(export_notenames(m, primary_only).encode("utf-8"))
+    atomic_write_bytes(path, export_notenames(m, primary_only).encode("utf-8"))

@@ -7,15 +7,14 @@ ID записи — имя файла без расширения; отобра�
 """
 from __future__ import annotations
 
-import contextlib
 import os
 import re
 import sys
-import tempfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
+from .core.fileio import atomic_write_bytes
 from .core.notemap import NoteMap, map_from_json, map_to_json
 from .core.notenames import ParseIssue, load_notenames
 from .core.profile import RemapProfile
@@ -215,14 +214,4 @@ def _atomic_write(path: Path, data: bytes, overwrite: bool) -> None:
     if path.exists() and not overwrite:
         raise FileExistsError(f"file already exists: {path}")
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=f".{path.stem}.", suffix=".tmp")
-    try:
-        with os.fdopen(fd, "wb") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(tmp, path)
-    except BaseException:
-        with contextlib.suppress(OSError):
-            os.unlink(tmp)
-        raise
+    atomic_write_bytes(path, data)

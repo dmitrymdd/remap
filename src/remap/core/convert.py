@@ -1,6 +1,7 @@
 """Движок конвертации MIDI по профилю ремапа (без Qt и без UI)."""
 from __future__ import annotations
 
+import io
 from collections import Counter, deque
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -9,6 +10,7 @@ from typing import Literal
 
 import mido
 
+from .fileio import atomic_write_bytes
 from .profile import (
     FORWARD, KEEP_DIFFERENT, KEEP_NOT_IN_TARGET, Action, RemapProfile, Rule, check_note, keep_issue,
 )
@@ -297,6 +299,8 @@ def convert(src: str | Path, dst: str | Path, profile: RemapProfile,
         out.tracks.append(_convert_track(track, rules.__getitem__, report, merge_window_ticks))
     report.warnings = _warnings(profile, scan, report.notes)
     report.profile_notes = _profile_notes(profile)
-    out.save(str(dst))
+    buf = io.BytesIO()
+    out.save(file=buf)
+    atomic_write_bytes(dst, buf.getvalue())
     return report
 
