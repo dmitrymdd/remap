@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ..core import ConversionReport, FileResult
+from ..core import ConversionReport, FileResult, OutputConflict
 
 MIDI_EXTS = {".mid", ".midi"}
 
@@ -91,20 +91,33 @@ READY, OK, WARN, ERROR = "ready", "ok", "warn", "error"
 READY_LINE = "Ready"
 
 
-def file_state(res: FileResult | None) -> str:
-    """ready — ещё не конвертировали; error — не сконвертирован; warn — есть предупреждения отчёта; иначе ok."""
+def file_state(res: FileResult | None, conflict: OutputConflict | None = None) -> str:
+    """ready — ещё не конвертировали; warn — ещё не конвертировали, но имя результата занято (`conflict`, CONVERT
+    его пропустит) или есть предупреждения отчёта; error — не сконвертирован; иначе ok. Результат важнее конфликта."""
     if res is None:
-        return READY
+        return WARN if conflict is not None else READY
     if not res.ok:
         return ERROR
     return WARN if res.report.warnings else OK
 
 
-def state_tip(res: FileResult | None) -> tuple[str, str] | None:
-    """Подсказка LED и строки результата: (заголовок, текст) — что значит состояние; до конвертации — нет."""
-    state = file_state(res)
+def conflict_line(conflict: OutputConflict) -> str:
+    """Вторая строка файла, который CONVERT пропустит из-за имени результата."""
+    if conflict.overwrites_source:
+        return "Output would overwrite a source · will be skipped"
+    return "Output name taken · will be skipped"
+
+
+def state_tip(res: FileResult | None, conflict: OutputConflict | None = None) -> tuple[str, str] | None:
+    """Подсказка LED и строки результата: (заголовок, текст) — что значит состояние; до конвертации — только у
+    конфликта имён (с каким файлом он)."""
+    state = file_state(res, conflict)
     if state == READY:
         return None
+    if res is None:
+        clash = (f"{conflict.dst.name} would overwrite the source file\n{conflict.other}" if conflict.overwrites_source
+                 else f"{conflict.dst.name} is already the result of\n{conflict.other}")
+        return "Will not be converted", f"{clash}\nRemove one of the files or choose another output folder."
     if state == ERROR:
         return "Not converted", (res.error or "Failed").strip()
     if state == WARN:

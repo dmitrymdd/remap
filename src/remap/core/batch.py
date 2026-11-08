@@ -47,6 +47,44 @@ class BatchResult:
         return [f.dst for f in self.succeeded]
 
 
+@dataclass(frozen=True)
+class OutputConflict:
+    """Результат `src` не будет записан: имя `dst` уже занял результат исходника `other` (выше в пачке) или `dst` —
+    это другой исходник пачки `other` (`overwrites_source`)."""
+    src: Path
+    dst: Path
+    other: Path
+    overwrites_source: bool = False
+
+    @property
+    def message(self) -> str:
+        if self.overwrites_source:
+            return f"Output would overwrite another source file: {self.dst.name}"
+        return f"Output name collides with the result of {self.other.name}: {self.dst.name}"
+
+
+def output_conflicts(sources: Iterable[Path], output_dir: Path | None = None) -> list[OutputConflict | None]:
+    """Конфликты имён внутри пачки, по порядку `sources` (None — конфликта нет). Пути сравниваются `path_key()`
+    (на Windows без различия регистра). Имя занимает первый файл; файл с конфликтом имя не занимает."""
+    sources = list(sources)
+    source_by_key = {}
+    for s in sources:
+        source_by_key.setdefault(path_key(s), s)
+    claimed: dict[str, Path] = {}
+    out: list[OutputConflict | None] = []
+    for src in sources:
+        dst = output_path_for(src, output_dir)
+        key = path_key(dst)
+        if key in claimed:
+            out.append(OutputConflict(src, dst, claimed[key]))
+        elif key in source_by_key:
+            out.append(OutputConflict(src, dst, source_by_key[key], overwrites_source=True))
+        else:
+            claimed[key] = src
+            out.append(None)
+    return out
+
+
 def convert_batch(sources: Iterable[Path], profile: RemapProfile, direction: str = FORWARD,
                   output_dir: Path | None = None,
                   convert_fn: Callable[..., ConversionReport] = convert) -> BatchResult:
@@ -54,11 +92,11 @@ def convert_batch(sources: Iterable[Path], profile: RemapProfile, direction: str
 
     Существующий файл результата перезаписывается (как при одном файле). Исключение — конфликты внутри самой
     пачки: два результата с одним именем (файлы из разных папок при общей output_dir) или результат, совпадающий
-    с другим исходником пачки, — такой файл не пишется и попадает в отчёт ошибкой (первый занявший имя пишется).
+    с другим исходником пачки, — такой файл не пишется и попадает в отчёт ошибкой (первый занявший имя пишется);
+    правило — `output_conflicts()`, по нему же Convert показывает конфликты до конвертации.
     """
     sources = list(sources)
-    source_keys = {path_key(s) for s in sources}
-    claimed: dict[str, Path] = {}
+    conflicts = output_conflicts(sources, output_dir)
     result = BatchResult()
     folder_error = None
     if output_dir is not None:
@@ -66,18 +104,12 @@ def convert_batch(sources: Iterable[Path], profile: RemapProfile, direction: str
             output_dir.mkdir(parents=True, exist_ok=True)
         except OSError as e:
             folder_error = f"Cannot create the output folder: {e}"
-    for src in sources:
+    for src, conflict in zip(sources, conflicts, strict=True):
         dst = output_path_for(src, output_dir)
-        key = path_key(dst)
-        error = folder_error
-        if error is None and key in claimed:
-            error = f"Output name collides with the result of {claimed[key].name}: {dst.name}"
-        elif error is None and key in source_keys:
-            error = f"Output would overwrite another source file: {dst.name}"
+        error = folder_error or (conflict.message if conflict is not None else None)
         if error is not None:
             result.files.append(FileResult(src, dst, error=error))
             continue
-        claimed[key] = src
         try:
             report = convert_fn(src, dst, profile, direction=direction)
         except Exception as exc:  # noqa: BLE001 — любая ошибка файла (битый MIDI, доступ): в отчёт, пачка дальше

@@ -1,5 +1,6 @@
 """Экран OUTPUT вкладки Convert: геометрия по макету, карточки, выделение, перетаскивание, двойной клик, Ctrl+A."""
 import shutil
+import sys
 from pathlib import Path
 
 import pytest
@@ -165,25 +166,53 @@ def test_results_reset_when_current_profile_is_resaved_with_other_rules(window, 
     assert page.results == {}  # тот же профиль с другими правилами — как смена профиля
 
 
-def test_same_named_sources_with_one_output_folder(window, tmp_path):
-    """Два «a.mid» из разных папок и общая папка результатов: до конвертации — две будущие карточки с одним путём
-    (выделение у них общее — ключ карточки путь); после — пишется только первый, второй — ошибкой без карточки,
-    файл первого не перезаписан."""
-    for folder in ("one", "two"):
+def _same_named(tmp_path, *names):
+    paths = []
+    for folder, name in zip(("one", "two", "three"), names, strict=False):
         (tmp_path / folder).mkdir()
-        shutil.copy(SAMPLE, tmp_path / folder / "a.mid")
+        shutil.copy(SAMPLE, tmp_path / folder / name)
+        paths.append((tmp_path / folder / name).resolve())
+    return paths
+
+
+def test_same_named_sources_with_one_output_folder(window, tmp_path):
+    """Два «a.mid» из разных папок и общая папка результатов: до конвертации — как сделает CONVERT. У первого —
+    будущая карточка, у второго карточки нет, его строка — предупреждение с подсказкой, чей результат занял имя;
+    после CONVERT пишется только первый, второй — ошибкой, файл первого не перезаписан."""
+    first, second = _same_named(tmp_path, "a.mid", "a.mid")
     page = window.convert_page
     page.set_output_dir(tmp_path / "out")
-    page._accept_files([tmp_path / "one" / "a.mid", tmp_path / "two" / "a.mid"])
+    page._accept_files([first, second])
     screen = page.output_screen
-    first, second = screen.cards()
-    assert first.path == second.path == tmp_path / "out" / "a_remapped.mid" and not first.ready
-    screen.card_clicked(second.path)
-    assert screen.card(second.path) is first  # одна и та же карточка по ключу: вторую отдельно не выделить
-    assert first.selected and second.selected
+    card, = screen.cards()
+    assert card.path == tmp_path / "out" / "a_remapped.mid" and not card.ready
+    ok_row, clash_row = page.input._rows
+    assert (ok_row.state, ok_row.line) == ("ready", "Ready")
+    assert clash_row.state == "warn" and clash_row.line == "Output name taken · will be skipped"
+    tip_html = clash_row.tooltip_at(clash_row.line_rect().center())
+    assert "Will not be converted" in tip_html and str(first) in tip_html
     page.convert()
     QApplication.processEvents()
     assert [(c.path.name, c.ready) for c in screen.cards()] == [("a_remapped.mid", True)]
-    ok, clash = (page.results[s.resolve()] for s in (tmp_path / "one" / "a.mid", tmp_path / "two" / "a.mid"))
+    ok, clash = (page.results[s] for s in (first, second))
     assert ok.ok and not clash.ok and "collides" in clash.error
     assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a_remapped.mid"]
+
+
+def test_name_conflict_clears_when_its_cause_goes(window, tmp_path):
+    """Конфликт уходит вместе с причиной: убрали первый файл — второй снова «Ready» со своей карточкой; рядом с
+    исходниками имена не сталкиваются. Регистр имени на Windows не важен (A.MID и a.mid — одно имя)."""
+    first, second = _same_named(tmp_path, "a.mid", "A.MID" if sys.platform == "win32" else "a.mid")
+    page = window.convert_page
+    page.set_output_dir(tmp_path / "out")
+    page._accept_files([first, second])
+    assert [r.state for r in page.input._rows] == ["ready", "warn"] and len(page.output_screen.cards()) == 1
+    page.set_output_dir(None)
+    assert [r.state for r in page.input._rows] == ["ready", "ready"]
+    assert {c.path.parent for c in page.output_screen.cards()} == {first.parent, second.parent}
+    page.set_output_dir(tmp_path / "out")
+    page.remove_sources([first])
+    row, = page.input._rows
+    assert (row.state, row.line) == ("ready", "Ready")
+    card, = page.output_screen.cards()
+    assert card.path.parent == tmp_path / "out" and not card.ready

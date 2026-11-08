@@ -4,8 +4,13 @@ from pathlib import Path
 
 import mido
 
+import os
+
+import pytest
+
 from remap.core import (
-    CategoryCount, ConversionReport, RemapProfile, Rule, analyze, convert, convert_batch, output_path_for,
+    CategoryCount, ConversionReport, RemapProfile, Rule, analyze, convert, convert_batch, output_conflicts,
+    output_path_for,
 )
 
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "midi" / "Groove 01.mid"
@@ -138,3 +143,40 @@ def test_batch_passes_direction_and_empty_input(tmp_path):
     assert convert_batch([], RemapProfile(name="p")).files == []
     assert convert_batch([a], RemapProfile(name="p"), direction="reverse", convert_fn=fake).files[0].ok
     assert seen == ["reverse"]
+
+
+# --- правило конфликтов имён: одно на пачку и на показ до конвертации ---
+
+def test_output_conflicts_first_claims_the_name(tmp_path):
+    a1, a2, b = tmp_path / "one" / "a.mid", tmp_path / "two" / "a.mid", tmp_path / "one" / "b.mid"
+    out = tmp_path / "out"
+    first, second, third = output_conflicts([a1, a2, b], out)
+    assert first is None and third is None
+    assert (second.src, second.dst, second.other, second.overwrites_source) == (a2, out / "a_remapped.mid", a1, False)
+    assert second.message == "Output name collides with the result of a.mid: a_remapped.mid"
+    assert output_conflicts([a1, a2, b]) == [None, None, None]  # рядом с исходниками — разные папки
+
+
+def test_output_conflicts_result_onto_another_source(tmp_path):
+    a, a_remapped = tmp_path / "a.mid", tmp_path / "a_remapped.mid"
+    conflict, free = output_conflicts([a, a_remapped])
+    assert free is None and conflict.overwrites_source and conflict.other == a_remapped
+    assert conflict.message == "Output would overwrite another source file: a_remapped.mid"
+
+
+@pytest.mark.skipif(os.name != "nt", reason="регистр имён не важен только на Windows")
+def test_output_conflicts_ignore_case_on_windows(tmp_path):
+    a1, a2 = tmp_path / "one" / "a.mid", tmp_path / "two" / "A.MID"
+    assert output_conflicts([a1, a2], tmp_path / "out")[1].other == a1
+
+
+def test_batch_errors_are_the_shared_conflicts(tmp_path):
+    """convert_batch пишет ровно то, что предсказывает output_conflicts: тот же файл, тот же текст."""
+    _, profile = _profile()
+    for folder in ("one", "two"):
+        (tmp_path / folder).mkdir()
+        shutil.copy(SAMPLE, tmp_path / folder / "groove.mid")
+    sources = [tmp_path / "one" / "groove.mid", tmp_path / "two" / "groove.mid"]
+    predicted = output_conflicts(sources, tmp_path / "out")
+    result = convert_batch(sources, profile, output_dir=tmp_path / "out")
+    assert [f.error for f in result.files] == [c.message if c else None for c in predicted]

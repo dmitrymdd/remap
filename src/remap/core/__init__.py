@@ -1,4 +1,4 @@
-from .batch import BatchResult, FileResult, convert_batch, output_path_for
+from .batch import BatchResult, FileResult, OutputConflict, convert_batch, output_conflicts, output_path_for
 from .convert import (
     Analysis, CategoryCount, ConversionReport, NoteResult, ReportTotals, analyze, convert, effective_rule,
 )
@@ -6,6 +6,6 @@ from .profile import FORWARD, REVERSE, ProfileFormatError, RemapProfile, Rule, l
 
 __all__ = [
     "FORWARD", "REVERSE", "Analysis", "BatchResult", "CategoryCount", "ConversionReport", "FileResult",
-    "NoteResult", "ProfileFormatError", "RemapProfile", "ReportTotals", "Rule", "analyze", "convert",
-    "convert_batch", "effective_rule", "legacy_profile", "output_path_for",
+    "NoteResult", "OutputConflict", "ProfileFormatError", "RemapProfile", "ReportTotals", "Rule", "analyze", "convert",
+    "convert_batch", "effective_rule", "legacy_profile", "output_conflicts", "output_path_for",
 ]

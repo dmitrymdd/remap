@@ -7,8 +7,8 @@ from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
-from remap.core import FileResult
-from remap.ui.convert_text import file_state, state_tip, totals_parts
+from remap.core import FileResult, OutputConflict
+from remap.ui.convert_text import conflict_line, file_state, state_tip, totals_parts
 from remap.ui.main_window import PAGE_CONVERT, MainWindow
 from remap.storage import Storage
 
@@ -76,6 +76,19 @@ def test_states_lines_and_totals(tmp_path):
     assert totals_parts([ok, warn, err]) == [("2 CONVERTED", "ok"), ("1 WITH WARNINGS", "warn"), ("1 FAILED", "error")]
     assert totals_parts([ok]) == [("1 CONVERTED", "ok")]  # нули предупреждений и ошибок не пишутся
 
+
+
+def test_name_conflict_before_conversion_is_a_warning(tmp_path):
+    """До конвертации занятое имя результата — предупреждение с тем, чей это результат; готовый результат важнее."""
+    clash = OutputConflict(tmp_path / "two" / "a.mid", tmp_path / "out" / "a_remapped.mid", tmp_path / "one" / "a.mid")
+    onto = OutputConflict(tmp_path / "a.mid", tmp_path / "a_remapped.mid", tmp_path / "a_remapped.mid", True)
+    assert file_state(None, clash) == "warn" and conflict_line(clash) == "Output name taken · will be skipped"
+    title, body = state_tip(None, clash)
+    assert title == "Will not be converted" and str(tmp_path / "one" / "a.mid") in body
+    assert "overwrite the source file" in state_tip(None, onto)[1]
+    assert conflict_line(onto) == "Output would overwrite a source · will be skipped"
+    err = FileResult(clash.src, clash.dst, error=clash.message)
+    assert file_state(err, clash) == "error" and state_tip(err, clash) == ("Not converted", clash.message)
 
 def test_explorer_selection_with_mouse_and_ctrl_a(window, tmp_path):
     add_files(window, tmp_path, "a.mid", "b.mid", "c.mid", "d.mid")

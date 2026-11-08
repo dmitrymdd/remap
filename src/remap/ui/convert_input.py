@@ -16,9 +16,11 @@ from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QScrollArea, QSizePolicy, QToolTip, QVBoxLayout, QWidget,
 )
 
-from ..core import FileResult
+from ..core import FileResult, OutputConflict
 from . import text, theme
-from .convert_text import ERROR, OK, READY, READY_LINE, WARN, file_state, result_line, state_tip, totals_parts
+from .convert_text import (
+    ERROR, OK, READY, READY_LINE, WARN, conflict_line, file_state, result_line, state_tip, totals_parts,
+)
 from .field import ScreenButton
 from .glass import Screen
 from .icons import ICONS, draw_icon
@@ -80,13 +82,17 @@ def _paint_frame(p: QPainter, rect: QRectF, radius: float, hot: bool) -> None:
 
 
 class FileRow(QWidget):
-    """Строка файла. `state` — ready / ok / warn / error; `line` — текст второй строки; `selected` — ставит список."""
+    """Строка файла. `state` — ready / ok / warn / error; `line` — текст второй строки; `selected` — ставит список.
+    `conflict` — имя результата занято (до конвертации: строка — предупреждением, CONVERT файл пропустит)."""
 
-    def __init__(self, path: Path, res: FileResult | None, owner: InputScreen) -> None:
+    def __init__(self, path: Path, res: FileResult | None, owner: InputScreen,
+                 conflict: OutputConflict | None = None) -> None:
         super().__init__()
         self.path, self.res, self._owner = path, res, owner
-        self.state = file_state(res)
-        self.line = result_line(res) if res is not None else READY_LINE
+        self.conflict = conflict if res is None else None  # готовый результат важнее
+        self.state = file_state(res, self.conflict)
+        self.line = (result_line(res) if res is not None else conflict_line(self.conflict) if self.conflict is not None
+                     else READY_LINE)
         self.selected = False
         self._hover: str | None = None
         self._pressed: str | None = None
@@ -201,7 +207,7 @@ class FileRow(QWidget):
             return tip(REMOVE_SELECTED_TIP if many else REMOVE_TIP)
         if hit == "details":
             return tip(DETAILS_TIP)
-        meaning = state_tip(self.res)
+        meaning = state_tip(self.res, self.conflict)
         line = self.line_rect()
         zone = QRectF(self.led_rect().left() - 2, line.top(), line.right() - self.led_rect().left() + 2, line.height())
         if meaning is not None and zone.contains(pos):
@@ -392,15 +398,18 @@ class InputScreen(RecessedBlock):
     def row(self, path: Path) -> FileRow | None:
         return next((r for r in self._rows if r.path == path), None)
 
-    def set_files(self, paths: list[Path], results: dict[Path, FileResult]) -> None:
-        """Строки по файлам (у каждого — его результат, если уже конвертировали); выделение остаётся у оставшихся."""
+    def set_files(self, paths: list[Path], results: dict[Path, FileResult],
+                  conflicts: dict[Path, OutputConflict] | None = None) -> None:
+        """Строки по файлам (у каждого — его результат, если уже конвертировали, или конфликт имени результата);
+        выделение остаётся у оставшихся."""
+        conflicts = conflicts or {}
         box = self._body.box
         while box.count():
             item = box.takeAt(0)
             if item.widget() is not None and item.widget() is not self.drop_zone:
                 item.widget().hide()
                 item.widget().deleteLater()
-        self._rows = [FileRow(path, results.get(path), self) for path in paths]
+        self._rows = [FileRow(path, results.get(path), self, conflicts.get(path)) for path in paths]
         for row in self._rows:
             box.addWidget(row)
         box.addSpacing(theme.DROP_TOP_EXTRA)

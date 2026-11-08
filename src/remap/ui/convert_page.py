@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QMenu, QVBoxLayout, QWidget,
 )
 
-from ..core import FileResult, RemapProfile, convert_batch, output_path_for
+from ..core import FileResult, RemapProfile, convert_batch, output_conflicts, output_path_for
 from ..core.profile import FORWARD, REVERSE
 from ..storage import Storage
 from . import theme
@@ -315,13 +315,18 @@ class ConvertPage(QWidget):
 
     def _show_files(self) -> None:
         """Строки INPUT и карточки OUTPUT по `sources` и `results`: готовый результат — карточка, будущий (ещё не
-        конвертировали) — приглушённая карточка, у несконвертированного файла карточки нет."""
-        self.input.set_files(self.sources, self.results)
+        конвертировали) — приглушённая карточка, у несконвертированного файла карточки нет. Будущего результата нет и
+        у файла, который CONVERT пропустит из-за имени (`output_conflicts()`, правило пачки): его строка — с
+        предупреждением, так что на один путь — одна карточка."""
+        conflicts = {src: c for src, c in zip(self.sources, output_conflicts(self.sources, self.output_dir), strict=True)
+                     if c is not None}
+        self.input.set_files(self.sources, self.results, conflicts)
         cards = []
         for src in self.sources:
             res = self.results.get(src)
             if res is None:
-                cards.append((output_path_for(src, self.output_dir), False))
+                if src not in conflicts:
+                    cards.append((output_path_for(src, self.output_dir), False))
             elif res.ok:
                 cards.append((res.dst, True))
         self.output_screen.set_cards(cards)
