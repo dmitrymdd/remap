@@ -17,7 +17,7 @@ from PySide6.QtWidgets import QAbstractButton, QApplication, QWidget
 
 from . import text, theme
 from .keys import TUT, Key, key_margins
-from .metal import _Backdrop, inner_shadow, outer_shadow, paint_metal
+from .metal import Backdrop, inner_shadow, outer_shadow, paint_metal
 from .theme import qcolor
 from .tips import tip
 
@@ -140,7 +140,7 @@ class TutorialPlate(QWidget):
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent)
-        self._backdrop = _Backdrop()
+        self._backdrop = Backdrop()
         self._counter = text.label(theme.TUT_COUNTER_FONT, spacing=theme.TUT_COUNTER_SPACING)
         self._title = text.label(theme.TUT_TITLE_FONT, spacing=theme.TUT_TITLE_SPACING)
         self._text = text.prose(theme.TUT_TEXT_FONT)

@@ -77,7 +77,7 @@ def paint_metal(painter: QPainter, shape: QRect | QRectF | QPainterPath, radius:
     painter.restore()
 
 
-class _Backdrop:
+class Backdrop:
     """Кэш готового фона виджета: пересобирается только при смене размера, DPR или положения в окне. Положение важно
     лишь тексту металла (`textured`); у стекла и полей без текстуры сдвиг виджета фон не трогает.
 
@@ -129,7 +129,7 @@ def _vertical(top: str, bottom: str, height: float, y0: float = 0) -> QBrush:
     return QBrush(g)
 
 
-def _elliptical(w: float, h: float, spec: dict, stops: list[tuple[float, theme.RGBA]]) -> QBrush:
+def elliptical(w: float, h: float, spec: dict, stops: list[tuple[float, theme.RGBA]]) -> QBrush:
     """Радиальный градиент CSS `ellipse rx ry at cx cy`: проценты — от ширины/высоты коробки (w×h)."""
     g = QRadialGradient(0, 0, 1)  # единичный круг, растягивается матрицей кисти до эллипса
     for at, color in stops:
@@ -175,7 +175,7 @@ class MetalBody(QWidget):
 
     def __init__(self, parent: QWidget | None = None, screws: bool = True) -> None:
         super().__init__(parent)
-        self._backdrop = _Backdrop()
+        self._backdrop = Backdrop()
         self.screws = [Screw(self) for _ in range(4 if screws else 0)]
 
     def _compose(self, p: QPainter, rect: QRect, origin: QPoint) -> None:
@@ -185,9 +185,9 @@ class MetalBody(QWidget):
             g.setColorAt(at, qcolor(color))
         p.fillRect(rect, QBrush(g))  # слои как в CSS макета, снизу вверх: градиент, виньетка, верхний свет
         v, t = theme.BODY_VIGNETTE, theme.BODY_TOPLIGHT
-        p.fillRect(rect, _elliptical(w, h, v, [(0, (0, 0, 0, 0)), (v["from"], (0, 0, 0, 0)), (1, (0, 0, 0, v["alpha"]))]))
+        p.fillRect(rect, elliptical(w, h, v, [(0, (0, 0, 0, 0)), (v["from"], (0, 0, 0, 0)), (1, (0, 0, 0, v["alpha"]))]))
         white = (255, 255, 255, t["alpha"])
-        p.fillRect(rect, _elliptical(w, h, t, [(0, white), (t["to"], (255, 255, 255, 0)), (1, (255, 255, 255, 0))]))
+        p.fillRect(rect, elliptical(w, h, t, [(0, white), (t["to"], (255, 255, 255, 0)), (1, (255, 255, 255, 0))]))
         p.fillRect(QRect(0, h - 1, w, 1), qcolor(theme.BODY_EDGE_DARK))  # inset-линии: нижняя, рамка, верхняя
         frame = qcolor(theme.BODY_EDGE_FRAME)
         for line in (QRect(0, 0, w, 1), QRect(0, h - 1, w, 1), QRect(0, 0, 1, h), QRect(w - 1, 0, 1, h)):
@@ -415,7 +415,7 @@ class RecessedBlock(QFrame):
     def __init__(self, parent: QWidget | None = None, margin: int = theme.RECESS_PAD) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self._backdrop = _Backdrop()
+        self._backdrop = Backdrop()
         self.body = QVBoxLayout(self)
         self.body.setContentsMargins(margin, margin + theme.RECESS_EDGE_TOP, margin, margin + theme.RECESS_EDGE_BOTTOM)
         self.body.setSpacing(8)
@@ -450,7 +450,7 @@ class Panel(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self._backdrop = _Backdrop(textured=False)
+        self._backdrop = Backdrop(textured=False)
         self.body = QHBoxLayout(self)
         self.body.setContentsMargins(0, 0, 0, 0)
         self.body.setSpacing(0)

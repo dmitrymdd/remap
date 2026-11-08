@@ -18,7 +18,7 @@ from . import text, theme
 from .field import field_height, field_margins, field_specs, paint_bezel, paint_field_text
 from .glass import ScreenScrollBar, paint_glass
 from .icons import ICONS, draw_icon
-from .metal import _Backdrop
+from .metal import Backdrop
 from .theme import qcolor
 
 POPUP_GAP = 5  # px от низа лица до списка: обод 3 + светлая линия 1 + 1 px воздуха
@@ -90,7 +90,7 @@ class _PopupFilter(QObject):
     def __init__(self, combo: "ComboBox") -> None:
         super().__init__(combo)
         self._combo = combo
-        self._glass = _Backdrop(textured=False)
+        self._glass = Backdrop(textured=False)
 
     def eventFilter(self, obj: QObject, event: QEvent) -> bool:
         if event.type() == QEvent.Type.Paint and isinstance(obj, QWidget):
@@ -116,7 +116,7 @@ class ComboBox(QComboBox):
         self.specs = field_specs(caption is not None, wdth, value_px, value_weight)
         self._open = False
         self._focus_visible = False  # кольцо фокуса — только с клавиатуры (как outline: focus-visible) и при открытом списке
-        self._faces: dict[str, _Backdrop] = {}
+        self._faces: dict[str, Backdrop] = {}
         self._filter = _PopupFilter(self)
         self._container_ready = False
         self.setView(_PopupList(self))
@@ -185,7 +185,7 @@ class ComboBox(QComboBox):
             paint_bezel(p, face, p.device().devicePixelRatioF(), "bezel", state)
 
         p = QPainter(self)
-        p.drawPixmap(0, 0, self._faces.setdefault(state, _Backdrop(textured=False)).get(self, compose))
+        p.drawPixmap(0, 0, self._faces.setdefault(state, Backdrop(textured=False)).get(self, compose))
         if not self.isEnabled():
             p.setOpacity(theme.FIELD_DISABLED_OPACITY)
         content = self.content_rect()

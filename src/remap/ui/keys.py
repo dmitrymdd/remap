@@ -1,7 +1,7 @@
 """Клавиши корпуса: вкладки, «?», квадратные клавиши со значком, «⇄», кнопки обучения и большая CONVERT.
 
 Виджет `Key` рисует себя сам: лицо (внешняя тень, рамка, градиент, inset-линии, текстура) готовится один раз на состояние
-и кэшируется pixmap'ом (`metal._Backdrop`), подпись и значок рисуются поверх вживую. Тень не выходит за виджет:
+и кэшируется pixmap'ом (`metal.Backdrop`), подпись и значок рисуются поверх вживую. Тень не выходит за виджет:
 вокруг лица — поля (`key_margins()`), поэтому в раскладках расстояние между лицами — `key_row_spacing()`, а не просто
 `spacing`.
 """
@@ -15,7 +15,7 @@ from PySide6.QtWidgets import QAbstractButton, QSizePolicy, QWidget
 
 from . import text, theme
 from .icons import ICONS, draw_icon
-from .metal import _Backdrop, inner_shadow, outer_shadow, paint_metal
+from .metal import Backdrop, inner_shadow, outer_shadow, paint_metal
 from .theme import qcolor
 
 STATES = ("normal", "hover", "pressed")
@@ -156,7 +156,7 @@ class Key(QAbstractButton):
         self._icon_stroke = icon_stroke
         self._lit = False
         self._focus_visible = False
-        self._faces = {state: _Backdrop() for state in STATES}
+        self._faces = {state: Backdrop() for state in STATES}
         self.setText(text)
         self.setCheckable(checkable)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)

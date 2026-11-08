@@ -48,6 +48,7 @@ from ..templates import list_map_templates, load_map_template
 from .cable_view import CableEditor
 from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
 from .profile_strip import MapCombo, ProfileStrip
+from .profiles_text import SWAP_TIP, map_summary
 from .tips import tip
 from .settings import ui_settings
 from .status_strip import StatusStrip
@@ -75,7 +76,6 @@ SUGGEST_TIP = ("Notes whose names match the target map, shown as dashed cables.\
 DISMISS_TIP = "Hide the suggestions for these maps"
 
 DIRECTION_SIDES = {FORWARD: "source", REVERSE: "target"}  # карта исходной стороны направления
-SWAP_TIP = "Swap source and target"  # кнопка направления (здесь и на Convert)
 
 
 def _undoable(fn):
@@ -92,10 +92,6 @@ def _undoable(fn):
             self._in_edit = False
             self._record(before)
     return wrapper
-
-
-def map_summary(m: NoteMap | None) -> str:
-    return m.name if m is not None else "no map"
 
 
 def profile_summary(p: RemapProfile, direction: str = FORWARD) -> str:

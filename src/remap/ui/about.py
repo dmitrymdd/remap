@@ -18,7 +18,7 @@ from . import text, theme
 from .glass import Screen
 from .icons import draw_icon
 from .keys import CLOSE, Key, key_margins
-from .metal import RecessedBlock, _Backdrop, inner_shadow, outer_shadow, paint_metal
+from .metal import Backdrop, RecessedBlock, inner_shadow, outer_shadow, paint_metal
 from .plates import paint_plate
 from .theme import qcolor
 from .tips import tip
@@ -163,7 +163,7 @@ class AboutPlate(QWidget):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._backdrop = _Backdrop()
+        self._backdrop = Backdrop()
         self._title = text.label(theme.ABOUT_TITLE_FONT, spacing=theme.ABOUT_TITLE_SPACING)
         self.close_key = Key("", "x", spec=CLOSE, icon_stroke=1.5, parent=self)
         self.close_key.setToolTip(tip("Close (Esc)"))

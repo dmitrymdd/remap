@@ -347,7 +347,7 @@ def _layers(w: int, h: int, dpr: float, paint) -> QImage:
 
 
 def _split_layers(w: int, h: int, dpr: float, base, texture) -> QImage:
-    """Как `_Backdrop` при сдвиге: копия готовой основы, поверх — текстура."""
+    """Как `Backdrop` при сдвиге: копия готовой основы, поверх — текстура."""
     pm = QPixmap(ceil(w * dpr), ceil(h * dpr))
     pm.setDevicePixelRatio(dpr)
     pm.fill(Qt.GlobalColor.transparent)
@@ -404,7 +404,7 @@ def test_backdrop_keeps_base_on_pure_move(app):
     block.move(40, 30)
     moved = block._backdrop.get(block, block._compose, block._texture)
     assert len(calls) == 1 and block._backdrop.rebuilds == 2
-    fresh = metal._Backdrop().get(block, lambda p, r, o: (compose(p, r, o), block._texture(p, r, o)))
+    fresh = metal.Backdrop().get(block, lambda p, r, o: (compose(p, r, o), block._texture(p, r, o)))
     assert moved.toImage() == fresh.toImage()
     block.resize(310, 200)
     block._backdrop.get(block, block._compose, block._texture)

@@ -24,9 +24,9 @@ from . import theme
 from .convert_input import InputScreen
 from .convert_output import OutputScreen, file_mime
 from .convert_strip import ConvertStrip
-from .convert_text import _plural, batch_summary, expand_midi_paths, is_midi, result_details
+from .convert_text import batch_summary, expand_midi_paths, is_midi, plural, result_details
 from .keys import GO, Key
-from .profiles_page import SWAP_TIP, map_summary
+from .profiles_text import SWAP_TIP, map_summary
 from .split import SplitRow
 from .status_strip import StatusStrip
 from .strip import section_width
@@ -353,7 +353,7 @@ class ConvertPage(QWidget):
         if not self.sources:
             self.set_status("Cleared.")
         else:
-            self.set_status(f"Removed {paths[0].name}." if len(paths) == 1 else f"Removed {_plural(len(paths), 'file')}.")
+            self.set_status(f"Removed {paths[0].name}." if len(paths) == 1 else f"Removed {plural(len(paths), 'file')}.")
 
     def remove_selected(self) -> None:
         """Delete: убрать выделенные строки (ничего не выделено — ничего)."""
@@ -379,7 +379,7 @@ class ConvertPage(QWidget):
         elif len(self.sources) == 1:
             self.set_status("File loaded. Click Convert or press Enter.")
         elif before:
-            self.set_status(f"Added {_plural(added, 'file')} · {len(self.sources)} in the list. "
+            self.set_status(f"Added {plural(added, 'file')} · {len(self.sources)} in the list. "
                             "Click Convert or press Enter.")
         else:
             self.set_status(f"{len(self.sources)} files loaded. Click Convert or press Enter.")

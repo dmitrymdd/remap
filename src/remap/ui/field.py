@@ -14,7 +14,7 @@ from PySide6.QtWidgets import QAbstractButton, QFrame, QHBoxLayout, QLineEdit, Q
 
 from . import text, theme
 from .icons import ICONS, draw_icon
-from .metal import _Backdrop, inner_shadow
+from .metal import Backdrop, inner_shadow
 from .theme import qcolor
 
 KINDS = ("bezel", "screen")
@@ -166,7 +166,7 @@ class BezelField(QFrame):
             raise ValueError(kind)
         self.kind = kind
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self._faces: dict[tuple[str, str], _Backdrop] = {}  # лицо по (вид, состояние)
+        self._faces: dict[tuple[str, str], Backdrop] = {}  # лицо по (вид, состояние)
         self._focus = False
         self._caption, self._value = caption, value
         self._specs = field_specs(caption is not None, wdth, value_px, value_weight)
@@ -233,7 +233,7 @@ class BezelField(QFrame):
         def compose(p: QPainter, _rect: QRect, _origin: QPoint) -> None:
             paint_bezel(p, face, p.device().devicePixelRatioF(), self.kind, state)
 
-        backdrop = self._faces.setdefault((self.kind, state), _Backdrop(textured=False))
+        backdrop = self._faces.setdefault((self.kind, state), Backdrop(textured=False))
         p = QPainter(self)
         p.drawPixmap(0, 0, backdrop.get(self, compose))
         if self._value:

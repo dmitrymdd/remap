@@ -10,7 +10,7 @@ from PySide6.QtGui import QBrush, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractScrollArea, QFrame, QScrollBar, QVBoxLayout, QWidget
 
 from . import theme
-from .metal import _Backdrop, _elliptical, inner_shadow
+from .metal import Backdrop, elliptical, inner_shadow
 from .theme import qcolor
 
 _grid_tiles: dict[float, QPixmap] = {}
@@ -64,7 +64,7 @@ def paint_glass(p: QPainter, rect: QRectF, dpr: float, glow_ry: float = theme.SC
              (1, theme.SCREEN_GLASS_OUTER)]
     p.save()
     p.translate(inner.topLeft())  # градиент считается от padding-box: его размеры — без рамки
-    brush = _elliptical(inner.width(), inner.height(), glow, [(at, (*qcolor(c).getRgb()[:3], 1.0)) for at, c in stops])
+    brush = elliptical(inner.width(), inner.height(), glow, [(at, (*qcolor(c).getRgb()[:3], 1.0)) for at, c in stops])
     p.setBrush(brush)
     p.drawRoundedRect(QRectF(0, 0, inner.width(), inner.height()), max(r - 1, 0), max(r - 1, 0))
     p.restore()
@@ -186,7 +186,7 @@ class Screen(QFrame):
                  pad: int = theme.SCREEN_PAD) -> None:
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.NoFrame)
-        self._backdrop = _Backdrop(textured=False)
+        self._backdrop = Backdrop(textured=False)
         self._glow_ry, self._grid = glow_ry, grid
         self._bars: list[tuple[ScreenScrollBar, int, int]] = []
         self.body = QVBoxLayout(self)

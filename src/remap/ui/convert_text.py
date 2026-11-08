@@ -26,12 +26,12 @@ def expand_midi_paths(paths: list[Path]) -> list[Path]:
     return files
 
 
-def _plural(n: int, word: str) -> str:
+def plural(n: int, word: str) -> str:
     return f"{n} {word}" + ("" if n == 1 else "s")
 
 
 def _counts(hits: int, notes: int) -> str:
-    return f"{_plural(hits, 'hit')} ({_plural(notes, 'note')})"
+    return f"{plural(hits, 'hit')} ({plural(notes, 'note')})"
 
 
 def format_report(report: ConversionReport) -> str:
@@ -44,7 +44,7 @@ def format_report(report: ConversionReport) -> str:
              f"  Deleted: {_counts(t.deleted.hits, t.deleted.notes)}"]
     if report.unresolved_kept:
         lines.append("  no rule in the profile, unchanged: " + ", ".join(map(str, report.unresolved_kept)))
-    lines.append(f"Merged duplicates (many-to-one, same tick): {_plural(report.merged, 'hit')}, "
+    lines.append(f"Merged duplicates (many-to-one, same tick): {plural(report.merged, 'hit')}, "
                  f"{report.merged_note_offs} note_off")
     lines.append(f"Overlaps of one target note on different ticks: {report.overlaps}")
     if report.orphan_note_offs:
@@ -71,11 +71,11 @@ def report_summary(report: ConversionReport) -> str:
     """Итог одной строкой в той же терминологии, что и format_report: hits всегда, остальные части — только ненулевые
     (как в строке итогов экрана)."""
     t = report.totals()
-    parts = [_plural(t.hits, "hit")]
+    parts = [plural(t.hits, "hit")]
     parts += [f"{n} {word}" for n, word in ((t.moved.hits, "moved"), (t.unchanged.hits, "unchanged"),
                                             (t.deleted.hits, "deleted")) if n]
     if report.warnings:
-        parts.append(_plural(len(report.warnings), "warning"))
+        parts.append(plural(len(report.warnings), "warning"))
     return " · ".join(parts)
 
 
@@ -139,5 +139,5 @@ def result_details(res: FileResult, head: str = "") -> str:
 
 def batch_summary(ok: int, failed: int) -> str:
     """«3 files converted, 1 failed»."""
-    text = f"{_plural(ok, 'file')} converted"
+    text = f"{plural(ok, 'file')} converted"
     return text + (f", {failed} failed" if failed else "")

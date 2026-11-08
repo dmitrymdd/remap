@@ -39,8 +39,13 @@ POOL_TIP = ("{side} notes not connected in this direction, by instrument.\n"
 EMPTY_HINT = "Drag notes from Unassigned onto the {side} map"
 GROUP_HINT = "Right-click to delete or restore the whole group"
 TARGET_GROUP_HINT = "Drop notes here to connect those with the same numbers"
+SWAP_TIP = "Swap source and target"  # кнопка направления (Profiles и Convert)
 
 Overrides = dict[int, Rule | None]
+
+
+def map_summary(m: NoteMap | None) -> str:
+    return m.name if m is not None else "no map"
 
 
 def tip_lines(head: str, details: list[str], action: str = "") -> str:
