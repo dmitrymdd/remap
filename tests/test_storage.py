@@ -193,6 +193,53 @@ def test_rename_onto_existing_fails_and_keeps_old(st):
     assert [(e.id, e.name) for e in st.list_profiles()[0]] == [('A', 'A'), ('B', 'B')]
 
 
+def test_rename_profile_rolls_back_when_old_file_cannot_be_deleted(st, monkeypatch):
+    pid = st.save_profile(RemapProfile('Old', rules={36: Rule.keep()}))
+    real_delete = Storage.delete_profile
+
+    def delete(self, profile_id):
+        if profile_id == 'Old':
+            raise PermissionError('file is in use')
+        real_delete(self, profile_id)
+
+    monkeypatch.setattr(Storage, 'delete_profile', delete)
+    with pytest.raises(PermissionError):
+        st.rename_profile(pid, RemapProfile('New'))
+    assert [(e.id, e.name) for e in st.list_profiles()[0]] == [('Old', 'Old')]  # без дубликата под новым именем
+
+
+def test_rename_map_rolls_back_when_old_file_cannot_be_deleted(st, monkeypatch):
+    st.save_map(NoteMap('Old', {36: 'Kick'}))
+    real_unlink = type(st.maps_dir).unlink
+
+    def unlink(path, *args, **kwargs):
+        if path.stem == 'Old':
+            raise PermissionError('file is in use')
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(st.maps_dir), 'unlink', unlink)
+    with pytest.raises(PermissionError):
+        st.rename_map('Old', NoteMap('New', {36: 'Kick'}))
+    assert [(e.id, e.name) for e in st.list_maps()[0]] == [('Old', 'Old')]
+
+
+def test_rename_map_failing_on_legacy_txt_keeps_old_json(st, monkeypatch):
+    """Старая карта и в .json, и в .txt; .txt не удаляется — .json цел, новая копия убрана."""
+    st.save_map(NoteMap('Old', {36: 'Kick'}))
+    (st.maps_dir / 'Old.txt').write_text('# MIDI note/CC name map\n36 Kick\n', encoding='utf-8')
+    real_unlink = type(st.maps_dir).unlink
+
+    def unlink(path, *args, **kwargs):
+        if path.name == 'Old.txt':
+            raise PermissionError('file is in use')
+        return real_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(type(st.maps_dir), 'unlink', unlink)
+    with pytest.raises(PermissionError):
+        st.rename_map('Old', NoteMap('New', {36: 'Kick'}))
+    assert [e.id for e in st.list_maps()[0]] == ['Old'] and (st.maps_dir / 'Old.json').is_file()
+
+
 def test_rename_map_moves_file_and_legacy_txt(st):
     st.maps_dir.mkdir(parents=True)
     (st.maps_dir / 'Old.txt').write_text('# MIDI note/CC name map\n36 Kick\n', encoding='utf-8')
@@ -202,3 +249,22 @@ def test_rename_map_moves_file_and_legacy_txt(st):
     assert [e.id for e in st.list_maps()[0]] == ['New'] and not (st.maps_dir / 'Old.txt').exists()
     m.name = 'NEW'
     assert st.rename_map('New', m) == 'New' and st.load_map('New')[0].name == 'NEW'
+
+
+def test_seed_profiles_creates_missing_folders_then_never_reseeds(tmp_path):
+    st = Storage(tmp_path / 'missing' / 'root')  # нет ни корня, ни папки профилей
+    assert st.seed_profiles([RemapProfile('A'), RemapProfile('B')])
+    assert [e.id for e in st.list_profiles()[0]] == ['A', 'B']
+    st.delete_profile('A')
+    st.delete_profile('B')
+    assert not st.seed_profiles([RemapProfile('A')])  # папка есть, хоть и пустая — удалённое не возвращается
+    assert st.list_profiles() == ([], [])
+
+
+def test_lists_ignore_stray_tmp_files(st):
+    st.save_map(NoteMap('m', {36: 'Kick'}))
+    st.save_profile(RemapProfile('p'))
+    (st.maps_dir / '.m.abc123.tmp').write_bytes(b'{partial')  # остаток записи, прерванной падением
+    (st.profiles_dir / '.p.abc123.tmp').write_bytes(b'{partial')
+    assert [e.id for e in st.list_maps()[0]] == ['m'] and st.list_maps()[1] == []
+    assert [e.id for e in st.list_profiles()[0]] == ['p'] and st.list_profiles()[1] == []

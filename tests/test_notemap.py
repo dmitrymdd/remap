@@ -22,6 +22,14 @@ def test_articulations_group_by_normalized_name():
     assert articulations(kit()) == {'kick': [35, 36], 'snare': [38], 'ride': [51, 59, 126]}
 
 
+def test_articulations_cache_ignores_entry_of_recycled_id(monkeypatch):
+    """Запись кэша под тем же id (прежняя карта собрана, id достался новой) со снимком других имён не отдаётся."""
+    from remap.core import notemap
+    m = kit()
+    monkeypatch.setattr(notemap, '_ARTICULATIONS', {id(m): (((36, 'Tom'),), {'tom': (36,)})})
+    assert articulations(m) == {'kick': [35, 36], 'snare': [38], 'ride': [51, 59, 126]}
+
+
 def test_primary_note():
     m = kit(primary=[51])
     assert primary_note(m, 'snare') == 38          # одна нота — флаг не нужен

@@ -7,6 +7,7 @@ ID записи — имя файла без расширения; отобра�
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import sys
@@ -127,8 +128,10 @@ class Storage:
                             lambda i, ow: self.save_map(m, map_id=i, overwrite=ow), self.delete_map)
 
     def delete_map(self, map_id: str) -> None:
-        """Удаляет карту (и .json, и legacy .txt с этим ID). Нет ни того, ни другого — FileNotFoundError."""
-        paths = [self._path(self.maps_dir, map_id, ext) for ext in (MAP_EXT, LEGACY_MAP_EXT)]
+        """Удаляет карту (и .json, и legacy .txt с этим ID). Нет ни того, ни другого — FileNotFoundError.
+
+        Сначала .txt: он перекрыт .json, и сбой на нём не теряет карту (на это опирается откат в _rename)."""
+        paths = [self._path(self.maps_dir, map_id, ext) for ext in (LEGACY_MAP_EXT, MAP_EXT)]
         existing = [p for p in paths if p.is_file()]
         if not existing:
             raise FileNotFoundError(f"map not found: {map_id}")
@@ -182,12 +185,18 @@ class Storage:
     def _rename(old_id: str, new_id: str, save, delete) -> str:
         """Новый ID отличается от старого только регистром — тот же файл (Windows регистр не различает):
         перезапись на месте, ID прежний. Иначе — запись под новым ID (занят — FileExistsError, старый файл цел),
-        затем удаление старого."""
+        затем удаление старого. Старый не удалился — новый убирается (откат) и ошибка идёт дальше: на диске
+        остаётся прежняя запись, а не две."""
         if new_id.casefold() == old_id.casefold():
             save(old_id, True)
             return old_id
         save(new_id, False)
-        delete(old_id)
+        try:
+            delete(old_id)
+        except BaseException:
+            with contextlib.suppress(OSError):
+                delete(new_id)
+            raise
         return new_id
 
     @staticmethod
