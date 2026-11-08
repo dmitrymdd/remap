@@ -151,6 +151,12 @@ def _shape(prim: Prim) -> QPainterPath:
     return path
 
 
+def icon_on_line(name: str, x: float, top: float, line: float) -> QRectF:
+    """Рамка значка `name` в натуральный размер: левый край `x`, по центру строки текста высотой `line` с верхом `top`."""
+    icon = ICONS[name]
+    return QRectF(x, top + line / 2 - icon.h / 2, icon.w, icon.h)
+
+
 def draw_icon(p: QPainter, name: str, rect: QRectF, color: str | RGBA | None = None,
               stroke: float | None = None) -> None:
     """Рисует значок `name` по центру `rect` (масштаб — по меньшей стороне; при совпадении размеров 1:1). `color` — цвет

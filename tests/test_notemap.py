@@ -3,7 +3,7 @@ import json
 import pytest
 
 from remap.core.notemap import (
-    MapFormatError, MapMeta, NoteMap, articulations, duplicate_map, finalize_edit, map_from_json,
+    MapFormatError, MapMeta, NoteMap, articulations, check_note, duplicate_map, finalize_edit, map_from_json,
     map_to_dict, map_to_json, primary_note, set_note_name, validate_map,
 )
 from remap.core.pitch import OCTAVE_OFFSET, note_tip, pitch_name
@@ -138,6 +138,14 @@ def test_pitch_offset_constant():
 def test_pitch_name_rejects_bad(bad):
     with pytest.raises(ValueError):
         pitch_name(bad)
+
+
+def test_pitch_name_error_text_has_no_prefix():
+    # pitch_name проверяет номер через check_note, но текст ошибки — прежний, без префикса «note: »
+    with pytest.raises(ValueError, match=r"^note number must be an integer 0\.\.127, got 128$"):
+        pitch_name(128)
+    with pytest.raises(ValueError, match=r"^dst: note number must be an integer 0\.\.127, got -1$"):
+        check_note(-1, "dst")
 
 
 def test_note_tip():

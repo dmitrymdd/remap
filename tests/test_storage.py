@@ -39,7 +39,7 @@ def test_map_save_load_list_delete(st):
     loaded, issues = st.load_map(mid)
     assert issues == [] and loaded == m
     entries, _ = st.list_maps()
-    assert [(e.id, e.name, e.legacy) for e in entries] == [('Моя карта', 'Моя карта', False)]
+    assert [(e.id, e.name, st.legacy_map_file(e.id)) for e in entries] == [('Моя карта', 'Моя карта', None)]
     st.delete_map(mid)
     assert st.list_maps() == ([], [])
     with pytest.raises(FileNotFoundError):
@@ -63,7 +63,8 @@ def test_legacy_txt_map_listed_and_loaded(st):
     st.save_map(NoteMap('New', {36: 'Kick'}))
     entries, issues = st.list_maps()
     assert issues == []
-    assert [(e.id, e.name, e.legacy) for e in entries] == [('New', 'New', False), ('Old', 'Old', True)]
+    assert [(e.id, e.name, st.legacy_map_file(e.id)) for e in entries] == [('New', 'New', None),
+                                                                     ('Old', 'Old', st.maps_dir / 'Old.txt')]
     m, issues = st.load_map('Old')
     assert m.names == {36: 'Kick', 38: 'Snare'} and issues == []
 
@@ -77,7 +78,7 @@ def test_saving_over_legacy_map_writes_json(st):
     assert st.save_map(m, overwrite=True) == 'Old'
     assert sorted(p.name for p in st.maps_dir.iterdir()) == ['Old.json']
     entries, _ = st.list_maps()
-    assert [(e.id, e.legacy) for e in entries] == [('Old', False)]
+    assert [(e.id, st.legacy_map_file(e.id)) for e in entries] == [('Old', None)]
     assert st.load_map('Old')[0] == m
 
 
@@ -85,7 +86,7 @@ def test_json_map_shadows_legacy_txt_with_same_id(st):
     st.save_map(NoteMap('Same', {36: 'From JSON'}))
     (st.maps_dir / 'Same.txt').write_bytes(LEGACY_TXT.encode('utf-8'))
     entries, _ = st.list_maps()
-    assert [(e.id, e.legacy) for e in entries] == [('Same', False)]
+    assert [(e.id, st.legacy_map_file(e.id)) for e in entries] == [('Same', None)]
     assert st.load_map('Same')[0].names == {36: 'From JSON'}
     st.delete_map('Same')
     assert list(st.maps_dir.iterdir()) == []

@@ -16,7 +16,7 @@ from PySide6.QtCore import QPointF, QRect, QRectF, Qt
 from PySide6.QtGui import QFont, QImage, QPainter, QPainterPath, QPen, QPixmap
 
 from . import text, theme
-from .icons import ICONS, draw_icon
+from .icons import ICONS, draw_icon, icon_on_line
 from .theme import RGBA, qcolor
 
 STATES = ("normal", "selected", "deleted", "hover", "suggested", "warn", "error", "drop")
@@ -247,9 +247,17 @@ def header_label_width(label: str) -> float:
     return text.text_width(label.upper(), header_spec())
 
 
+HEADER_ICON_GAP = 7  # от значка заголовка до метки
+
+
+def _header_left(variant: str, inset: float | None) -> float:
+    """Поле заголовка слева до значка: `inset`, без него — у пула 2 px, у сцены 0."""
+    return 2 if inset is None and variant == "pool" else inset or 0
+
+
 def header_label_x(variant: str = "scene", inset: float | None = None) -> float:
-    """Отступ метки заголовка от левого края: поле (у пула 2 px) + значок 8 px + зазор 7."""
-    return (2 if inset is None and variant == "pool" else inset or 0) + 8 + 7
+    """Отступ метки заголовка от левого края: поле + треугольник + зазор."""
+    return _header_left(variant, inset) + ICONS["group-caret"].w + HEADER_ICON_GAP
 
 
 def paint_group_header(p: QPainter, rect: QRectF, label: str, count: str = "", collapsed: bool = False, *,
@@ -275,14 +283,13 @@ def paint_group_header(p: QPainter, rect: QRectF, label: str, count: str = "", c
     line = text.line_height(spec)
     bottom = rect.bottom() - pad
     top = bottom - line if align == "bottom" else (rect.top() + bottom) / 2 - line / 2
-    left = rect.left() + (2 if inset is None and variant == "pool" else inset or 0)
+    left = rect.left() + _header_left(variant, inset)
     x = left
     if icon is not None or caret:
         name = icon or "group-caret"
-        ic = ICONS[name]
-        box = QRectF(left, top + line / 2 - ic.h / 2, ic.w, ic.h)
+        box = icon_on_line(name, left, top, line)
         if icon is None and align == "bottom":
-            box.moveTop(bottom - 6 - ic.h / 2)  # треугольник: центр на 6 px выше низа строки (в макете margin-bottom 2)
+            box.moveTop(bottom - 6 - box.height() / 2)  # треугольник: центр на 6 px выше низа строки (в макете margin-bottom 2)
         p.save()
         if collapsed and icon is None:
             p.translate(box.center())
@@ -290,7 +297,7 @@ def paint_group_header(p: QPainter, rect: QRectF, label: str, count: str = "", c
             p.translate(-box.center())
         draw_icon(p, name, box)
         p.restore()
-        x = left + ic.w + 7
+        x = box.right() + HEADER_ICON_GAP
     room = label_room if label_room is not None else rect.right() - x - 48
     shown = text.elide(label.upper(), spec, max(room, 0.0))
     text.draw_text(p, QRectF(x, top, max(room, 0.0), line), shown, spec, theme.ACCENT, LEFT_TOP)

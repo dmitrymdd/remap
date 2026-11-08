@@ -61,7 +61,6 @@ class Entry:
     id: str
     name: str
     path: Path
-    legacy: bool = False  # карта в старом формате .txt (REAPER MIDINoteNames)
 
 
 @dataclass(frozen=True)
@@ -97,7 +96,7 @@ class Storage:
             except (OSError, ValueError) as e:
                 issues.append(StorageIssue(path, f"cannot read map: {e}"))
                 continue
-            entries.append(Entry(path.stem, m.name, path, legacy=True))
+            entries.append(Entry(path.stem, m.name, path))
         entries.sort(key=lambda e: e.id.casefold())
         return entries, issues
 
@@ -106,10 +105,18 @@ class Storage:
         path = self._path(self.maps_dir, map_id, MAP_EXT)
         if path.is_file():
             return map_from_json(path.read_text(encoding="utf-8-sig")), []
-        legacy = self._path(self.maps_dir, map_id, LEGACY_MAP_EXT)
-        if legacy.is_file():
+        legacy = self.legacy_map_file(map_id)
+        if legacy is not None:
             return load_notenames(legacy)
         raise FileNotFoundError(f"map not found: {map_id}")
+
+    def legacy_map_file(self, map_id: str) -> Path | None:
+        """Старый .txt (REAPER MIDINoteNames), из которого читается карта map_id: он есть, а .json с тем же ID нет.
+        Иначе None (карта в JSON или её нет)."""
+        if self._path(self.maps_dir, map_id, MAP_EXT).is_file():
+            return None
+        legacy = self._path(self.maps_dir, map_id, LEGACY_MAP_EXT)
+        return legacy if legacy.is_file() else None
 
     def save_map(self, m: NoteMap, map_id: str | None = None, overwrite: bool = False) -> str:
         map_id = sanitize_id(m.name) if map_id is None else _check_id(map_id)

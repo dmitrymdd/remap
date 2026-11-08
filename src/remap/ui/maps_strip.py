@@ -7,13 +7,13 @@
 Меню «…»: Duplicate, Rename, Delete, Revert changes (отмены на Maps нет). Save доступна только при правках, точки нет."""
 from __future__ import annotations
 
-from PySide6.QtCore import QPoint, QRectF
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import QHBoxLayout, QMenu, QWidget
 
 from . import text, theme
 from .field import BezelField, FaceSlot, row_spacing
-from .icons import ICONS, draw_icon
+from .icons import draw_icon, icon_on_line
 from .keys import MAP, SQUARE, Key, key_margins, key_row_spacing
 from .strip import SLOT_H, StripFrame, StripSeparator
 
@@ -40,10 +40,9 @@ class MapField(BezelField):
         spec, content = self._specs.caption, self.content_rect()
         cap_h = text.line_height(spec)
         top = content.center().y() - (cap_h + 1 + text.line_height(self._specs.value)) / 2
-        icon = ICONS["lock"]
         x = content.left() + text.text_width(self.caption, spec) + LOCK_GAP
         p = QPainter(self)
-        draw_icon(p, "lock", QRectF(x, top + (cap_h - icon.h) / 2, icon.w, icon.h), theme.FIELD_CAPTION)
+        draw_icon(p, "lock", icon_on_line("lock", x, top, cap_h), theme.FIELD_CAPTION)
 
 
 class MapsStrip(StripFrame):

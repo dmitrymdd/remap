@@ -19,16 +19,13 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import (
-    QFileDialog, QInputDialog, QLineEdit, QMessageBox, QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
 
 from ..core.notemap import NoteMap, duplicate_map, finalize_edit, validate_map
 from ..core.notenames import ParseIssue, load_notenames, save_notenames
 from ..storage import Storage, id_taken, sanitize_id
 from ..templates import list_map_templates, load_map_template
-from . import theme
+from . import dialogs, theme
 from .maps_list import MapEntry, MapListScreen, MapSection
 from .maps_strip import MapsStrip
 from .maps_table import NoteFilter, NotesScreen, NoteTableModel
@@ -62,7 +59,7 @@ class MapsPage(QWidget):
         self.base: NoteMap | None = None  # последнее сохранённое состояние
         self.work: NoteMap | None = None  # рабочая копия, её правит таблица
         self.load_issues: list[ParseIssue] = []
-        self.legacy = False  # открыта старая карта .txt (при сохранении станет .json)
+        self.legacy_file: Path | None = None  # открыта старая карта .txt (при сохранении станет .json)
         self._templates: dict[str, NoteMap] = {}
         self._user_ids: list[str] = []
         self._dirty = False
@@ -123,26 +120,19 @@ class MapsPage(QWidget):
 
     # --- диалоги (тесты подменяют эти методы) ---
 
+    @property
+    def legacy(self) -> bool:
+        return self.legacy_file is not None
+
     def ask_text(self, title: str, label: str, default: str) -> str | None:
-        text, ok = QInputDialog.getText(self, title, label, QLineEdit.EchoMode.Normal, default)
-        return text if ok else None
+        return dialogs.ask_text(self, title, label, default)
 
     def confirm(self, title: str, text: str, details: str = "") -> bool:
-        box = QMessageBox(QMessageBox.Icon.Question, title, text,
-                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, self)
-        if details:
-            box.setInformativeText(details)
-        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        return box.exec() == QMessageBox.StandardButton.Yes
+        return dialogs.confirm(self, title, text, details)
 
     def ask_save_changes(self) -> str:
         """"save" / "discard" / "cancel"."""
-        answer = QMessageBox.question(
-            self, "Unsaved changes", f'Save changes to "{self.work.name}"?',
-            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Save)
-        return {QMessageBox.StandardButton.Save: "save",
-                QMessageBox.StandardButton.Discard: "discard"}.get(answer, "cancel")
+        return dialogs.ask_save_changes(self, f'Save changes to "{self.work.name}"?')
 
     def choose_open_file(self) -> str | None:
         path, _ = QFileDialog.getOpenFileName(self, "Import REAPER note names", "",
@@ -192,8 +182,9 @@ class MapsPage(QWidget):
             except (OSError, ValueError) as err:
                 mine.append(MapEntry(e.name, f"cannot read: {err}", None, tip(str(e.path), title=e.name)))
                 continue
-            extra = legacy_tip(e.path.name) if e.legacy else ""
-            mine.append(MapEntry(e.name, subtitle(m, e.legacy), MapRef(USER, e.id),
+            legacy = self.storage.legacy_map_file(e.id)
+            extra = legacy_tip(e.path.name) if legacy else ""
+            mine.append(MapEntry(e.name, subtitle(m, legacy is not None), MapRef(USER, e.id),
                                  tip(map_tooltip(m, extra), title=e.name)))
         if not entries:
             mine.append(MapEntry("No maps yet", "Create, import or duplicate one", None))
@@ -233,7 +224,7 @@ class MapsPage(QWidget):
         self.current, self.base, self.load_issues = ref, m, issues
         self.list.set_current(ref)
         self._asked_duplicate = False
-        self.legacy = not ref.read_only and not (self.storage.maps_dir / f"{ref.id}.json").is_file()
+        self.legacy_file = None if ref.read_only else self.storage.legacy_map_file(ref.id)
         self.work = copy.deepcopy(m)
         self.notes.table.clear_selection()  # другая карта — те же номера, но другие ноты
         self.model.set_map(self.work, ref.read_only)
@@ -246,7 +237,7 @@ class MapsPage(QWidget):
         self.current = self.base = self.work = None
         self.list.set_current(None)
         self.load_issues = []
-        self.legacy = False
+        self.legacy_file = None
         self.notes.table.clear_selection()
         self.model.set_map(None, True)
         self._update_state()
@@ -297,7 +288,7 @@ class MapsPage(QWidget):
         self.work.order = copy.deepcopy(out.order)
         self.work.primary = set(out.primary)
         self.load_issues = []
-        self.legacy = False
+        self.legacy_file = None
         self.model.refresh()
         if self.model.rows != group_rows(self.work.names, list(range(128))):
             self._apply_filter()  # группы изменились; иначе не сбрасываем прокрутку и выделение
@@ -342,7 +333,7 @@ class MapsPage(QWidget):
             self.notes.set_totals(NO_MAP_HINT.upper())
             return
         field.set_map(self.work.name, locked=read_only)
-        extra = TEMPLATE_TIP if read_only else legacy_tip(f"{ref.id}.txt") if self.legacy else ""
+        extra = TEMPLATE_TIP if read_only else legacy_tip(self.legacy_file.name) if self.legacy_file else ""
         field.setToolTip(tip(extra, title=self.work.name) if extra else tip(self.work.name))
         errors = [i.message for i in validate_map(self.work) if i.severity == "error"]
         left, error = totals_text(len(self.work.names), errors)

@@ -336,6 +336,8 @@ def _meta_from_dict(data: Any) -> MapMeta:
     return MapMeta(source=source, status=status, notes=notes)
 
 
-def check_note(n: Any, what: str = "note") -> None:
+def check_note(n: Any, what: str | None = "note") -> None:
+    """Номер ноты — целое 0..127, иначе ValueError; `what` — префикс сообщения (None — без него)."""
     if isinstance(n, bool) or not isinstance(n, int) or not 0 <= n <= 127:
-        raise ValueError(f"{what}: note number must be an integer 0..127, got {n!r}")
+        prefix = f"{what}: " if what else ""
+        raise ValueError(f"{prefix}note number must be an integer 0..127, got {n!r}")

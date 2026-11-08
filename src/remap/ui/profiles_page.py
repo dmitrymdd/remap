@@ -53,7 +53,7 @@ from .tips import tip
 from .settings import ui_settings
 from .status_strip import StatusStrip
 from .strip import section_width
-from . import theme
+from . import dialogs, theme
 from .theme import repolish
 
 SOURCE, TARGET = "source", "target"
@@ -305,25 +305,14 @@ class ProfilesPage(QWidget):
     # --- диалоги (тесты подменяют эти методы) ---
 
     def ask_text(self, title: str, label: str, default: str) -> str | None:
-        text, ok = QInputDialog.getText(self, title, label, QLineEdit.EchoMode.Normal, default)
-        return text if ok else None
+        return dialogs.ask_text(self, title, label, default)
 
     def confirm(self, title: str, text: str, details: str = "") -> bool:
-        box = QMessageBox(QMessageBox.Icon.Question, title, text,
-                          QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel, self)
-        if details:
-            box.setInformativeText(details)
-        box.setDefaultButton(QMessageBox.StandardButton.Cancel)
-        return box.exec() == QMessageBox.StandardButton.Yes
+        return dialogs.confirm(self, title, text, details)
 
     def ask_save_changes(self) -> str:
         """"save" / "discard" / "cancel"."""
-        answer = QMessageBox.question(
-            self, "Unsaved changes", f'Save changes to the profile "{self.work.name}"?',
-            QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard | QMessageBox.StandardButton.Cancel,
-            QMessageBox.StandardButton.Save)
-        return {QMessageBox.StandardButton.Save: "save",
-                QMessageBox.StandardButton.Discard: "discard"}.get(answer, "cancel")
+        return dialogs.ask_save_changes(self, f'Save changes to the profile "{self.work.name}"?')
 
     def ask_write_to(self, name: str, notes: list[int], preselect: int | None = None) -> int | None:
         """Артикуляция на нескольких нотах без Write to: на какую ноту писать (ответ запомнится в профиле).
