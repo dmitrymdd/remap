@@ -212,3 +212,22 @@ def test_prose_keeps_case_and_wraps(app):
     lines = text.wrap(STEPS[3].text, spec, 282)
     assert " ".join(lines) == STEPS[3].text
     assert all(text.text_width(line, spec) <= 282 for line in lines) and len(lines) == 3  # три строки, как в макете
+
+
+def test_opening_lays_out_once(window):
+    """Открытие (и повторное — со старым шагом в памяти) ищет места один раз на шаг: раскладка из resizeEvent при
+    setGeometry() скрытого слоя ничего не делает, плашку и вырезы ставит только go()."""
+    _with_cables(window)
+    tut, asked = window.tutorial, []
+    resolve = tut._resolve
+    tut._resolve = lambda target, entering: asked.append(target) or resolve(target, entering)
+    tut.start(2)
+    assert asked == [spot.target for spot in STEPS[2].spots]
+    holes, plate = list(tut.holes), tut.plate.pos()
+    tut.finish()
+    window.resize(window.width() + 40, window.height())  # слой скрыт: сменился размер корпуса
+    QApplication.processEvents()
+    asked.clear()
+    tut.start(2)
+    assert asked == [spot.target for spot in STEPS[2].spots]
+    assert tut.plate.pos().y() == plate.y() and tut.holes[0][0].y() == holes[0][0].y()

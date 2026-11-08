@@ -2707,3 +2707,11 @@ def test_scene_tooltips_are_at_most_three_lines(window, app, direction):
                and len(i.notes) == 1)
     head, *rest = row.tip_text.splitlines()
     assert head.startswith(f"Note {row.notes[0]} · ") and "  →  " in head and rest[-1] == "Right-click: remove"
+
+
+def test_column_view_scroll_exists_before_first_rebuild(app):
+    """Запомненная прокрутка есть с создания: end() до первого begin() не падает и оставляет вид вверху."""
+    view = cable_view._ColumnView(lambda: None)
+    assert view._scroll == 0
+    view.end()
+    assert view.verticalScrollBar().value() == 0

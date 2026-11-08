@@ -274,6 +274,21 @@ def test_faces_are_cached_until_size_or_position_change(app):
     assert key.rebuilds == first + 1
 
 
+
+def test_face_cache_follows_face_size_not_only_widget_size(app):
+    """Клавиша по тексту (TUT) с той же шириной виджета: новый текст меняет ширину лица — лицо пересобирается."""
+    body = MetalBody(screws=False)
+    body.resize(400, 100)
+    key = Key("Next", spec=TUT, parent=body)
+    key.setFixedSize(300, key.sizeHint().height())  # виджет шире любого из лиц: размер виджета не меняется
+    body.show()
+    key.grab()
+    first, old_face = key.rebuilds, key.face_size()
+    key.setText("Done, go back to the profile")
+    assert key.face_size() != old_face and key.width() == 300
+    key.grab()
+    assert key.rebuilds == first + 1
+
 def test_widget_paints_label_icon_and_texture(app):
     body = MetalBody(screws=False)
     body.resize(300, 100)

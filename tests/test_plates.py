@@ -448,3 +448,15 @@ def test_sliced_plate_is_byte_equal_to_direct(dpr, monkeypatch):
             sliced = _plate_image(dpr, w, h, True, monkeypatch, **kw)
             assert plates._BOXES
             assert sliced == _plate_image(dpr, w, h, False, monkeypatch, **kw), f"{kw['state']} {w}×{h}"
+
+
+def test_box_templates_are_bounded(monkeypatch):
+    """Заготовок фона не больше `_BOXES_MAX`: на переполнении кэш очищается целиком, как у остальных кэшей."""
+    monkeypatch.setattr(plates, "_BOXES_MAX", 3)
+    plates._BOXES.clear()
+    normal = plates.plate_style("normal")
+    for h in (20, 21, 22):
+        plates._sliced_box(normal, 200, h, 1.0)
+    assert len(plates._BOXES) == 3
+    plates._sliced_box(normal, 200, 23, 1.0)
+    assert [key[2] for key in plates._BOXES] == [23]  # прежние три сброшены, осталась только новая

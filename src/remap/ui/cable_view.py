@@ -560,6 +560,7 @@ class _ColumnView(QGraphicsView):
         self.handler: CableEditor | None = None
         self._on_width_changed = on_width_changed
         self._width = 0
+        self._scroll = 0  # прокрутка, запомненная в begin() и возвращаемая в end()
         self.hint: tuple[float, float, str] | None = None  # подсказка пустой колонки: x, ширина, текст
 
     def set_hint(self, hint: tuple[float, float, str] | None) -> None:

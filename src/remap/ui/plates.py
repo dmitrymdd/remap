@@ -120,6 +120,9 @@ def _plate_direct(p: QPainter, rect: QRectF, state: str, numbers, name: str, nam
 # рисуются поверх как раньше, без растяжения. Растеризатор Qt не инвариантен к сдвигу на сотни px, поэтому нарезка
 # — только в проверенном тестом диапазоне ширин (`BOX_SLICE_MAX_W`); пунктир и прочее — прямое рисование.
 _BOXES: dict[tuple, QImage] = {}
+# Заготовок — по (стиль, высота, DPR) и не больше 8 ширин (период DPR): 7 стилей без пунктира × ~6 высот × до 4 ширин
+# (DPR 1.25) ≈ 170 на монитор; заготовка — десятки КБ, так что 256 — запас без заметной памяти
+_BOXES_MAX = 256
 BOX_CAP = theme.PLATE_RADIUS + 3  # край плашки (скругление и рамка), дальше — одинаковые столбцы
 BOX_SLICE_MAX_W = 1024
 
@@ -151,6 +154,8 @@ def _sliced_box(style: PlateStyle, w: int, h: int, dpr: float) -> QImage | None:
     key = (style, w - k, h, dpr)
     tpl = _BOXES.get(key)
     if tpl is None:
+        if len(_BOXES) >= _BOXES_MAX:
+            _BOXES.clear()
         tpl = _BOXES[key] = _box_image(style, w - k, h, dpr)
         tpl.setDevicePixelRatio(1)
     cx, dx = ceil(BOX_CAP * dpr), round(k * dpr)

@@ -249,7 +249,8 @@ class Key(QAbstractButton):
         def texture(p: QPainter, _rect: QRect, origin: QPoint) -> None:
             paint_key_texture(p, face, self.spec, p.device().devicePixelRatioF(), origin)
 
-        return self._faces[state].get(self, compose, texture)
+        size = self.face_size()  # лицо по тексту (TUT) меняет ширину и при том же размере виджета
+        return self._faces[state].get(self, compose, texture, (size.width(), size.height()))
 
     def paintEvent(self, _event) -> None:
         p = QPainter(self)

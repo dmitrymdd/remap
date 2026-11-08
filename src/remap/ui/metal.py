@@ -83,7 +83,8 @@ class Backdrop:
 
     `get(w, compose, texture)`: если текстура рисуется отдельным шагом `texture(p, rect, origin)` поверх основы
     `compose(p, rect, origin)`, основа запоминается по размеру и DPR, и при сдвиге без смены размера (клавиши полосы,
-    блоки при протяжке ручки) заново кладётся только текстура на копию основы — те же слои в том же порядке."""
+    блоки при протяжке ручки) заново кладётся только текстура на копию основы — те же слои в том же порядке.
+    `extra` — что ещё меняет рисунок при том же размере виджета (размер лица клавиши), входит в ключ."""
 
     def __init__(self, textured: bool = True) -> None:
         self._key: tuple | None = None
@@ -102,16 +103,17 @@ class Backdrop:
         p.end()
         return pm
 
-    def get(self, w: QWidget, compose, texture=None) -> QPixmap:
+    def get(self, w: QWidget, compose, texture=None, extra: tuple = ()) -> QPixmap:
         dpr, origin = w.devicePixelRatioF(), window_origin(w) if self._textured else QPoint(0, 0)
         rect = QRect(0, 0, w.width(), w.height())
-        key = (w.width(), w.height(), dpr, origin.x(), origin.y())
+        base_key = (w.width(), w.height(), dpr, *extra)
+        key = (*base_key, origin.x(), origin.y())
         if key != self._key or self._pixmap is None:
             if texture is None:
                 self._pixmap = self._new(w, dpr, lambda p: compose(p, rect, origin))
             else:
-                if key[:3] != self._base_key or self._base is None:
-                    self._base_key, self._base = key[:3], self._new(w, dpr, lambda p: compose(p, rect, origin))
+                if base_key != self._base_key or self._base is None:
+                    self._base_key, self._base = base_key, self._new(w, dpr, lambda p: compose(p, rect, origin))
                 pm = QPixmap(self._base)
                 p = QPainter(pm)  # рисование отделяет копию от основы
                 texture(p, rect, origin)

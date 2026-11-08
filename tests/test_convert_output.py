@@ -163,3 +163,27 @@ def test_results_reset_when_current_profile_is_resaved_with_other_rules(window, 
     page.reload_profiles()  # так Profiles сообщает о сохранении (profiles_changed)
     assert page.profile_combo.currentData() == profile_id
     assert page.results == {}  # тот же профиль с другими правилами — как смена профиля
+
+
+def test_same_named_sources_with_one_output_folder(window, tmp_path):
+    """Два «a.mid» из разных папок и общая папка результатов: до конвертации — две будущие карточки с одним путём
+    (выделение у них общее — ключ карточки путь); после — пишется только первый, второй — ошибкой без карточки,
+    файл первого не перезаписан."""
+    for folder in ("one", "two"):
+        (tmp_path / folder).mkdir()
+        shutil.copy(SAMPLE, tmp_path / folder / "a.mid")
+    page = window.convert_page
+    page.set_output_dir(tmp_path / "out")
+    page._accept_files([tmp_path / "one" / "a.mid", tmp_path / "two" / "a.mid"])
+    screen = page.output_screen
+    first, second = screen.cards()
+    assert first.path == second.path == tmp_path / "out" / "a_remapped.mid" and not first.ready
+    screen.card_clicked(second.path)
+    assert screen.card(second.path) is first  # одна и та же карточка по ключу: вторую отдельно не выделить
+    assert first.selected and second.selected
+    page.convert()
+    QApplication.processEvents()
+    assert [(c.path.name, c.ready) for c in screen.cards()] == [("a_remapped.mid", True)]
+    ok, clash = (page.results[s.resolve()] for s in (tmp_path / "one" / "a.mid", tmp_path / "two" / "a.mid"))
+    assert ok.ok and not clash.ok and "collides" in clash.error
+    assert sorted(p.name for p in (tmp_path / "out").iterdir()) == ["a_remapped.mid"]
