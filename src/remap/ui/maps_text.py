@@ -2,7 +2,6 @@
 подсказки и сообщения."""
 from __future__ import annotations
 
-import html
 from dataclasses import dataclass
 
 from ..core.notemap import NoteMap, display_group, group_sort_key, instrument_group
@@ -145,11 +144,6 @@ def badge_tip(note: int, notes: list[int]) -> str:
     """Подсказка бейджа «+N»: остальные номера с этим именем."""
     others = [n for n in notes if n != note]
     return f"Also on note{'s' if len(others) > 1 else ''} {', '.join(map(str, others))}"
-
-
-def wrapped_tooltip(text: str) -> str:
-    """Подсказка с переносом строк: длинный обычный текст Qt показывает одной строкой и обрезает краем экрана."""
-    return "<qt>" + html.escape(text).replace("\n", "<br>") + "</qt>" if text else ""
 
 
 def format_parse_issues(issues: list[ParseIssue], limit: int = 30) -> str:

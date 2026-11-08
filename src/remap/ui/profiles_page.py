@@ -46,7 +46,7 @@ from ..core.suggest import apply_suggested, plan_suggestions, suggestion_targets
 from ..storage import Storage
 from ..templates import list_map_templates, load_map_template
 from .cable_view import CableEditor
-from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
+from .maps_text import TEMPLATE, USER, MapRef
 from .profile_strip import MapCombo, ProfileStrip
 from .profiles_text import SWAP_TIP, map_summary
 from .tips import tip
@@ -385,7 +385,7 @@ class ProfilesPage(QWidget):
         self.combo.addItem(title)
         i = self.combo.count() - 1
         self.combo.setItemData(i, profile_id, ID_ROLE)
-        self.combo.setItemData(i, wrapped_tooltip(subtitle), Qt.ItemDataRole.ToolTipRole)
+        self.combo.setItemData(i, tip(subtitle), Qt.ItemDataRole.ToolTipRole)
         if profile_id is None:  # профиль не читается — пункт виден, но не выбирается
             self.combo.model().item(i).setEnabled(False)
 

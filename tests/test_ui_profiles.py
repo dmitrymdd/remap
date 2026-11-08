@@ -19,7 +19,8 @@ from remap.templates import load_map_template
 from remap.ui import cable_view, plates, theme
 from remap.ui.main_window import PAGE_CONVERT, PAGE_PROFILES, MainWindow
 from remap.ui.maps_text import TEMPLATE, USER, MapRef
-from remap.ui.profiles_page import ID_ROLE
+from remap.ui.profiles_page import ID_ROLE, profile_summary
+from remap.ui.tips import tip
 
 SAMPLE = Path(__file__).resolve().parents[1] / "samples" / "midi" / "Groove 01.mid"
 EZD3, SD3 = MapRef(TEMPLATE, "EZdrummer 3"), MapRef(TEMPLATE, "Superior Drummer 3")
@@ -489,6 +490,7 @@ def test_unsaved_edits_show_only_on_save_key(window):
     assert not page.save_btn.isEnabled()
     saved_tip = combo.itemData(index(pid), Qt.ItemDataRole.ToolTipRole)  # подсказка пункта — карты, без числа правил
     assert "EZdrummer 3 → Superior Drummer 3" in saved_tip and "rule" not in saved_tip
+    assert saved_tip == tip(profile_summary(page.work))  # разметка — общая tip(), как у остальных подсказок
     page.clear_rules([min(page.work.source_map.names)])
     assert page.dirty and page.save_btn.isEnabled()
     assert combo.itemText(index(pid)) == "Mark" and combo.itemText(index(LEGACY_ID)) == legacy_profile().name
