@@ -21,8 +21,6 @@ from .icons import ICONS, draw_icon
 from .metal import Backdrop
 from .theme import qcolor
 
-POPUP_GAP = 5  # px от низа лица до списка: обод 3 + светлая линия 1 + 1 px воздуха
-
 
 class _RowDelegate(QStyledItemDelegate):
     """Строка списка: плашка при наведении/выборе клавиатурой, текст `POPUP_TEXT`; текущее значение — акцентом,
@@ -164,7 +162,7 @@ class ComboBox(QComboBox):
         return QSize(int(width + 0.999), field_height())
 
     def minimumSizeHint(self) -> QSize:
-        return QSize(60, field_height())
+        return QSize(theme.COMBO_MIN_W, field_height())
 
     # --- вид ---
     def _state(self) -> str:
@@ -266,10 +264,10 @@ class ComboBox(QComboBox):
         face = self.face_rect()
         top_left = self.mapToGlobal(QPoint(round(face.left()), round(face.top())))
         width, height = round(face.width()), self.popup_height()
-        y = top_left.y() + round(face.height()) + POPUP_GAP
+        y = top_left.y() + round(face.height()) + theme.POPUP_GAP
         screen = self.screen()
         if screen is not None and y + height > screen.availableGeometry().bottom():
-            y = top_left.y() - POPUP_GAP - height
+            y = top_left.y() - theme.POPUP_GAP - height
         return QRect(top_left.x(), y, width, height)
 
     def _popup_closed(self) -> None:

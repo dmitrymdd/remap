@@ -498,7 +498,7 @@ class _CableItem(QGraphicsPathItem):
         self._hovered = hovered
         if self.cable.suggested:
             pen = QPen(theme.qcolor(plates.cable_color(), SUGGESTED), CABLE_W, Qt.PenStyle.CustomDashLine)
-            pen.setDashPattern([3, 3])
+            pen.setDashPattern(list(theme.CABLE_DASH))
             self.setPen(pen)
             self.setZValue(0.4)
             return

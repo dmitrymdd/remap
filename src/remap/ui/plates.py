@@ -82,7 +82,7 @@ def _paint_box(p: QPainter, rect: QRectF, style: PlateStyle, radius: float = the
         pen = QPen(qcolor(style.border), 1)
         if style.dashed:
             pen.setStyle(Qt.PenStyle.CustomDashLine)
-            pen.setDashPattern([3, 3])
+            pen.setDashPattern(list(theme.DROP_DASH))
         p.setPen(pen)
     p.drawRoundedRect(box, radius - 0.5, radius - 0.5)
 

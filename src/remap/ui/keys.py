@@ -117,7 +117,7 @@ def paint_key(p: QPainter, face: QRectF, spec: KeySpec, state: str, dpr: float, 
     p.save()
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
     if pressed:  # наружу — только светлая линия под клавишей
-        outer_shadow(p, face, r, dpr, 1, 0, theme.KEY_PRESSED_EDGE[3], rgb=(255, 255, 255))
+        outer_shadow(p, face, r, dpr, 1, 0, theme.KEY_PRESSED_EDGE[3], rgb=theme.KEY_PRESSED_EDGE[:3])
     else:
         outer_shadow(p, face, r, dpr, **spec.shadow)
     p.setPen(Qt.PenStyle.NoPen)

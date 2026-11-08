@@ -462,7 +462,7 @@ class Panel(QFrame):
         p.setPen(Qt.PenStyle.NoPen)
         p.setBrush(_vertical(theme.PANEL_TOP, theme.PANEL_BOTTOM, shape.height()))
         p.drawRoundedRect(shape, r, r)
-        inner_shadow(p, shape, r, p.device().devicePixelRatioF(), 1, 0, theme.PANEL_EDGE_LIGHT[3], (255, 255, 255))
+        inner_shadow(p, shape, r, p.device().devicePixelRatioF(), 1, 0, theme.PANEL_EDGE_LIGHT[3], theme.PANEL_EDGE_LIGHT[:3])
 
     def paintEvent(self, _event) -> None:
         QPainter(self).drawPixmap(0, 0, self._backdrop.get(self, self._compose))

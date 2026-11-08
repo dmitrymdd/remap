@@ -55,7 +55,7 @@ class MainWindow(QMainWindow):
             seed_error = f"Cannot create the profiles folder: {e}"
 
         self.setWindowTitle("REMAP")
-        self.setMinimumSize(900, 580)
+        self.setMinimumSize(*theme.WINDOW_MIN)
         self._default_size()
         self.setAcceptDrops(True)
         self.setStyleSheet(stylesheet())
@@ -67,7 +67,8 @@ class MainWindow(QMainWindow):
         """900×800, но не больше 90 % доступной области экрана (и не меньше минимального размера), по центру."""
         width, height = theme.WINDOW_SIZE
         area = screen_areas()[0]
-        width, height = min(width, int(area.width() * 0.9)), min(height, int(area.height() * 0.9))
+        part = theme.WINDOW_SCREEN_FRACTION
+        width, height = min(width, int(area.width() * part)), min(height, int(area.height() * part))
         self.resize(max(width, self.minimumWidth()), max(height, self.minimumHeight()))
         frame = self.frameGeometry()
         frame.moveCenter(area.center())

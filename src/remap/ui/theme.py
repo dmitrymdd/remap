@@ -91,6 +91,7 @@ ACCENT = "#62D69A"
 ACCENT_HOVER = "#86E3B3"  # наведение; в макете не задано
 SELECTED = "#FFFFFF"
 CABLE, CABLE_WIDTH, CABLE_SELECTED_WIDTH = "#82BC98", 1.5, 1.6
+CABLE_DASH = (3, 3)  # пунктир кабеля-подсказки: штрих и пробел в толщинах пера (Qt), не в px
 CABLE_PORT_RADIUS, CABLE_TANGENT = 2.6, 60  # точка кабеля; плечо Безье: горизонтальные касательные концов
 
 # --- Статусы: светодиод, текст, рамка, фон ---
@@ -132,6 +133,8 @@ POPUP_ROW, POPUP_PAD, POPUP_PAD_X, POPUP_MAX_ROWS = 28, 4, 6, 10  # текст �
 POPUP_TEXT = "#E0EDE5"
 POPUP_HOVER_BG: RGBA = (110, 190, 140, 0.12)
 POPUP_HOVER_BORDER = "#5E9B7A"
+POPUP_GAP = 5  # px от низа лица до списка: обод 3 + светлая линия 1 + 1 px воздуха
+COMBO_MIN_W = 60  # минимальная ширина комбо (minimumSizeHint)
 # Скруглённый прозрачный список (рамка и фон контейнера Qt снимаются). False — запасной квадратный и непрозрачный
 POPUP_ROUNDED = True
 
@@ -206,6 +209,8 @@ PANEL_EDGE_LIGHT: RGBA = (255, 255, 255, 0.06)
 
 # --- Раскладка окна (макет 900×800): шапка, полоса профиля, экраны, нижняя полоса ---
 WINDOW_SIZE = (900, 800)
+WINDOW_MIN = (900, 580)  # меньше окно не ужимается
+WINDOW_SCREEN_FRACTION = 0.9  # окно по умолчанию — не больше этой доли доступной области экрана
 HEADER_H, HEADER_PAD_X, HEADER_GAP = 64, 40, 14  # шапка: высота, поля, зазор между логотипом, разделителем и надписью
 LOGO_SIZE = (144, 22)  # слот логотипа (кнопка About); картинки — assets/logo*@Nx.png (tools/build_logo.py)
 LOGO_GLOW = {"blur": 5, "alpha": 0.25, "rgb": (255, 255, 255)}  # hover: drop-shadow 0 0 5px белый; в макете .45, приглушено
