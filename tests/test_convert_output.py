@@ -9,6 +9,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from remap.storage import Storage
+from remap.ui import theme
 from remap.ui.main_window import PAGE_CONVERT, MainWindow
 
 pytestmark = pytest.mark.ui
@@ -20,7 +21,7 @@ CTRL = Qt.KeyboardModifier.ControlModifier
 @pytest.fixture
 def window(app, tmp_path):
     w = MainWindow(Storage(tmp_path / "store"))
-    w.resize(900, 800)
+    w.resize(*theme.WINDOW_SIZE)
     w.show()
     w.show_page(PAGE_CONVERT)
     yield w

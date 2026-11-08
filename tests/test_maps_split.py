@@ -7,28 +7,20 @@ from PySide6.QtWidgets import QApplication
 
 from remap.ui import theme
 from remap.ui.keys import MAP, key_margins
-from remap.ui.main_window import PAGE_MAPS, MainWindow
+from remap.ui.main_window import PAGE_MAPS
 from remap.ui.maps_page import SIDE_KEY
 from remap.ui.settings import ui_settings
 from remap.ui.strip import StripSeparator
+from conftest import open_window
 
 pytestmark = pytest.mark.ui
 
 WIDE = 1600
 
 
-def open_window(storage, width):
-    w = MainWindow(storage)
-    w.resize(width, 800)
-    w.show()
-    w.show_page(PAGE_MAPS)
-    QApplication.processEvents()
-    return w
-
-
 @pytest.fixture
 def window(app, storage):
-    w = open_window(storage, theme.WINDOW_SIZE[0])
+    w = open_window(storage, PAGE_MAPS, theme.WINDOW_SIZE[0])
     yield w
     w.close()
     w.deleteLater()
@@ -39,7 +31,7 @@ def rect(window, widget):
 
 
 def resize(window, width):
-    window.resize(width, 800)
+    window.resize(width, theme.WINDOW_SIZE[1])
     QApplication.processEvents()
 
 
@@ -123,7 +115,7 @@ def test_dragging_handle_moves_strip_slot(window):
 
 
 def test_saved_width_restored_after_narrow_then_wide(app, storage):
-    w = open_window(storage, WIDE)
+    w = open_window(storage, PAGE_MAPS, WIDE)
     try:
         drag(w.maps_page, 200)
         assert ui_settings(storage).value(SIDE_KEY, type=int) == theme.POOL_W + 200
@@ -135,7 +127,7 @@ def test_saved_width_restored_after_narrow_then_wide(app, storage):
         check_strip_over_blocks(w)
     finally:
         w.close()
-    again = open_window(storage, WIDE)  # новое окно читает ширину из ui.ini
+    again = open_window(storage, PAGE_MAPS, WIDE)  # новое окно читает ширину из ui.ini
     try:
         assert again.maps_page.list.width() == theme.POOL_W + 200
         check_strip_over_blocks(again)
@@ -167,7 +159,7 @@ def test_handle_moves_place_strip_at_once(app, storage):
     LayoutRequest), Save у правого края не двигается ни в одном промежуточном состоянии; два движения до прохода —
     одна раскладка по последнему."""
     from PySide6.QtCore import QEvent
-    w = open_window(storage, 1300)
+    w = open_window(storage, PAGE_MAPS, 1300)
     try:
         page = w.maps_page
         handle = page.split.handle

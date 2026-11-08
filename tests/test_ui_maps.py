@@ -13,6 +13,7 @@ from remap.core.notemap import NoteMap
 from remap.core.pitch import pitch_name
 from remap.core.notenames import parse_notenames
 from remap.templates import load_map_template
+from remap.ui import theme
 from remap.ui.main_window import PAGE_MAPS, MainWindow
 from remap.ui.maps_table import OTHERS_ROLE
 from remap.ui.maps_text import COL_NAME, COL_NOTE, TEMPLATE, USER, MapRef
@@ -474,7 +475,7 @@ def test_in_row_name_edit_enter_saves_esc_cancels(window, storage, app):
     page = window.maps_page
     page.reload_list()
     page.select(MapRef(USER, "Kit"))
-    window.resize(900, 800)
+    window.resize(*theme.WINDOW_SIZE)
     window.show()
     app.processEvents()
     view, totals = page.notes.table, page.notes.totals
@@ -526,7 +527,7 @@ def test_note_and_badge_tooltips(window, storage, app):
     page = window.maps_page
     page.reload_list()
     page.select(MapRef(USER, "Kit"))
-    window.resize(900, 800)
+    window.resize(*theme.WINDOW_SIZE)
     window.show()
     app.processEvents()
     view = page.notes.table

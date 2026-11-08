@@ -11,10 +11,11 @@ from remap.core.profile import RemapProfile
 from remap.ui import theme
 from remap.ui.cable_layout import CABLE_GAP
 from remap.ui.cable_view import PAD, SIDE_KEY
-from remap.ui.main_window import PAGE_PROFILES, MainWindow
+from remap.ui.main_window import PAGE_PROFILES
 from remap.ui.settings import ui_settings
 from remap.ui.strip import StripSeparator, section_width
 from remap.ui.tutorial import STEPS
+from conftest import open_window as open_main_window
 from test_ui_profiles import stub_dialogs
 
 pytestmark = pytest.mark.ui
@@ -26,10 +27,7 @@ WIDE = 1600
 def open_window(storage, width, profile="ezd3_sd3_saved.json"):
     p = RemapProfile.from_json((FIXTURES / profile).read_text(encoding="utf-8"))
     pid = storage.save_profile(p, overwrite=True)
-    w = MainWindow(storage)
-    w.resize(width, 800)
-    w.show()
-    w.show_page(PAGE_PROFILES)
+    w = open_main_window(storage, PAGE_PROFILES, width)
     page = w.profiles_page
     stub_dialogs(page)
     page.combo.setCurrentIndex(next(i for i in range(page.combo.count()) if page.combo.itemData(i) == pid))
@@ -55,7 +53,7 @@ def face(window, w):
 
 
 def resize(window, width):
-    window.resize(width, 800)
+    window.resize(width, theme.WINDOW_SIZE[1])
     QApplication.processEvents()
 
 

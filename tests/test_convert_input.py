@@ -8,6 +8,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from remap.core import FileResult, OutputConflict
+from remap.ui import theme
 from remap.ui.convert_text import conflict_line, file_state, state_tip, totals_parts
 from remap.ui.main_window import PAGE_CONVERT, MainWindow
 from remap.storage import Storage
@@ -21,7 +22,7 @@ CTRL, SHIFT = Qt.KeyboardModifier.ControlModifier, Qt.KeyboardModifier.ShiftModi
 @pytest.fixture
 def window(app, tmp_path):
     w = MainWindow(Storage(tmp_path / "store"))
-    w.resize(900, 800)
+    w.resize(*theme.WINDOW_SIZE)
     w.show()
     w.show_page(PAGE_CONVERT)
     yield w

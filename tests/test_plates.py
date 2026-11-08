@@ -7,25 +7,16 @@ from pathlib import Path
 import pytest
 
 pytest.importorskip("PySide6")
-pytestmark = pytest.mark.ui
+pytestmark = [pytest.mark.ui, pytest.mark.usefixtures("fonts")]
 
 from PySide6.QtCore import QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QImage, QPainter
 
 from remap.ui import plates, text, theme
+from conftest import rgb
 
 SRC = Path(__file__).resolve().parents[1] / "src" / "remap" / "ui"
 BG = "#0D1C15"
-
-
-@pytest.fixture(autouse=True)
-def fonts(app):
-    theme.load_fonts()
-
-
-def rgb(hex_color: str) -> tuple[int, int, int]:
-    c = QColor(hex_color)
-    return c.red(), c.green(), c.blue()
 
 
 def canvas(w=300, h=80, dpr=1.0) -> tuple[QImage, QPainter]:

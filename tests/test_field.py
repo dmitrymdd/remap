@@ -2,7 +2,7 @@
 import pytest
 
 pytest.importorskip("PySide6")
-pytestmark = pytest.mark.ui
+pytestmark = [pytest.mark.ui, pytest.mark.usefixtures("fonts")]
 
 from PySide6.QtCore import QPoint, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter, QRegion
@@ -14,16 +14,7 @@ from remap.ui.field import (
     BezelField, FaceSlot, ScreenCheck, SearchField, field_height, field_margins, field_specs, paint_bezel, row_spacing,
 )
 from remap.ui.keys import SQUARE, Key
-
-
-@pytest.fixture(autouse=True)
-def fonts(app):
-    theme.load_fonts()
-
-
-def rgb(hex_color: str) -> tuple[int, int, int]:
-    c = QColor(hex_color)
-    return c.red(), c.green(), c.blue()
+from conftest import rgb
 
 
 def bezel(kind="bezel", state="normal", dpr=1.0, w=200, h=45) -> QImage:

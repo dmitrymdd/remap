@@ -5,11 +5,12 @@ pytest.importorskip("PySide6")
 pytestmark = pytest.mark.ui
 
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QImage, QMouseEvent, QPainter, QRegion, QWheelEvent
+from PySide6.QtGui import QImage, QMouseEvent, QPainter, QRegion, QWheelEvent
 from PySide6.QtWidgets import QApplication, QListWidget, QWidget
 
 from remap.ui import theme
 from remap.ui.glass import Screen, ScreenScrollBar, grid_tile, paint_glass
+from conftest import rgb
 
 
 def render(w: float, h: float, dpr: float = 1.0, **kw) -> QImage:
@@ -31,11 +32,6 @@ def at(img: QImage, x: float, y: float) -> tuple[int, int, int, int]:
 
 def close(a, b, tol=4) -> bool:
     return all(abs(x - y) <= tol for x, y in zip(a[:3], b[:3], strict=True))
-
-
-def rgb(hex_color: str) -> tuple[int, int, int]:
-    c = QColor(hex_color)
-    return c.red(), c.green(), c.blue()
 
 
 # --- рисование ---

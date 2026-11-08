@@ -7,26 +7,18 @@ from PySide6.QtWidgets import QApplication
 
 from remap.ui import theme
 from remap.ui.convert_page import SIDE_KEY
-from remap.ui.main_window import PAGE_CONVERT, MainWindow
+from remap.ui.main_window import PAGE_CONVERT
 from remap.ui.settings import ui_settings
+from conftest import open_window
 
 pytestmark = pytest.mark.ui
 
 WIDE = 1600
 
 
-def open_window(storage, width):
-    w = MainWindow(storage)
-    w.resize(width, 800)
-    w.show()
-    w.show_page(PAGE_CONVERT)
-    QApplication.processEvents()
-    return w
-
-
 @pytest.fixture
 def window(app, storage):
-    w = open_window(storage, theme.WINDOW_SIZE[0])
+    w = open_window(storage, PAGE_CONVERT, theme.WINDOW_SIZE[0])
     yield w
     w.close()
     w.deleteLater()
@@ -41,7 +33,7 @@ def face(window, w):
 
 
 def resize(window, width):
-    window.resize(width, 800)
+    window.resize(width, theme.WINDOW_SIZE[1])
     QApplication.processEvents()
 
 
@@ -115,7 +107,7 @@ def test_dragging_handle_moves_slot_and_convert(window):
 
 
 def test_saved_width_restored_after_narrow_then_wide(app, storage):
-    w = open_window(storage, WIDE)
+    w = open_window(storage, PAGE_CONVERT, WIDE)
     try:
         drag(w.convert_page, -200)
         assert ui_settings(storage).value(SIDE_KEY, type=int) == theme.CONVERT_RIGHT_W + 200
@@ -127,7 +119,7 @@ def test_saved_width_restored_after_narrow_then_wide(app, storage):
         check_layout(w)
     finally:
         w.close()
-    again = open_window(storage, WIDE)  # новое окно читает ширину из ui.ini
+    again = open_window(storage, PAGE_CONVERT, WIDE)  # новое окно читает ширину из ui.ini
     try:
         assert again.convert_page.output_column.width() == theme.CONVERT_RIGHT_W + 200
         check_layout(again)
@@ -146,13 +138,13 @@ def test_window_resize_places_strip_at_once(app, storage):
     """Колонка OUTPUT шире макета, окно сужается: секции полосы встают на место в самом resize(), без отложенного
     LayoutRequest (иначе до следующего прохода цикла событий прорезь и OUTPUT стоят на старом x — дрожь при протяжке
     края окна)."""
-    w = open_window(storage, theme.WINDOW_SIZE[0])  # окно открыто узким и расширено (так шаги ниже ловят сдвиг)
+    w = open_window(storage, PAGE_CONVERT, theme.WINDOW_SIZE[0])  # окно открыто узким и расширено (так шаги ниже ловят сдвиг)
     try:
         resize(w, 1400)
         page = w.convert_page
         drag(page, -(600 - page.output_column.width()))  # колонка 600: шире, чем позволит узкое окно
         for width in (1300, 1200, 1100, 1000, 900):
-            w.resize(width, 800)  # без processEvents
+            w.resize(width, theme.WINDOW_SIZE[1])  # без processEvents
             at_once = strip_geometry(w)
             left, right, _sep = faces(w)
             inp, col = rect(w, page.input), rect(w, page.output_column)

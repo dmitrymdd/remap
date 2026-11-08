@@ -2,7 +2,7 @@
 import pytest
 
 pytest.importorskip("PySide6")
-pytestmark = pytest.mark.ui
+pytestmark = [pytest.mark.ui, pytest.mark.usefixtures("fonts")]
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QPainter
@@ -11,11 +11,6 @@ from remap.ui import text, theme
 
 W = QFont.Weight
 BG, FG = "#0D1C15", "#E6F2EA"
-
-
-@pytest.fixture(autouse=True)
-def fonts(app):
-    theme.load_fonts()
 
 
 def render(txt: str, spec: text.TextSpec, dpr: float = 2.0, elide: Qt.TextElideMode | None = None,

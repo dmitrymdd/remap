@@ -2,7 +2,7 @@
 import pytest
 
 pytest.importorskip("PySide6")
-pytestmark = pytest.mark.ui
+pytestmark = [pytest.mark.ui, pytest.mark.usefixtures("fonts")]
 
 from PySide6.QtCore import QPoint, QRectF, Qt
 from PySide6.QtGui import QImage, QPainter
@@ -15,11 +15,6 @@ from remap.ui.keys import (
     paint_key,
 )
 from remap.ui.metal import MetalBody
-
-
-@pytest.fixture(autouse=True)
-def fonts(app):
-    theme.load_fonts()
 
 
 def _face_origin(key: Key, window: QWidget) -> tuple[int, int]:

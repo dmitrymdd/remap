@@ -1,5 +1,5 @@
-"""Общие фикстуры тестов. Qt — offscreen (окна не показываются); PySide6 импортируется только в фикстуре app,
-чтобы тесты ядра шли и без него."""
+"""Общие фикстуры и помощники тестов (rgb, fonts, open_window). Qt — offscreen (окна не показываются); PySide6
+импортируется только в фикстурах и помощниках, чтобы тесты ядра шли и без него."""
 import os
 
 import pytest
@@ -23,6 +23,34 @@ def app():
 @pytest.fixture
 def storage(tmp_path):
     return Storage(tmp_path / "store")
+
+
+@pytest.fixture
+def fonts(app):
+    """Шрифты из assets: без них текст рисуется запасным шрифтом."""
+    from remap.ui import theme
+    theme.load_fonts()
+
+
+def rgb(hex_color: str) -> tuple[int, int, int]:
+    """Цвет токена темы без альфы — для сравнения с пикселем."""
+    from PySide6.QtGui import QColor
+    c = QColor(hex_color)
+    return c.red(), c.green(), c.blue()
+
+
+def open_window(storage, page, width=None):
+    """Главное окно на вкладке page; высота — по умолчанию, ширина — width или по умолчанию."""
+    from PySide6.QtWidgets import QApplication
+
+    from remap.ui import theme
+    from remap.ui.main_window import MainWindow
+    w = MainWindow(storage)
+    w.resize(width or theme.WINDOW_SIZE[0], theme.WINDOW_SIZE[1])
+    w.show()
+    w.show_page(page)
+    QApplication.processEvents()
+    return w
 
 
 @pytest.fixture(autouse=True)

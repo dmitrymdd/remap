@@ -33,7 +33,7 @@ import functools
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QColor, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
-    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QTableWidget,
+    QAbstractItemView, QApplication, QDialog, QDialogButtonBox, QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QTableWidget,
     QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -43,7 +43,7 @@ from ..core.profile import (
     match_by_number, missing_rules, with_reverse_edit, with_write_to,
 )
 from ..core.suggest import apply_suggested, plan_suggestions, suggestion_targets
-from ..storage import Storage, id_taken
+from ..storage import Storage
 from ..templates import list_map_templates, load_map_template
 from .cable_view import CableEditor
 from .maps_text import TEMPLATE, USER, MapRef, wrapped_tooltip
@@ -344,7 +344,7 @@ class ProfilesPage(QWidget):
         return dlg.to_keep if dlg.exec() == QDialog.DialogCode.Accepted else None
 
     def show_error(self, text: str) -> None:
-        QMessageBox.warning(self, "REMAP", text)
+        dialogs.show_error(self, text)
 
     # --- список (комбобокс профилей) ---
 
@@ -910,19 +910,8 @@ class ProfilesPage(QWidget):
 
     def ask_unique_name(self, title: str, default: str, exclude_id: str | None = None) -> str | None:
         """Имя профиля; ID (имя файла) не должен совпадать с существующим профилем. None — отмена."""
-        while True:
-            text = self.ask_text(title, "Profile name:", default)
-            if text is None:
-                return None
-            text = text.strip()
-            if not text:
-                self.show_error("The name cannot be empty.")
-                continue
-            if id_taken(text, self._ids, exclude_id):
-                self.show_error(f'A profile named "{text}" already exists. Choose another name.')
-                default = text
-                continue
-            return text
+        return dialogs.ask_unique_name(self.ask_text, self.show_error, "Profile", title, default, self._ids,
+                                       exclude_id)
 
     def _add_and_open(self, p: RemapProfile) -> str | None:
         try:

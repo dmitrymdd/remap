@@ -5,29 +5,24 @@ pytest.importorskip("PySide6")
 pytestmark = pytest.mark.ui
 
 from PySide6.QtCore import QPoint, QRectF, Qt
-from PySide6.QtGui import QColor, QFont, QImage
+from PySide6.QtGui import QFont, QImage
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QComboBox, QVBoxLayout, QWidget
 
 from remap.ui import text, theme
 from remap.ui.combo import ComboBox
 from remap.ui.field import field_height
+from conftest import rgb
 
 ITEMS = ["EZD3 – SD3", "GM – SD3", "My kit"]
 
 
 @pytest.fixture(autouse=True)
-def fonts(app):
-    theme.load_fonts()
+def fonts(fonts, app):  # общая фикстура + шрифт приложения и QSS
     theme.install_app_font()
     app.setStyleSheet(theme.stylesheet())  # как в приложении
     yield
     app.setStyleSheet("")
-
-
-def rgb(hex_color: str) -> tuple[int, int, int]:
-    c = QColor(hex_color)
-    return c.red(), c.green(), c.blue()
 
 
 class Host(QWidget):

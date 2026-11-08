@@ -23,7 +23,7 @@ from PySide6.QtWidgets import QFileDialog, QMessageBox, QVBoxLayout, QWidget
 
 from ..core.notemap import NoteMap, duplicate_map, finalize_edit, validate_map
 from ..core.notenames import ParseIssue, load_notenames, save_notenames
-from ..storage import Storage, id_taken, sanitize_id
+from ..storage import Storage, sanitize_id
 from ..templates import list_map_templates, load_map_template
 from . import dialogs, theme
 from .maps_list import MapEntry, MapListScreen, MapSection
@@ -156,7 +156,7 @@ class MapsPage(QWidget):
         return box.clickedButton() is keep
 
     def show_error(self, text: str) -> None:
-        QMessageBox.warning(self, "REMAP", text)
+        dialogs.show_error(self, text)
 
     # --- список ---
 
@@ -343,19 +343,8 @@ class MapsPage(QWidget):
 
     def ask_unique_name(self, title: str, default: str, exclude_id: str | None = None) -> str | None:
         """Имя новой карты; ID (имя файла) не должен совпадать с существующей картой. None — отмена."""
-        while True:
-            text = self.ask_text(title, "Map name:", default)
-            if text is None:
-                return None
-            text = text.strip()
-            if not text:
-                self.show_error("The name cannot be empty.")
-                continue
-            if id_taken(text, self._user_ids, exclude_id):
-                self.show_error(f'A map named "{text}" already exists. Choose another name.')
-                default = text
-                continue
-            return text
+        return dialogs.ask_unique_name(self.ask_text, self.show_error, "Map", title, default, self._user_ids,
+                                       exclude_id)
 
     def _add_and_open(self, m: NoteMap) -> MapRef | None:
         try:
